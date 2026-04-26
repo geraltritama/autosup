@@ -1,0 +1,6 @@
+.env
+.env.*
+!.env.example
+.api
+.api-contract.md
+autosup.md
