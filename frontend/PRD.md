@@ -242,8 +242,9 @@ Fitur berikut tidak masuk ke Core MVP dan diposisikan sebagai roadmap:
 
 ## 5. Catatan Implementasi
 
-- `frontend/autosup.md` menjadi sumber visi produk, pain points, dan arah pengalaman user.
+- `frontend/autosup.md` menjadi sumber visi produk, pain points, dan arah pengalaman user. Catatan: autosup.md mencakup visi produk lengkap termasuk future phase. Untuk Core MVP, scope fitur mengacu ke Section 3 dokumen ini.
 - `api-contract.md` menjadi source of truth untuk endpoint, role naming, response envelope, dan status enum.
 - Semua fitur selain authentication dianggap protected route.
 - Error handling di frontend harus menggunakan pesan yang ramah dan menjaga konteks user di halaman aktif.
 - UI perlu menampilkan trust layer seperti partnership status, escrow progress, dan supplier reputation sebagai informasi hasil sistem, bukan sebagai flow teknis blockchain.
+- Inventory item tidak menyimpan harga. Harga per unit (`price_per_unit`) diinput oleh distributor saat membuat order berdasarkan kesepakatan dengan supplier.

@@ -72,6 +72,7 @@ Variable yang sudah diketahui dari dokumen saat ini:
 
 ```env
 NEXT_PUBLIC_RECAPTCHA_SITE_KEY=your_site_key_here
+NEXT_PUBLIC_API_URL=http://localhost:8000/api/v1
 ```
 
 Catatan:
@@ -145,7 +146,7 @@ Sebelum mengubah kode frontend, baca dokumen-dokumen ini:
 4. `frontend/CLAUDE.md`
    - tech stack, coding conventions, dan implementation guardrails
 5. `frontend/autosup.md`
-   - visi produk, pain points, dan framing UX
+   - visi produk lengkap, pain points, design prompts, dan framing UX (mencakup future phase, bukan hanya MVP)
 
 Jika ada konflik:
 - `api-contract.md` menang untuk kontrak data
