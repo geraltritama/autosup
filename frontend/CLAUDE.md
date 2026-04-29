@@ -29,13 +29,16 @@ Jika ada konflik:
 2. `frontend/PRD.md` menang untuk scope MVP dan behavior produk
 3. `frontend/autosup.md` menang untuk visi produk dan framing UX
 
+Catatan penting: `frontend/autosup.md` mencakup visi produk lengkap termasuk future phase (analytics, credit line, logistics, payment, dll). Untuk Core MVP, hanya implementasi fitur yang listed di `frontend/PRD.md` Section 3. Design prompts dan fitur lainnya di autosup.md hanya untuk referensi future phase.
+
 ## 2. Tech Stack
 
 ### Frontend
-- Framework: Next.js 14+ dengan App Router
+- Framework: Next.js 16+ dengan App Router
 - Styling: Tailwind CSS
 - Component Library: Shadcn/UI dan/atau Radix UI
-- State Management: Zustand sebagai default untuk global app state; React Context hanya untuk scope sempit
+- Data Fetching: React Query (@tanstack/react-query) untuk server state management
+- State Management: Zustand sebagai default untuk client-side global state; React Context hanya untuk scope sempit
 - Deployment: Vercel
 
 ### Backend and Data

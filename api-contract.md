@@ -183,6 +183,27 @@ Refresh access token.
 
 ---
 
+### POST `/auth/logout`
+Logout user dan invalidate refresh token.
+
+**Request Body:**
+```json
+{
+  "refresh_token": "eyJ..."
+}
+```
+
+**Response 200:**
+```json
+{
+  "success": true,
+  "data": null,
+  "message": "Logout berhasil"
+}
+```
+
+---
+
 ## 2. Inventory
 
 ### GET `/inventory`
@@ -329,6 +350,8 @@ Hapus item dari inventaris.
 ## 3. AI Agent (Gemini-powered)
 
 ### POST `/ai/restock-recommendation`
+> **Scope:** Core MVP
+
 Minta rekomendasi restock dari AI berdasarkan kondisi stok saat ini.
 
 **Request Body:**
@@ -373,6 +396,8 @@ Minta rekomendasi restock dari AI berdasarkan kondisi stok saat ini.
 ---
 
 ### POST `/ai/demand-forecast`
+> **Scope:** Future Phase — tidak masuk Core MVP. Didefinisikan di sini untuk referensi tim BE.
+
 Prediksi permintaan produk untuk periode ke depan.
 
 **Request Body:**
@@ -404,6 +429,7 @@ Prediksi permintaan produk untuk periode ke depan.
 ---
 
 ### POST `/ai/credit-risk`
+> **Scope:** Future Phase — tidak masuk Core MVP. Didefinisikan di sini untuk referensi tim BE.
 > Role: `distributor` only
 
 Analisis risiko kredit untuk retailer.
@@ -470,6 +496,44 @@ Ambil daftar supplier.
       "page": 1,
       "limit": 10,
       "total": 15
+    }
+  },
+  "message": "OK"
+}
+```
+
+---
+
+### GET `/suppliers/partnership-requests`
+> Role: `supplier` — ambil daftar partnership request yang masuk.
+
+**Query Params (opsional):**
+```
+?status=pending           → "pending" | "accepted" | "rejected"
+?page=1&limit=10
+```
+
+**Response 200:**
+```json
+{
+  "success": true,
+  "data": {
+    "requests": [
+      {
+        "request_id": "req-uuid-001",
+        "distributor": {
+          "id": "user-uuid-xxx",
+          "name": "Toko Budi Jaya",
+          "business_name": "Toko Budi Jaya"
+        },
+        "status": "pending",
+        "created_at": "2025-07-10T11:00:00Z"
+      }
+    ],
+    "pagination": {
+      "page": 1,
+      "limit": 10,
+      "total": 3
     }
   },
   "message": "OK"
@@ -642,6 +706,61 @@ Buat order baru.
 }
 ```
 
+**Escrow status enum:**
+| Value | Kondisi |
+|-------|---------|
+| `held` | Dana ditahan menunggu delivery |
+| `released` | Dana dilepas ke supplier setelah status `delivered` |
+| `refunded` | Dana dikembalikan ke buyer setelah status `cancelled` |
+
+---
+
+### GET `/orders/{order_id}`
+Ambil detail satu order.
+
+**Response 200:**
+```json
+{
+  "success": true,
+  "data": {
+    "order_id": "order-uuid-001",
+    "order_number": "ORD-2025-001",
+    "buyer": {
+      "id": "user-uuid-xxx",
+      "name": "Toko Budi Jaya",
+      "role": "distributor"
+    },
+    "seller": {
+      "id": "supplier-uuid-001",
+      "name": "CV Maju Bersama",
+      "role": "supplier"
+    },
+    "items": [
+      {
+        "item_name": "Tepung Terigu",
+        "qty": 100,
+        "unit": "kg",
+        "price_per_unit": 12000,
+        "subtotal": 1200000
+      }
+    ],
+    "total_amount": 1200000,
+    "status": "processing",
+    "escrow_status": "held",
+    "delivery_address": "Jl. Merdeka No.10, Jakarta",
+    "notes": "Tolong dibungkus rapi",
+    "estimated_delivery": "2025-07-12",
+    "status_history": [
+      { "status": "pending", "changed_at": "2025-07-10T09:00:00Z" },
+      { "status": "processing", "changed_at": "2025-07-10T10:00:00Z" }
+    ],
+    "created_at": "2025-07-10T09:00:00Z",
+    "updated_at": "2025-07-10T10:00:00Z"
+  },
+  "message": "OK"
+}
+```
+
 ---
 
 ### PUT `/orders/{order_id}/status`
@@ -709,6 +828,38 @@ Ambil data ringkasan untuk halaman dashboard (1 endpoint, FE tidak perlu banyak 
         "message": "Permintaan Gula Pasir diprediksi naik 20% minggu depan.",
         "urgency": "medium",
         "item_id": "item-uuid-002"
+      }
+    ]
+  },
+  "message": "OK"
+}
+```
+
+**Response 200 (role: supplier):**
+```json
+{
+  "success": true,
+  "data": {
+    "products": {
+      "total_active": 45,
+      "low_stock_count": 2,
+      "out_of_stock_count": 0
+    },
+    "orders": {
+      "incoming_orders": 12,
+      "processing": 5,
+      "completed_this_month": 30
+    },
+    "partners": {
+      "distributor_count": 15,
+      "pending_requests": 3
+    },
+    "ai_insights": [
+      {
+        "type": "demand_alert",
+        "message": "Permintaan Tepung Terigu meningkat 20% minggu ini dari distributor partner.",
+        "urgency": "medium",
+        "item_id": "item-uuid-001"
       }
     ]
   },

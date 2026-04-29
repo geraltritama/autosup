@@ -125,12 +125,12 @@ Jika bentuk data di API contract sudah jelas, agent harus lanjut mandiri dengan 
 
 ## 7. Validation Rules
 
-Tooling yang dianggap tersedia dan relevan di repo ini:
-- Next.js App Router
+Tooling yang dianggap tersedia dan relevan di repo ini (referensi lengkap tech stack ada di `frontend/CLAUDE.md`):
+- Next.js 16+ App Router
 - Tailwind CSS
 - Shadcn/Radix
-- Zustand
-- React Query
+- Zustand (client-side global state)
+- React Query (server state / data fetching)
 - `npm run lint`
 - `npm run build`
 
