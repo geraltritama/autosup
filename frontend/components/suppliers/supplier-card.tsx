@@ -1,22 +1,19 @@
-import { ArrowUpRight, Building2, Clock3, Link2, Wallet } from "lucide-react";
+"use client";
+
+import { ArrowUpRight, Building2, Clock3, Link2, Loader2, Wallet } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { SupplierTypeBadge, type SupplierType } from "@/components/suppliers/supplier-type-badge";
+import { SupplierTypeBadge } from "@/components/suppliers/supplier-type-badge";
+import type { Supplier } from "@/hooks/useSuppliers";
 
-export interface SupplierCardData {
-  supplier_id: string;
-  name: string;
-  category: string;
-  type: SupplierType;
-  reputation_score: number;
-  total_transactions: number;
-  on_time_delivery_rate: number;
-  wallet_address: string;
-  is_active: boolean;
-}
+type Props = {
+  supplier: Supplier;
+  onRequestPartnership?: (supplier: Supplier) => void;
+  isRequesting?: boolean;
+};
 
-export function SupplierCard({ supplier }: { supplier: SupplierCardData }) {
+export function SupplierCard({ supplier, onRequestPartnership, isRequesting }: Props) {
   const isPartner = supplier.type === "partner";
 
   return (
@@ -30,7 +27,7 @@ export function SupplierCard({ supplier }: { supplier: SupplierCardData }) {
               </div>
               <div>
                 <p className="text-base font-semibold text-[#0F172A]">{supplier.name}</p>
-                <p className="text-sm text-[#64748B]">{supplier.category}</p>
+                <p className="text-sm text-[#64748B]">{supplier.category.replace("_", " ")}</p>
               </div>
             </div>
             <div className="flex flex-wrap gap-2">
@@ -42,34 +39,22 @@ export function SupplierCard({ supplier }: { supplier: SupplierCardData }) {
           </div>
           <div className="rounded-xl bg-slate-50 px-3 py-2 text-right">
             <p className="text-xs uppercase tracking-[0.18em] text-[#64748B]">Reputation</p>
-            <p className="mt-1 text-xl font-semibold text-[#0F172A]">
-              {supplier.reputation_score}
-            </p>
+            <p className="mt-1 text-xl font-semibold text-[#0F172A]">{supplier.reputation_score}</p>
           </div>
         </div>
       </CardHeader>
       <CardContent className="space-y-5 p-5">
         <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
           <div className="rounded-xl bg-slate-50 p-4">
-            <p className="text-xs uppercase tracking-[0.18em] text-[#64748B]">
-              Transactions
-            </p>
-            <p className="mt-2 text-lg font-semibold text-[#0F172A]">
-              {supplier.total_transactions}
-            </p>
+            <p className="text-xs uppercase tracking-[0.18em] text-[#64748B]">Transactions</p>
+            <p className="mt-2 text-lg font-semibold text-[#0F172A]">{supplier.total_transactions}</p>
           </div>
           <div className="rounded-xl bg-slate-50 p-4">
-            <p className="text-xs uppercase tracking-[0.18em] text-[#64748B]">
-              On-time delivery
-            </p>
-            <p className="mt-2 text-lg font-semibold text-[#0F172A]">
-              {supplier.on_time_delivery_rate}%
-            </p>
+            <p className="text-xs uppercase tracking-[0.18em] text-[#64748B]">On-time delivery</p>
+            <p className="mt-2 text-lg font-semibold text-[#0F172A]">{supplier.on_time_delivery_rate}%</p>
           </div>
           <div className="rounded-xl bg-slate-50 p-4">
-            <p className="text-xs uppercase tracking-[0.18em] text-[#64748B]">
-              Trust reference
-            </p>
+            <p className="text-xs uppercase tracking-[0.18em] text-[#64748B]">Trust reference</p>
             <div className="mt-2 flex items-center gap-2 text-sm font-medium text-[#0F172A]">
               <Wallet className="h-4 w-4 text-[#64748B]" />
               <span className="truncate">{supplier.wallet_address}</span>
@@ -86,14 +71,12 @@ export function SupplierCard({ supplier }: { supplier: SupplierCardData }) {
             )}
             <div className="space-y-1">
               <p className="text-sm font-medium text-[#0F172A]">
-                {isPartner
-                  ? "Trust-backed partnership is active"
-                  : "Ready for partnership request flow"}
+                {isPartner ? "Trust-backed partnership is active" : "Ready for partnership request"}
               </p>
               <p className="text-sm leading-6 text-[#64748B]">
                 {isPartner
-                  ? "Kemitraan ini diposisikan sebagai hubungan aktif dengan trust layer yang dikelola backend."
-                  : "Supplier ini tersedia di discover list dan bisa masuk ke flow partnership request tanpa browser-side blockchain action."}
+                  ? "Kemitraan ini aktif dengan trust layer yang dikelola backend. Partnership NFT diterbitkan saat request disetujui."
+                  : "Supplier ini tersedia di discover list dan bisa masuk ke flow partnership request. Proses blockchain dikelola backend."}
               </p>
             </div>
           </div>
@@ -103,14 +86,21 @@ export function SupplierCard({ supplier }: { supplier: SupplierCardData }) {
           {isPartner ? (
             <>
               <Button variant="secondary">View Profile</Button>
-              <Button variant="ghost" className="gap-2 text-[#0F172A]">
+              <Button variant="ghost" className="gap-2 text-[#22C55E]" disabled>
                 Partnered
                 <ArrowUpRight className="h-4 w-4" />
               </Button>
             </>
           ) : (
             <>
-              <Button>Request Partnership</Button>
+              <Button
+                onClick={() => onRequestPartnership?.(supplier)}
+                disabled={isRequesting || !supplier.is_active}
+                className="gap-2"
+              >
+                {isRequesting && <Loader2 className="h-4 w-4 animate-spin" />}
+                Request Partnership
+              </Button>
               <Button variant="secondary">View Profile</Button>
             </>
           )}
