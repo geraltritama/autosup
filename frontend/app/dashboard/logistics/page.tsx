@@ -1,17 +1,20 @@
 "use client";
 
-import { 
-  AlertCircle, 
-  MapPin, 
-  Package, 
-  PackageCheck, 
-  Truck, 
-  Loader2 
+import {
+  AlertCircle,
+  MapPin,
+  Package,
+  PackageCheck,
+  Route,
+  Truck,
+  Loader2
 } from "lucide-react";
 import { KpiCard } from "@/components/dashboard/kpi-card";
+import { PageErrorState } from "@/components/dashboard/page-error-state";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { useLogistics } from "@/hooks/useLogistics";
+import { useLogistics, useOptimizeRoute } from "@/hooks/useLogistics";
 import { useAuthStore } from "@/store/useAuthStore";
 
 const statusTone = {
@@ -30,7 +33,8 @@ const statusLabel = {
 
 export default function LogisticsPage() {
   const role = useAuthStore((s) => s.user?.role);
-  const { data, isLoading } = useLogistics();
+  const { data, isLoading, isError, refetch } = useLogistics();
+  const optimizeMutation = useOptimizeRoute();
 
   if (role !== "distributor") {
     return (
@@ -97,6 +101,8 @@ export default function LogisticsPage() {
             <div className="flex h-32 items-center justify-center rounded-2xl border border-[#E2E8F0] bg-white">
               <Loader2 className="h-5 w-5 animate-spin text-[#94A3B8]" />
             </div>
+          ) : isError ? (
+            <PageErrorState message="Gagal memuat data logistik" onRetry={() => refetch()} />
           ) : shipments.length === 0 ? (
             <div className="flex h-32 flex-col items-center justify-center rounded-2xl border border-[#E2E8F0] bg-white">
               <span className="text-sm font-medium text-[#0F172A]">Belum ada pengiriman aktif</span>
@@ -127,6 +133,22 @@ export default function LogisticsPage() {
                       <p className="text-xs text-[#64748B]">
                         ETA: {new Intl.DateTimeFormat("id-ID", { hour: "2-digit", minute: "2-digit", day: "numeric", month: "short" }).format(new Date(shipment.eta))}
                       </p>
+                      {shipment.status === "delayed" && (
+                        <Button
+                          size="sm"
+                          variant="secondary"
+                          className="h-7 gap-1.5 px-2.5 text-xs"
+                          onClick={() => optimizeMutation.mutate(shipment.id)}
+                          disabled={optimizeMutation.isPending && optimizeMutation.variables === shipment.id}
+                        >
+                          {optimizeMutation.isPending && optimizeMutation.variables === shipment.id ? (
+                            <Loader2 className="h-3 w-3 animate-spin" />
+                          ) : (
+                            <Route className="h-3 w-3" />
+                          )}
+                          Optimize Route
+                        </Button>
+                      )}
                     </div>
                   </CardContent>
                 </Card>

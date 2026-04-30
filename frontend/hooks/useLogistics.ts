@@ -1,6 +1,6 @@
 "use client";
 
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, type ApiResponse } from "@/lib/api";
 
 const USE_MOCK = process.env.NEXT_PUBLIC_USE_MOCK === "true";
@@ -61,6 +61,37 @@ const mockShipments: Shipment[] = [
     carrier: "Deliveree",
   },
 ];
+
+export type OptimizeRouteResult = {
+  shipment_id: string;
+  new_eta: string;
+  optimized: boolean;
+};
+
+export function useOptimizeRoute() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (shipment_id: string): Promise<OptimizeRouteResult> => {
+      if (USE_MOCK) {
+        await new Promise((r) => setTimeout(r, 700));
+        const shp = mockShipments.find((s) => s.id === shipment_id);
+        if (shp) shp.status = "in_transit";
+        return {
+          shipment_id,
+          new_eta: new Date(Date.now() + 1000 * 60 * 60 * 4).toISOString(),
+          optimized: true,
+        };
+      }
+      const { data } = await api.put<ApiResponse<OptimizeRouteResult>>(
+        `/logistics/shipments/${shipment_id}/route`,
+      );
+      return data.data;
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["logistics"] });
+    },
+  });
+}
 
 export function useLogistics() {
   return useQuery({
