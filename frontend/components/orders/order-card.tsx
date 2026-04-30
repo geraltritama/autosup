@@ -43,9 +43,10 @@ interface OrderCardProps {
   userRole?: "distributor" | "supplier" | "retailer";
   onUpdateStatus?: (orderId: string, status: OrderStatus) => void;
   isUpdating?: boolean;
+  onViewDetail?: (orderId: string) => void;
 }
 
-export function OrderCard({ order, userRole, onUpdateStatus, isUpdating }: OrderCardProps) {
+export function OrderCard({ order, userRole, onUpdateStatus, isUpdating, onViewDetail }: OrderCardProps) {
   const previewItems = order.items
     .slice(0, 2)
     .map((item) => `${item.item_name} (${item.qty} ${item.unit})`)
@@ -119,7 +120,7 @@ export function OrderCard({ order, userRole, onUpdateStatus, isUpdating }: Order
         <OrderProgress status={order.status} />
 
         <div className="flex flex-wrap gap-3">
-          <Button variant="secondary" className="gap-2">
+          <Button variant="secondary" className="gap-2" onClick={() => onViewDetail?.(order.order_id)}>
             <Eye className="h-4 w-4" />
             View Details
           </Button>

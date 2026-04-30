@@ -24,9 +24,17 @@ const emptyItem = (): OrderItem => ({
   price_per_unit: 0,
 });
 
+type OrderPrefill = {
+  supplierId?: string;
+  itemName?: string;
+  qty?: number;
+  unit?: string;
+};
+
 type Props = {
   open: boolean;
   onClose: () => void;
+  prefill?: OrderPrefill;
 };
 
 function formatCurrency(amount: number) {
@@ -37,7 +45,7 @@ function formatCurrency(amount: number) {
   }).format(amount);
 }
 
-export function OrderFormDialog({ open, onClose }: Props) {
+export function OrderFormDialog({ open, onClose, prefill }: Props) {
   const [supplierId, setSupplierId] = useState("");
   const [items, setItems] = useState<OrderItem[]>([emptyItem()]);
   const [deliveryAddress, setDeliveryAddress] = useState("");
@@ -53,14 +61,18 @@ export function OrderFormDialog({ open, onClose }: Props) {
   useEffect(() => {
     if (!open) return;
     const t = setTimeout(() => {
-      setSupplierId("");
-      setItems([emptyItem()]);
+      setSupplierId(prefill?.supplierId ?? "");
+      setItems([
+        prefill?.itemName
+          ? { item_name: prefill.itemName, qty: prefill.qty ?? 1, unit: prefill.unit ?? "kg", price_per_unit: 0 }
+          : emptyItem(),
+      ]);
       setDeliveryAddress("");
       setNotes("");
       setError(null);
     }, 0);
     return () => clearTimeout(t);
-  }, [open]);
+  }, [open]); // eslint-disable-line react-hooks/exhaustive-deps
 
   function updateItem<K extends keyof OrderItem>(index: number, key: K, value: OrderItem[K]) {
     setItems((prev) => prev.map((item, i) => (i === index ? { ...item, [key]: value } : item)));
