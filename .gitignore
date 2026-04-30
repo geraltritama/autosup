@@ -18,3 +18,4 @@ logs
 *.njsproj
 *.sln
 *.sw?
+.claude
