@@ -120,6 +120,60 @@ export function useRequestPartnership() {
   });
 }
 
+// ── Supplier Stock Visibility (3A.3) ──────────────────────────────────────────
+
+export type InventoryStatus = "in_stock" | "low_stock" | "out_of_stock";
+
+export type SupplierStockItem = {
+  item_id: string;
+  name: string;
+  category: string;
+  stock: number;
+  min_stock: number;
+  unit: string;
+  status: InventoryStatus;
+  estimated_restock_days: number | null;
+  last_updated: string;
+};
+
+export type SupplierStockResponse = {
+  supplier: { supplier_id: string; name: string; is_partner: boolean };
+  products: SupplierStockItem[];
+  pagination: { page: number; limit: number; total: number };
+};
+
+export function useSupplierStock(supplierId: string | null) {
+  return useQuery({
+    queryKey: ["supplier-stock", supplierId],
+    enabled: !!supplierId,
+    queryFn: async (): Promise<SupplierStockResponse> => {
+      if (USE_MOCK) {
+        await new Promise((r) => setTimeout(r, 400));
+        const supplier = mockSuppliers.find((s) => s.supplier_id === supplierId);
+        return {
+          supplier: {
+            supplier_id: supplierId!,
+            name: supplier?.name ?? "Supplier",
+            is_partner: true,
+          },
+          products: [
+            { item_id: "sp-001", name: "Tepung Terigu", category: "bahan_baku", stock: 850, min_stock: 200, unit: "kg", status: "in_stock", estimated_restock_days: null, last_updated: new Date().toISOString() },
+            { item_id: "sp-002", name: "Gula Pasir", category: "bahan_baku", stock: 30, min_stock: 100, unit: "kg", status: "low_stock", estimated_restock_days: 3, last_updated: new Date().toISOString() },
+            { item_id: "sp-003", name: "Minyak Goreng", category: "bahan_baku", stock: 0, min_stock: 50, unit: "liter", status: "out_of_stock", estimated_restock_days: 5, last_updated: new Date().toISOString() },
+            { item_id: "sp-004", name: "Garam Dapur", category: "bahan_baku", stock: 200, min_stock: 80, unit: "kg", status: "in_stock", estimated_restock_days: null, last_updated: new Date().toISOString() },
+          ],
+          pagination: { page: 1, limit: 20, total: 4 },
+        };
+      }
+      const { data } = await api.get<ApiResponse<SupplierStockResponse>>(
+        `/suppliers/${supplierId}/stock`,
+      );
+      return data.data;
+    },
+    staleTime: 60 * 1000,
+  });
+}
+
 export function useRespondPartnership() {
   const qc = useQueryClient();
   return useMutation({
