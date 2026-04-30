@@ -1,18 +1,21 @@
 "use client";
 
-import { 
-  ArrowUpRight, 
-  BarChart3, 
-  Boxes, 
-  LineChart, 
-  Loader2, 
-  Target, 
-  Truck 
+import {
+  ArrowUpRight,
+  BarChart3,
+  Boxes,
+  LineChart,
+  Loader2,
+  MapPin,
+  Target,
+  Truck,
+  TrendingUp,
 } from "lucide-react";
 import { KpiCard } from "@/components/dashboard/kpi-card";
+import { PageErrorState } from "@/components/dashboard/page-error-state";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { useRetailerAnalytics } from "@/hooks/useAnalytics";
+import { useRetailerAnalytics, useSupplierAnalytics, useDistributorRegional, useSupplierRegional } from "@/hooks/useAnalytics";
 import { useAuthStore } from "@/store/useAuthStore";
 
 function formatCurrency(amount: number) {
@@ -26,7 +29,13 @@ function formatCurrency(amount: number) {
 
 export default function AnalyticsPage() {
   const role = useAuthStore((s) => s.user?.role);
-  const { data, isLoading } = useRetailerAnalytics();
+  const retailerQuery = useRetailerAnalytics(role !== "supplier");
+  const supplierQuery = useSupplierAnalytics(role === "supplier");
+  const { data, isLoading, isError, refetch } = role === "supplier" ? supplierQuery : retailerQuery;
+  const distributorRegional = useDistributorRegional(role === "distributor");
+  const supplierRegional = useSupplierRegional(role === "supplier");
+  const regionalData = role === "supplier" ? supplierRegional.data : distributorRegional.data;
+  const regionalLoading = role === "supplier" ? supplierRegional.isLoading : distributorRegional.isLoading;
 
   if (!role) {
     return (
@@ -99,7 +108,15 @@ export default function AnalyticsPage() {
         </section>
       )}
 
+      {/* Error state */}
+      {isError && !isLoading && (
+        <section>
+          <PageErrorState message="Gagal memuat data analytics" onRetry={() => refetch()} />
+        </section>
+      )}
+
       {/* Main content */}
+      {!isError && (
       <section className="grid gap-6 xl:grid-cols-[1fr_0.4fr]">
         <div className="space-y-4">
           <h2 className="text-lg font-semibold text-[#0F172A]">Financial Trends</h2>
@@ -205,6 +222,65 @@ export default function AnalyticsPage() {
           </Card>
         </div>
       </section>
+      )}
+
+      {/* Regional Demand */}
+      {(role === "distributor" || role === "supplier") && (
+        <section className="space-y-4">
+          <h2 className="text-lg font-semibold text-[#0F172A]">Regional Demand</h2>
+          <Card className="rounded-2xl">
+            <CardHeader className="space-y-1">
+              <div className="flex items-center gap-2">
+                <MapPin className="h-4 w-4 text-[#3B82F6]" />
+                <CardTitle className="text-base">Permintaan per Wilayah</CardTitle>
+              </div>
+              <p className="text-sm text-[#64748B]">Distribusi demand berdasarkan area geografis</p>
+            </CardHeader>
+            <CardContent>
+              {regionalLoading ? (
+                <div className="flex justify-center py-8">
+                  <Loader2 className="h-5 w-5 animate-spin text-[#94A3B8]" />
+                </div>
+              ) : !regionalData || regionalData.regional_demand.length === 0 ? (
+                <p className="py-4 text-center text-sm text-[#64748B]">Belum ada data regional.</p>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="border-b border-[#E2E8F0]">
+                        <th className="pb-3 text-left font-medium text-[#64748B]">Wilayah</th>
+                        <th className="pb-3 text-right font-medium text-[#64748B]">Demand (unit)</th>
+                        <th className="pb-3 text-right font-medium text-[#64748B]">Pertumbuhan</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {regionalData.regional_demand.map((r, i) => (
+                        <tr key={i} className="border-b border-[#E2E8F0] last:border-0">
+                          <td className="py-3 font-medium text-[#0F172A]">
+                            <div className="flex items-center gap-2">
+                              <MapPin className="h-3.5 w-3.5 text-[#94A3B8]" />
+                              {r.region}
+                            </div>
+                          </td>
+                          <td className="py-3 text-right text-[#0F172A]">
+                            {new Intl.NumberFormat("id-ID").format(r.demand)}
+                          </td>
+                          <td className="py-3 text-right">
+                            <span className="inline-flex items-center gap-1 font-semibold text-[#22C55E]">
+                              <TrendingUp className="h-3 w-3" />
+                              +{r.growth_pct}%
+                            </span>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </section>
+      )}
     </main>
   );
 }
