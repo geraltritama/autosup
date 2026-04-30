@@ -11,6 +11,7 @@ import {
   Zap 
 } from "lucide-react";
 import { KpiCard } from "@/components/dashboard/kpi-card";
+import { PageErrorState } from "@/components/dashboard/page-error-state";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -30,7 +31,7 @@ const statusLabel = { active: "Aktif", inactive: "Nonaktif", learning: "Learning
 
 export default function AiAgentsPage() {
   const role = useAuthStore((s) => s.user?.role);
-  const { data, isLoading } = useAiAgents();
+  const { data, isLoading, isError, refetch } = useAiAgents();
   const updateConfig = useUpdateAgentConfig();
 
   if (role !== "retailer" && role !== "distributor") {
@@ -99,6 +100,8 @@ export default function AiAgentsPage() {
             <div className="flex h-32 items-center justify-center rounded-2xl border border-[#E2E8F0] bg-white">
               <Loader2 className="h-5 w-5 animate-spin text-[#94A3B8]" />
             </div>
+          ) : isError ? (
+            <PageErrorState message="Gagal memuat data AI agents" onRetry={() => refetch()} />
           ) : agents.length === 0 ? (
             <div className="flex h-32 flex-col items-center justify-center rounded-2xl border border-[#E2E8F0] bg-white">
               <span className="text-sm font-medium text-[#0F172A]">Belum ada agent</span>
