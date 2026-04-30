@@ -50,6 +50,7 @@ export type AiAgentsResponse = {
 const mockAgents: AiAgent[] = [
   {
     id: "agent-1",
+    agent_key: "auto_restock",
     name: "Auto Restock",
     description: "Memantau inventory dan memberikan peringatan restock sebelum kehabisan.",
     status: "active",
@@ -59,6 +60,7 @@ const mockAgents: AiAgent[] = [
   },
   {
     id: "agent-2",
+    agent_key: "demand_forecast",
     name: "Demand Forecast",
     description: "Memprediksi permintaan masa depan berdasarkan tren dan season.",
     status: "active",
@@ -68,6 +70,7 @@ const mockAgents: AiAgent[] = [
   },
   {
     id: "agent-3",
+    agent_key: "supplier_recommendation",
     name: "Supplier Recommendation",
     description: "Mencari vendor alternatif dengan harga dan pengiriman lebih baik.",
     status: "learning",
@@ -77,6 +80,7 @@ const mockAgents: AiAgent[] = [
   },
   {
     id: "agent-4",
+    agent_key: "price_optimization",
     name: "Price Optimization",
     description: "Menyarankan penyesuaian harga jual berdasarkan harga pokok pembelian.",
     status: "inactive",
@@ -86,6 +90,7 @@ const mockAgents: AiAgent[] = [
   },
   {
     id: "agent-5",
+    agent_key: "cash_flow_optimizer",
     name: "Cash Flow Optimizer",
     description: "Mengoptimalkan jadwal pembayaran invoice untuk menjaga likuiditas.",
     status: "active",
