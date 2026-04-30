@@ -108,6 +108,111 @@ export function useRetailerPayments() {
   });
 }
 
+export type DistributorPaymentStatus = "pending" | "settled" | "processing";
+
+export type DistributorPayment = {
+  payment_id: string;
+  counterpart_name: string;
+  amount: number;
+  type: "incoming" | "outgoing";
+  status: DistributorPaymentStatus;
+  order_id: string;
+  created_at: string;
+};
+
+export type DistributorPaymentSummary = {
+  total_incoming: number;
+  total_outgoing: number;
+  pending_settlements: number;
+  net_flow: number;
+};
+
+export type DistributorPaymentResponse = {
+  summary: DistributorPaymentSummary;
+  payments: DistributorPayment[];
+};
+
+const mockDistributorPayments: DistributorPayment[] = [
+  {
+    payment_id: "dpay-001",
+    counterpart_name: "Toko Budi Jaya",
+    amount: 2500000,
+    type: "incoming",
+    status: "settled",
+    order_id: "ord-881",
+    created_at: new Date(Date.now() - 1 * 24 * 60 * 60 * 1000).toISOString(),
+  },
+  {
+    payment_id: "dpay-002",
+    counterpart_name: "Cafe Senja",
+    amount: 4200000,
+    type: "incoming",
+    status: "pending",
+    order_id: "ord-882",
+    created_at: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000).toISOString(),
+  },
+  {
+    payment_id: "dpay-003",
+    counterpart_name: "PT Bahan Pangan",
+    amount: 8500000,
+    type: "outgoing",
+    status: "settled",
+    order_id: "ord-879",
+    created_at: new Date(Date.now() - 3 * 24 * 60 * 60 * 1000).toISOString(),
+  },
+  {
+    payment_id: "dpay-004",
+    counterpart_name: "CV Maju Bersama",
+    amount: 3100000,
+    type: "outgoing",
+    status: "processing",
+    order_id: "ord-880",
+    created_at: new Date(Date.now() - 1 * 24 * 60 * 60 * 1000).toISOString(),
+  },
+];
+
+export function useDistributorPayments() {
+  return useQuery({
+    queryKey: ["distributor", "payments"],
+    queryFn: async (): Promise<DistributorPaymentResponse> => {
+      if (USE_MOCK) {
+        await new Promise((r) => setTimeout(r, 500));
+        return {
+          summary: {
+            total_incoming: 6700000,
+            total_outgoing: 11600000,
+            pending_settlements: 1,
+            net_flow: -4900000,
+          },
+          payments: mockDistributorPayments,
+        };
+      }
+      const { data } = await api.get<ApiResponse<DistributorPaymentResponse>>("/payments/distributor");
+      return data.data;
+    },
+    staleTime: 60 * 1000,
+  });
+}
+
+export function useSettlePayment() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (payment_id: string) => {
+      if (USE_MOCK) {
+        await new Promise((r) => setTimeout(r, 700));
+        const idx = mockDistributorPayments.findIndex((p) => p.payment_id === payment_id);
+        if (idx !== -1) mockDistributorPayments[idx].status = "settled";
+        return { success: true };
+      }
+      const { data } = await api.post<ApiResponse>("/payments/settle", { payment_id });
+      return data.data;
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["distributor", "payments"] });
+    },
+  });
+}
+
 export function usePayInvoice() {
   const qc = useQueryClient();
   return useMutation({
