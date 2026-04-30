@@ -1,8 +1,10 @@
 "use client";
 
 import { useState } from "react";
-import { CheckCheck, Clock3, PackageOpen, Plus, Truck } from "lucide-react";
-import { useOrders, useUpdateOrderStatus, type OrderStatus } from "@/hooks/useOrders";
+import { CheckCheck, Clock3, PackageOpen, Plus, Truck, Loader2, ShieldCheck } from "lucide-react";
+import { useOrders, useOrderDetail, useUpdateOrderStatus, type OrderStatus } from "@/hooks/useOrders";
+import { LegacyDialog as Dialog } from "@/components/ui/dialog";
+import { Badge } from "@/components/ui/badge";
 import { useAuthStore } from "@/store/useAuthStore";
 import { KpiCard } from "@/components/dashboard/kpi-card";
 import { OrderCard } from "@/components/orders/order-card";
@@ -12,7 +14,6 @@ import { OrdersErrorState } from "@/components/orders/orders-error-state";
 import { OrdersFilterBar } from "@/components/orders/orders-filter-bar";
 import { OrdersLoadingState } from "@/components/orders/orders-loading-state";
 import { OrdersTrustPanel } from "@/components/orders/orders-trust-panel";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 
 function formatDate(iso: string) {
@@ -30,6 +31,7 @@ export default function OrdersPage() {
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<OrderStatus | "">("");
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
+  const [detailOrderId, setDetailOrderId] = useState<string | null>(null);
 
   const { data, isLoading, isError, refetch } = useOrders({
     role: isBuyer ? "buyer" : "seller",
@@ -38,6 +40,7 @@ export default function OrdersPage() {
 
   const { mutate: updateStatus, isPending: isUpdating, variables: updatingVars } =
     useUpdateOrderStatus();
+  const { data: orderDetail, isLoading: detailLoading } = useOrderDetail(detailOrderId);
 
   const orders = data?.orders ?? [];
   const summary = data?.summary;
@@ -153,6 +156,7 @@ export default function OrdersPage() {
                 onUpdateStatus={(orderId, status) =>
                   updateStatus({ orderId, status })
                 }
+                onViewDetail={(orderId) => setDetailOrderId(orderId)}
               />
             ))}
         </div>
@@ -167,6 +171,83 @@ export default function OrdersPage() {
         open={createDialogOpen}
         onClose={() => setCreateDialogOpen(false)}
       />
+
+      {/* Order Detail Dialog */}
+      <Dialog
+        open={!!detailOrderId}
+        onClose={() => setDetailOrderId(null)}
+        title="Order Detail"
+        description={orderDetail ? `${orderDetail.order_number} — ${orderDetail.buyer.name} → ${orderDetail.seller.name}` : "Memuat detail order..."}
+      >
+        {detailLoading ? (
+          <div className="flex h-32 items-center justify-center">
+            <Loader2 className="h-5 w-5 animate-spin text-[#94A3B8]" />
+          </div>
+        ) : !orderDetail ? (
+          <p className="text-sm text-[#64748B]">Data tidak ditemukan.</p>
+        ) : (
+          <div className="space-y-5">
+            {/* Escrow Status */}
+            <div className="flex items-center gap-3 rounded-xl border border-[#E2E8F0] p-4">
+              <ShieldCheck className="h-5 w-5 shrink-0 text-[#3B82F6]" />
+              <div>
+                <p className="text-xs uppercase tracking-[0.15em] text-[#64748B]">Escrow Status</p>
+                <Badge
+                  className="mt-1"
+                  tone={
+                    orderDetail.escrow_status === "released"
+                      ? "success"
+                      : orderDetail.escrow_status === "refunded"
+                      ? "warning"
+                      : "info"
+                  }
+                >
+                  {orderDetail.escrow_status.charAt(0).toUpperCase() + orderDetail.escrow_status.slice(1)}
+                </Badge>
+              </div>
+            </div>
+
+            {/* Notes */}
+            {orderDetail.notes && (
+              <div className="rounded-xl bg-slate-50 px-4 py-3">
+                <p className="text-xs uppercase tracking-[0.15em] text-[#64748B]">Notes</p>
+                <p className="mt-1 text-sm text-[#0F172A]">{orderDetail.notes}</p>
+              </div>
+            )}
+
+            {/* Status History Timeline */}
+            <div>
+              <p className="mb-3 text-xs font-semibold uppercase tracking-[0.15em] text-[#64748B]">Status History</p>
+              <div className="space-y-0">
+                {orderDetail.status_history.map((entry, i) => (
+                  <div key={i} className="relative flex gap-4 pb-4 last:pb-0">
+                    <div className="flex flex-col items-center">
+                      <div className="flex h-7 w-7 items-center justify-center rounded-full bg-[#EFF6FF] text-[#3B82F6]">
+                        <div className="h-2.5 w-2.5 rounded-full bg-[#3B82F6]" />
+                      </div>
+                      {i < orderDetail.status_history.length - 1 && (
+                        <div className="mt-1 w-px flex-1 bg-[#E2E8F0]" />
+                      )}
+                    </div>
+                    <div className="pb-1 pt-0.5">
+                      <p className="text-sm font-medium capitalize text-[#0F172A]">{entry.status}</p>
+                      <p className="text-xs text-[#94A3B8]">
+                        {new Intl.DateTimeFormat("id-ID", {
+                          day: "2-digit",
+                          month: "short",
+                          year: "numeric",
+                          hour: "2-digit",
+                          minute: "2-digit",
+                        }).format(new Date(entry.changed_at))}
+                      </p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        )}
+      </Dialog>
     </main>
   );
 }
