@@ -2,9 +2,6 @@
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, type ApiResponse } from "@/lib/api";
-import { getMockInventory, mockInventoryItems } from "@/lib/mocks/inventory";
-
-const USE_MOCK = process.env.NEXT_PUBLIC_USE_MOCK === "true";
 
 export type InventoryStatus = "in_stock" | "low_stock" | "out_of_stock";
 
@@ -47,9 +44,10 @@ export type RestockRecommendation = {
   recommendation: string;
   suggested_qty: number;
   suggested_unit: string;
-  suggested_supplier: {
-    supplier_id: string;
+  suggested_seller: {
+    seller_id: string;
     name: string;
+    seller_type: "supplier" | "distributor";
     reputation_score: number;
     estimated_delivery_days: number;
   } | null;
@@ -69,20 +67,30 @@ export function useInventory(filters: InventoryFilters = {}) {
   return useQuery({
     queryKey: ["inventory", filters],
     queryFn: async (): Promise<InventoryResponse> => {
-      if (USE_MOCK) {
-        await new Promise((r) => setTimeout(r, 350));
-        return getMockInventory(filters);
-      }
-      const params = new URLSearchParams();
-      if (filters.search) params.set("search", filters.search);
-      if (filters.status) params.set("status", filters.status);
-      if (filters.category) params.set("category", filters.category);
-      if (filters.page) params.set("page", String(filters.page));
-      if (filters.limit) params.set("limit", String(filters.limit));
-      const { data } = await api.get<ApiResponse<InventoryResponse>>(
-        `/inventory?${params.toString()}`,
-      );
-      return data.data;
+      // Backend returns flat array: [{id, name, stock, min_stock, category, unit}]
+      // Filter/pagination done client-side since backend doesn't support query params
+      type BackendItem = { id: string; name: string; stock: number; min_stock: number; category: string; unit: string };
+      const { data } = await api.get<ApiResponse<BackendItem[]>>("/inventory");
+      const allItems: InventoryItem[] = data.data.map((item) => ({
+        ...item,
+        status: item.stock === 0 ? "out_of_stock" : item.stock < item.min_stock ? "low_stock" : "in_stock",
+        last_updated: new Date().toISOString(),
+      }));
+      const filtered = allItems.filter((item) => {
+        if (filters.search && !item.name.toLowerCase().includes(filters.search.toLowerCase())) return false;
+        if (filters.status && item.status !== filters.status) return false;
+        if (filters.category && !item.category.toLowerCase().includes(filters.category.toLowerCase())) return false;
+        return true;
+      });
+      return {
+        items: filtered,
+        summary: {
+          total_items: allItems.length,
+          low_stock_count: allItems.filter((i) => i.status === "low_stock").length,
+          out_of_stock_count: allItems.filter((i) => i.status === "out_of_stock").length,
+        },
+        pagination: { page: 1, limit: filtered.length, total: filtered.length },
+      };
     },
     staleTime: 30 * 1000,
   });
@@ -92,23 +100,22 @@ export function useAddInventoryItem() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async (payload: AddItemPayload): Promise<InventoryItem> => {
-      if (USE_MOCK) {
-        await new Promise((r) => setTimeout(r, 400));
-        const stock = payload.stock;
-        const min = payload.min_stock;
-        const status: InventoryStatus =
-          stock === 0 ? "out_of_stock" : stock < min ? "low_stock" : "in_stock";
-        const newItem: InventoryItem = {
-          id: `item-uuid-${Date.now()}`,
-          ...payload,
-          status,
-          last_updated: new Date().toISOString(),
-        };
-        mockInventoryItems.push(newItem);
-        return newItem;
-      }
-      const { data } = await api.post<ApiResponse<InventoryItem>>("/inventory", payload);
-      return data.data;
+      // Backend expects {product_name, current_stock}; map from frontend payload
+      const { data } = await api.post<ApiResponse<InventoryItem>>("/inventory", {
+        product_name: payload.name,
+        current_stock: payload.stock,
+      });
+      const item = data.data as unknown as { id: string; name: string; stock: number; min_stock: number; category: string; unit: string };
+      return {
+        id: item.id,
+        name: item.name,
+        stock: item.stock,
+        min_stock: item.min_stock ?? payload.min_stock,
+        category: item.category ?? payload.category,
+        unit: item.unit ?? payload.unit,
+        status: item.stock === 0 ? "out_of_stock" : item.stock < (item.min_stock ?? payload.min_stock) ? "low_stock" : "in_stock",
+        last_updated: new Date().toISOString(),
+      };
     },
     onSuccess: () => qc.invalidateQueries({ queryKey: ["inventory"] }),
   });
@@ -124,24 +131,22 @@ export function useUpdateInventoryItem() {
       id: string;
       payload: UpdateItemPayload;
     }): Promise<InventoryItem> => {
-      if (USE_MOCK) {
-        await new Promise((r) => setTimeout(r, 400));
-        const idx = mockInventoryItems.findIndex((i) => i.id === id);
-        if (idx === -1) throw new Error("Item tidak ditemukan");
-        const updated = { ...mockInventoryItems[idx], ...payload };
-        const stock = updated.stock;
-        const min = updated.min_stock;
-        updated.status =
-          stock === 0 ? "out_of_stock" : stock < min ? "low_stock" : "in_stock";
-        updated.last_updated = new Date().toISOString();
-        mockInventoryItems[idx] = updated;
-        return updated;
-      }
-      const { data } = await api.put<ApiResponse<InventoryItem>>(
+      // Backend only accepts {current_stock} via PATCH
+      const { data } = await api.patch<ApiResponse<InventoryItem>>(
         `/inventory/${id}`,
-        payload,
+        { current_stock: payload.stock ?? 0 },
       );
-      return data.data;
+      const item = data.data as unknown as { id: string; name: string; stock: number; min_stock: number; category: string; unit: string };
+      return {
+        id: item.id,
+        name: item.name,
+        stock: item.stock,
+        min_stock: item.min_stock,
+        category: item.category,
+        unit: item.unit,
+        status: item.stock === 0 ? "out_of_stock" : item.stock < item.min_stock ? "low_stock" : "in_stock",
+        last_updated: new Date().toISOString(),
+      };
     },
     onSuccess: () => qc.invalidateQueries({ queryKey: ["inventory"] }),
   });
@@ -151,12 +156,6 @@ export function useDeleteInventoryItem() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async (id: string): Promise<void> => {
-      if (USE_MOCK) {
-        await new Promise((r) => setTimeout(r, 350));
-        const idx = mockInventoryItems.findIndex((i) => i.id === id);
-        if (idx !== -1) mockInventoryItems.splice(idx, 1);
-        return;
-      }
       await api.delete(`/inventory/${id}`);
     },
     onSuccess: () => qc.invalidateQueries({ queryKey: ["inventory"] }),
@@ -166,27 +165,6 @@ export function useDeleteInventoryItem() {
 export function useRestockRecommendation() {
   return useMutation({
     mutationFn: async (item_id: string): Promise<RestockRecommendation> => {
-      if (USE_MOCK) {
-        await new Promise((r) => setTimeout(r, 800));
-        const item = mockInventoryItems.find((i) => i.id === item_id);
-        return {
-          item_id,
-          item_name: item?.name ?? "Item",
-          current_stock: item?.stock ?? 0,
-          min_stock: item?.min_stock ?? 0,
-          recommendation: `Stok ${item?.name} tinggal ${item?.stock} ${item?.unit}, jauh di bawah batas minimum ${item?.min_stock} ${item?.unit}. Disarankan restock segera.`,
-          suggested_qty: (item?.min_stock ?? 50) * 2,
-          suggested_unit: item?.unit ?? "pcs",
-          suggested_supplier: {
-            supplier_id: "supplier-uuid-001",
-            name: "CV Maju Bersama",
-            reputation_score: 92,
-            estimated_delivery_days: 2,
-          },
-          urgency: item && item.stock < item.min_stock * 0.3 ? "high" : "medium",
-          generated_at: new Date().toISOString(),
-        };
-      }
       const { data } = await api.post<ApiResponse<RestockRecommendation>>(
         "/ai/restock-recommendation",
         { item_id },
