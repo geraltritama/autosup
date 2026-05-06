@@ -179,6 +179,32 @@ def safe_query(table: str, select="*", filters=None):
         raise
 
 
+def auth_users_by_role(role: str) -> list[dict]:
+    """Fetch users from Supabase Auth by role, return as dict list."""
+    results = []
+    try:
+        auth_response = supabase.auth.admin.list_users()
+        auth_users = auth_response.users if hasattr(auth_response, 'users') else list(auth_response)
+        for u in auth_users:
+            meta = u.user_metadata or {}
+            if meta.get("role") == role:
+                results.append({
+                    "id": u.id,
+                    "email": u.email or "",
+                    "full_name": meta.get("full_name", ""),
+                    "business_name": meta.get("business_name", ""),
+                    "role": role,
+                    "phone": meta.get("phone", ""),
+                    "business_type": meta.get("business_type", ""),
+                    "reputation_score": meta.get("reputation_score", 0),
+                    "city": meta.get("city", ""),
+                    "is_active": True,
+                })
+    except Exception:
+        pass
+    return results
+
+
 # ==========================================
 # 3. SUPABASE & GEMINI
 # ==========================================
@@ -720,6 +746,21 @@ def get_retailers(search: Optional[str] = None, segment: Optional[str] = None,
             }
             for r in (res.data or [])
         ]
+        # Fallback: auth admin
+        if not retailers:
+            for u in auth_users_by_role("retailer"):
+                retailers.append({
+                    "retailer_id": u["id"],
+                    "name": u.get("business_name", u.get("full_name", "")),
+                    "contact_person": u.get("full_name", ""),
+                    "phone": u.get("phone", ""),
+                    "city": u.get("city", ""),
+                    "segment": "regular",
+                    "status": "active",
+                    "monthly_order_volume": 0,
+                    "total_purchase_amount": 0,
+                    "last_order_at": past_iso(days=3),
+                })
         if search:
             sl = search.lower()
             retailers = [r for r in retailers if sl in r["name"].lower() or sl in r["city"].lower()]
@@ -817,6 +858,18 @@ def get_distributors(search: Optional[str] = None, status: Optional[str] = None,
             }
             for d in (res.data or [])
         ]
+        # Fallback to auth admin if table is empty
+        if not distributors:
+            for u in auth_users_by_role("distributor"):
+                distributors.append({
+                    "distributor_id": u["id"],
+                    "name": u.get("business_name", u.get("full_name", "")),
+                    "city": u.get("city", ""),
+                    "reliability_score": u.get("reputation_score", 80),
+                    "active_products": 0,
+                    "partnership_status": "active",
+                    "avg_delivery_time": 0,
+                })
         if search:
             distributors = [d for d in distributors if search.lower() in d["name"].lower()]
         if status:
@@ -1354,69 +1407,20 @@ def disable_2fa(data: Disable2FAReq):
 @app.get("/suppliers")
 def get_suppliers(search: str = "", type: str = "", page: int = 1, limit: int = 20):
     """Returns supplier list — pulls from Supabase Auth users with role=supplier."""
-    supplier_users = []
-
-    # Try public.users table (populated during register)
-    try:
-        users = supabase.table("users").select("*").eq("role", "supplier").execute().data or []
-        for u in users:
-            supplier_users.append({
-                "supplier_id": u.get("id", ""),
-                "name": u.get("business_name", u.get("full_name", "")),
-                "category": u.get("business_type", "Umum"),
-                "type": "discover",
-                "reputation_score": u.get("reputation_score", 0),
-                "total_transactions": u.get("total_transactions", 0),
-                "on_time_delivery_rate": u.get("on_time_delivery_rate", 0),
-                "wallet_address": u.get("wallet_address", ""),
-                "is_active": True,
-            })
-    except Exception:
-        pass
-
-    # Fallback: auth admin
-    if not supplier_users:
-        try:
-            auth_response = supabase.auth.admin.list_users()
-            if hasattr(auth_response, 'users'):
-                auth_users = auth_response.users
-            else:
-                auth_users = list(auth_response)
-            for u in auth_users:
-                meta = u.user_metadata or {}
-                if meta.get("role") == "supplier":
-                    supplier_users.append({
-                        "supplier_id": u.id,
-                        "name": meta.get("business_name", meta.get("full_name", u.email or "")),
-                        "category": meta.get("business_type", meta.get("category", "Umum")),
-                        "type": "discover",
-                        "reputation_score": meta.get("reputation_score", 0),
-                        "total_transactions": meta.get("total_transactions", 0),
-                        "on_time_delivery_rate": meta.get("on_time_delivery_rate", 0),
-                        "wallet_address": meta.get("wallet_address", ""),
-                        "is_active": True,
-                    })
-        except Exception:
-            pass
-
-    # Fallback: public.profiles table
-    if not supplier_users:
-        try:
-            profiles = supabase.table("profiles").select("*").eq("role", "supplier").execute().data or []
-            for p in profiles:
-                supplier_users.append({
-                    "supplier_id": p.get("id", p.get("user_id", "")),
-                    "name": p.get("business_name", p.get("full_name", "")),
-                    "category": p.get("business_type", p.get("category", "Umum")),
-                    "type": "discover",
-                    "reputation_score": p.get("reputation_score", 0),
-                    "total_transactions": p.get("total_transactions", 0),
-                    "on_time_delivery_rate": p.get("on_time_delivery_rate", 0),
-                    "wallet_address": p.get("wallet_address", ""),
-                    "is_active": True,
-                })
-        except Exception:
-            pass
+    supplier_users = [
+        {
+            "supplier_id": u["id"],
+            "name": u.get("business_name", u.get("full_name", "")),
+            "category": u.get("business_type", "Umum"),
+            "type": "discover",
+            "reputation_score": u.get("reputation_score", 0),
+            "total_transactions": u.get("total_transactions", 0),
+            "on_time_delivery_rate": u.get("on_time_delivery_rate", 0),
+            "wallet_address": u.get("wallet_address", ""),
+            "is_active": u.get("is_active", True),
+        }
+        for u in auth_users_by_role("supplier")
+    ]
 
     # Filter by search
     if search:
