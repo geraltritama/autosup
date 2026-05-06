@@ -3,6 +3,7 @@
 import { useEffect } from "react";
 import { X } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useScrollLock } from "@/hooks/useScrollLock";
 
 // ─── Legacy Dialog (used by existing components) ──────────────────────────────
 
@@ -16,6 +17,7 @@ type LegacyDialogProps = {
 };
 
 export function LegacyDialog({ open, onClose, title, description, children, className }: LegacyDialogProps) {
+  useScrollLock(open);
   useEffect(() => {
     if (!open) return;
     const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
@@ -33,7 +35,7 @@ export function LegacyDialog({ open, onClose, title, description, children, clas
       />
       <div
         className={cn(
-          "relative w-full max-w-md rounded-2xl bg-white shadow-xl",
+          "relative w-full max-w-md rounded-2xl bg-white shadow-xl overflow-y-auto max-h-[85vh]",
           className,
         )}
       >
@@ -66,6 +68,7 @@ type DialogProps = {
 };
 
 export function Dialog({ open, onOpenChange, children }: DialogProps) {
+  useScrollLock(!!open);
   useEffect(() => {
     if (!open) return;
     const onKey = (e: KeyboardEvent) => {
@@ -132,3 +135,4 @@ export function DialogFooter({
     </div>
   );
 }
+
