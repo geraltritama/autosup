@@ -5,6 +5,7 @@ import { Building2, Loader2 } from "lucide-react";
 import { LegacyDialog as Dialog } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { useRequestPartnership, type Supplier } from "@/hooks/useSuppliers";
+import { useAuthStore } from "@/store/useAuthStore";
 
 type Props = {
   open: boolean;
@@ -16,6 +17,7 @@ export function RequestPartnershipDialog({ open, onClose, supplier }: Props) {
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
   const request = useRequestPartnership();
+  const user = useAuthStore((s) => s.user);
 
   async function handleConfirm() {
     if (!supplier) return;
@@ -24,7 +26,7 @@ export function RequestPartnershipDialog({ open, onClose, supplier }: Props) {
       await request.mutateAsync(supplier.supplier_id);
       setSuccess(true);
     } catch {
-      setError("Gagal mengirim permintaan. Coba lagi.");
+      setError("Failed to send request. Try again.");
     }
   }
 
@@ -38,11 +40,11 @@ export function RequestPartnershipDialog({ open, onClose, supplier }: Props) {
     <Dialog
       open={open}
       onClose={handleClose}
-      title={success ? "Permintaan Terkirim" : "Request Partnership"}
+      title={success ? "Request Sent" : "Request Partnership"}
       description={
         success
-          ? "Permintaan kemitraan berhasil dikirim. Tunggu konfirmasi dari supplier."
-          : `Kirim permintaan kemitraan ke ${supplier?.name}? Backend akan memproses Partnership NFT setelah supplier menyetujui.`
+          ? `Partnership request sent to ${supplier?.name}. Waiting for their response.`
+          : `Send a partnership request to ${supplier?.name}? Once accepted, you'll become verified partners.`
       }
     >
       {!success && supplier && (
@@ -55,7 +57,7 @@ export function RequestPartnershipDialog({ open, onClose, supplier }: Props) {
               <div>
                 <p className="text-sm font-semibold text-[#0F172A]">{supplier.name}</p>
                 <p className="text-xs text-[#64748B]">
-                  {supplier.category.replace("_", " ")} · Reputation {supplier.reputation_score}
+                  {supplier.category} · Reputation {supplier.reputation_score}
                 </p>
               </div>
             </div>
@@ -65,11 +67,11 @@ export function RequestPartnershipDialog({ open, onClose, supplier }: Props) {
 
           <div className="flex justify-end gap-2">
             <Button variant="secondary" onClick={handleClose} disabled={request.isPending}>
-              Batal
+              Cancel
             </Button>
             <Button onClick={handleConfirm} disabled={request.isPending} className="gap-2">
               {request.isPending && <Loader2 className="h-4 w-4 animate-spin" />}
-              {request.isPending ? "Mengirim..." : "Kirim Permintaan"}
+              {request.isPending ? "Sending..." : "Send Request"}
             </Button>
           </div>
         </div>
@@ -77,7 +79,7 @@ export function RequestPartnershipDialog({ open, onClose, supplier }: Props) {
 
       {success && (
         <div className="flex justify-end">
-          <Button onClick={handleClose}>Tutup</Button>
+          <Button onClick={handleClose}>Close</Button>
         </div>
       )}
     </Dialog>

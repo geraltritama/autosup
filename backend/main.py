@@ -1346,7 +1346,13 @@ def get_suppliers(search: str = "", type: str = "", page: int = 1, limit: int = 
 
     # Try Supabase Auth Admin API first
     try:
-        auth_users = supabase.auth.admin.list_users()
+        auth_response = supabase.auth.admin.list_users()
+        # handle paginated response
+        if hasattr(auth_response, 'users'):
+            auth_users = auth_response.users
+        else:
+            auth_users = list(auth_response)
+        print(f"[suppliers] auth users found: {len(auth_users)}")
         for u in auth_users:
             meta = u.user_metadata or {}
             if meta.get("role") == "supplier":
@@ -1361,8 +1367,8 @@ def get_suppliers(search: str = "", type: str = "", page: int = 1, limit: int = 
                     "wallet_address": meta.get("wallet_address", ""),
                     "is_active": True,
                 })
-    except Exception:
-        pass
+    except Exception as e:
+        print(f"[suppliers] auth error: {e}")
 
     # Fallback: public.profiles table
     if not supplier_users:
@@ -1466,9 +1472,13 @@ def get_partnership_requests(status: str = ""):
 def create_partnership_request(body: dict):
     """Distributor sends partnership request to supplier."""
     supplier_id = body.get("supplier_id", "")
+    distributor_id = body.get("distributor_id", "")
+    distributor_name = body.get("distributor_name", "")
     try:
         res = supabase.table("partnerships").insert({
             "supplier_id": supplier_id,
+            "distributor_id": distributor_id,
+            "distributor_name": distributor_name or "Distributor",
             "status": "pending",
             "created_at": now_iso(),
         }).execute()
@@ -1479,7 +1489,7 @@ def create_partnership_request(body: dict):
                 "supplier_name": "",
                 "status": "pending",
                 "created_at": now_iso(),
-            }, message="Request kemitraan dikirim")
+            }, message="Partnership request sent")
     except:
         pass
     return success_response(data={
