@@ -1460,6 +1460,16 @@ def get_suppliers(search: str = "", type: str = "", page: int = 1, limit: int = 
         for u in auth_users_by_role("supplier")
     ]
 
+    # Always load partnerships to mark partnered suppliers correctly
+    try:
+        accepted = supabase.table("partnerships").select("supplier_name").in_("status", ["accepted", "approved"]).execute().data or []
+        partner_ids = {p.get("supplier_name", "") for p in accepted}
+        for s in supplier_users:
+            if s["supplier_id"] in partner_ids:
+                s["type"] = "partner"
+    except Exception:
+        pass
+
     # Filter by search
     if search:
         q = search.lower()
@@ -1467,20 +1477,9 @@ def get_suppliers(search: str = "", type: str = "", page: int = 1, limit: int = 
 
     # Filter by type
     if type == "partner":
-        accepted_ids = set()
-        try:
-            accepted = supabase.table("partnerships").select("supplier_name").eq("status", "accepted").execute().data or []
-            accepted_ids = {p.get("supplier_name", "") for p in accepted}
-        except Exception:
-            pass
-        if accepted_ids:
-            supplier_users = [s for s in supplier_users if s["supplier_id"] in accepted_ids]
-            for s in supplier_users:
-                s["type"] = "partner"
-        else:
-            supplier_users = []
+        supplier_users = [s for s in supplier_users if s["type"] == "partner"]
     elif type == "discover":
-        supplier_users = [s for s in supplier_users if s.get("type") != "partner"]
+        supplier_users = [s for s in supplier_users if s["type"] != "partner"]
 
     partners = [s for s in supplier_users if s.get("type") == "partner"]
     discover = [s for s in supplier_users if s.get("type") != "partner"]
