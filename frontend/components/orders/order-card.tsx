@@ -1,4 +1,4 @@
-import { ChevronRight, Eye, MapPin, RefreshCcw, Truck } from "lucide-react";
+import { Eye, MapPin, Truck } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { OrderProgress } from "@/components/orders/order-progress";
@@ -18,17 +18,18 @@ export interface OrderCardData {
   }>;
   total_amount: number;
   status: OrderStatus;
+  escrow_status: "held" | "released" | "refunded";
   delivery_address: string;
   estimated_delivery: string;
+  shipping_info?: {
+    courier: string;
+    tracking_number: string;
+    shipped_at: string;
+    tracking_url?: string;
+  };
   created_at: string;
   updated_at: string;
 }
-
-const NEXT_STATUS: Partial<Record<OrderStatus, OrderStatus>> = {
-  pending: "processing",
-  processing: "shipping",
-  shipping: "delivered",
-};
 
 function formatCurrency(amount: number) {
   return new Intl.NumberFormat("id-ID", {
@@ -41,20 +42,18 @@ function formatCurrency(amount: number) {
 interface OrderCardProps {
   order: OrderCardData;
   userRole?: "distributor" | "supplier" | "retailer";
-  onUpdateStatus?: (orderId: string, status: OrderStatus) => void;
-  isUpdating?: boolean;
   onViewDetail?: (orderId: string) => void;
+  onShip?: (orderId: string) => void;
 }
 
-export function OrderCard({ order, userRole, onUpdateStatus, isUpdating, onViewDetail }: OrderCardProps) {
+export function OrderCard({ order, userRole, onViewDetail, onShip }: OrderCardProps) {
   const previewItems = order.items
     .slice(0, 2)
     .map((item) => `${item.item_name} (${item.qty} ${item.unit})`)
     .join(", ");
 
-  const nextStatus = NEXT_STATUS[order.status];
   const isTerminal = order.status === "delivered" || order.status === "cancelled";
-  const canUpdateStatus = userRole === "supplier" && !isTerminal && !!nextStatus;
+  const isSeller = order.seller.role === userRole;
 
   return (
     <Card className="rounded-2xl">
@@ -64,6 +63,14 @@ export function OrderCard({ order, userRole, onUpdateStatus, isUpdating, onViewD
             <div className="flex flex-wrap items-center gap-2">
               <p className="text-lg font-semibold text-[#0F172A]">{order.order_number}</p>
               <OrderStatusBadge status={order.status} />
+              {order.shipping_info && (
+                <div className="flex items-center gap-1.5 rounded-lg bg-[#F0F9FF] px-2.5 py-1.5 text-xs font-medium text-[#0284C7]">
+                  <Truck className="h-3.5 w-3.5" />
+                  <span>{order.shipping_info.courier}</span>
+                  <span className="text-[#94A3B8]">·</span>
+                  <span className="font-mono">{order.shipping_info.tracking_number}</span>
+                </div>
+              )}
             </div>
             <div className="grid gap-1 text-sm text-[#64748B]">
               <p>
@@ -125,17 +132,14 @@ export function OrderCard({ order, userRole, onUpdateStatus, isUpdating, onViewD
             View Details
           </Button>
 
-          {/* Supplier: update ke status berikutnya */}
-          {canUpdateStatus && (
+          {/* Seller: Kirim barang (input tracking info) */}
+          {isSeller && order.status === "processing" && (
             <Button
-              variant="secondary"
               className="gap-2"
-              disabled={isUpdating}
-              onClick={() => onUpdateStatus?.(order.order_id, nextStatus!)}
+              onClick={() => onShip?.(order.order_id)}
             >
-              <RefreshCcw className={`h-4 w-4 ${isUpdating ? "animate-spin" : ""}`} />
-              Mark as {nextStatus}
-              <ChevronRight className="h-3 w-3 opacity-60" />
+              <Truck className="h-4 w-4" />
+              Kirim
             </Button>
           )}
 
@@ -143,7 +147,7 @@ export function OrderCard({ order, userRole, onUpdateStatus, isUpdating, onViewD
           {order.status === "delivered" && (
             <Button variant="secondary" className="gap-2 text-[#22C55E]" disabled>
               <Truck className="h-4 w-4" />
-              Escrow released
+              Pembayaran selesai
             </Button>
           )}
 
