@@ -6,12 +6,20 @@ import {
   ArrowUpRight, 
   Loader2, 
   TrendingDown, 
-  TrendingUp 
+  TrendingUp,
+  Users,
+  LineChart,
+  BarChart3,
+  Package,
+  PackageCheck
 } from "lucide-react";
 import { InsightCard } from "@/components/dashboard/insight-card";
 import { PageErrorState } from "@/components/dashboard/page-error-state";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { TrendChart } from "@/components/demand/trend-chart";
+import { ProductComparisonChart } from "@/components/demand/product-comparison-chart";
 import { useDemandIntelligence } from "@/hooks/useDemand";
 import { useAuthStore } from "@/store/useAuthStore";
 
@@ -39,6 +47,8 @@ export default function DemandPage() {
   const rising = data?.top_rising ?? [];
   const declining = data?.declining ?? [];
   const insights = data?.insights ?? [];
+  const topSelling = data?.top_selling ?? [];
+  const productPerformance = data?.product_performance_by_distributor ?? [];
 
   const adaptedInsights = insights.map((i) => ({
     type: i.type,
@@ -97,48 +107,52 @@ export default function DemandPage() {
       {/* Main content */}
       {!isError && (
       <section className="grid gap-6 xl:grid-cols-[1.5fr_1fr]">
-        <div className="space-y-4">
-          <h2 className="text-lg font-semibold text-[#0F172A]">Overall Demand Trend</h2>
+        <div className="space-y-6">
+          {/* Demand Trend Chart */}
+          <div className="space-y-4">
+            <div className="flex items-center gap-2">
+              <LineChart className="h-5 w-5 text-[#2563EB]" />
+              <h2 className="text-lg font-semibold text-[#0F172A]">Overall Demand Trend</h2>
+            </div>
 
-          <Card className="rounded-2xl">
-            <CardContent className="pt-6">
-              {isLoading ? (
-                <div className="flex h-[300px] items-center justify-center">
-                  <Loader2 className="h-5 w-5 animate-spin text-[#94A3B8]" />
-                </div>
-              ) : (
-                <div className="relative h-[300px] w-full">
-                  <div className="absolute inset-0 flex items-end justify-between px-2 pb-6 pt-4">
-                    {/* Y-axis rough grid lines */}
-                    <div className="absolute inset-x-0 bottom-6 top-4 flex flex-col justify-between border-l border-[#E2E8F0]">
-                      <div className="w-full border-b border-dashed border-[#E2E8F0] opacity-50" />
-                      <div className="w-full border-b border-dashed border-[#E2E8F0] opacity-50" />
-                      <div className="w-full border-b border-dashed border-[#E2E8F0] opacity-50" />
-                      <div className="w-full border-b border-[#E2E8F0]" />
-                    </div>
-
-                    {trends.map((t, i) => {
-                      const maxVal = period === "monthly" ? 25000 : 8000;
-                      const hPct = Math.max(10, (t.total_volume / maxVal) * 100);
-
-                      return (
-                        <div key={i} className="relative z-10 flex h-full flex-col justify-end">
-                          <div className="flex w-12 items-end justify-center gap-1 sm:w-16">
-                            <div 
-                              className="w-full rounded-t-md bg-[#3B82F6] transition-all hover:bg-[#2563EB]" 
-                              style={{ height: `${hPct}%` }}
-                              title={`Volume: ${formatNumber(t.total_volume)}`}
-                            />
-                          </div>
-                          <p className="mt-2 text-center text-xs font-medium text-[#64748B]">{t.period}</p>
-                        </div>
-                      );
-                    })}
+            <Card className="rounded-2xl">
+              <CardContent className="pt-6">
+                {isLoading ? (
+                  <div className="flex h-[300px] items-center justify-center">
+                    <Loader2 className="h-5 w-5 animate-spin text-[#94A3B8]" />
                   </div>
-                </div>
-              )}
-            </CardContent>
-          </Card>
+                ) : (
+                  <TrendChart data={trends} period={period} />
+                )}
+              </CardContent>
+            </Card>
+          </div>
+
+          {/* Product Performance by Distributor */}
+          <div className="space-y-4">
+            <div className="flex items-center gap-2">
+              <Users className="h-5 w-5 text-[#2563EB]" />
+              <h2 className="text-lg font-semibold text-[#0F172A]">Product Performance by Distributor</h2>
+            </div>
+
+            <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+              {productPerformance.map((dist) => (
+                <Card key={dist.distributor_id} className="rounded-2xl">
+                  <CardHeader className="space-y-1 pb-3">
+                    <CardTitle className="text-sm font-semibold text-[#0F172A]">{dist.distributor_name}</CardTitle>
+                  </CardHeader>
+                  <CardContent className="space-y-3">
+                    {dist.products.slice(0, 3).map((prod, idx) => (
+                      <div key={idx} className="flex items-center justify-between text-sm">
+                        <span className="truncate text-[#64748B] flex-1">{prod.product_name}</span>
+                        <span className="font-medium text-[#0F172A]">{formatNumber(prod.quantity)} unit</span>
+                      </div>
+                    ))}
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
+          </div>
         </div>
 
         {/* Side panel */}
@@ -160,19 +174,30 @@ export default function DemandPage() {
               ) : rising.length === 0 ? (
                 <p className="text-sm text-[#64748B]">Tidak ada data.</p>
               ) : (
-                <div className="space-y-4">
-                  {rising.map((p) => (
-                    <div key={p.id} className="flex items-center justify-between border-b border-[#E2E8F0] pb-3 last:border-0 last:pb-0">
-                      <div>
-                        <p className="text-sm font-semibold text-[#0F172A]">{p.name}</p>
-                        <p className="mt-0.5 text-xs text-[#64748B]">{formatNumber(p.current_demand)} orders/period</p>
+                <div className="space-y-3">
+                  {rising.slice(0, 4).map((p) => {
+                    const maxDemand = Math.max(...rising.map((r) => r.current_demand));
+                    const barWidth = (p.current_demand / maxDemand) * 100;
+                    return (
+                      <div key={p.id} className="space-y-1">
+                        <div className="flex items-center justify-between text-sm">
+                          <span className="font-medium text-[#0F172A] truncate flex-1">{p.name}</span>
+                          <span className="text-xs text-[#64748B] ml-2">{formatNumber(p.current_demand)}</span>
+                        </div>
+                        <div className="h-2 w-full rounded-full bg-slate-100 overflow-hidden">
+                          <div 
+                            className="h-full rounded-full bg-[#22C55E] transition-all"
+                            style={{ width: `${barWidth}%` }}
+                          />
+                        </div>
+                        <div className="flex items-center gap-1">
+                          <Badge tone="success" className="text-[10px] py-0 h-5">
+                            +{p.growth_pct}%
+                          </Badge>
+                        </div>
                       </div>
-                      <Badge tone="success" className="gap-1">
-                        <ArrowUpRight className="h-3 w-3" />
-                        {p.growth_pct}%
-                      </Badge>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               )}
             </CardContent>
@@ -193,17 +218,62 @@ export default function DemandPage() {
               ) : declining.length === 0 ? (
                 <p className="text-sm text-[#64748B]">Tidak ada data.</p>
               ) : (
-                <div className="space-y-4">
-                  {declining.map((p) => (
-                    <div key={p.id} className="flex items-center justify-between border-b border-[#E2E8F0] pb-3 last:border-0 last:pb-0">
-                      <div>
-                        <p className="text-sm font-semibold text-[#0F172A]">{p.name}</p>
-                        <p className="mt-0.5 text-xs text-[#64748B]">{formatNumber(p.current_demand)} orders/period</p>
+                <div className="space-y-3">
+                  {declining.slice(0, 4).map((p) => {
+                    const maxDemand = Math.max(...declining.map((d) => d.current_demand));
+                    const barWidth = (p.current_demand / maxDemand) * 100;
+                    return (
+                      <div key={p.id} className="space-y-1">
+                        <div className="flex items-center justify-between text-sm">
+                          <span className="font-medium text-[#0F172A] truncate flex-1">{p.name}</span>
+                          <span className="text-xs text-[#64748B] ml-2">{formatNumber(p.current_demand)}</span>
+                        </div>
+                        <div className="h-2 w-full rounded-full bg-slate-100 overflow-hidden">
+                          <div 
+                            className="h-full rounded-full bg-[#EF4444] transition-all"
+                            style={{ width: `${barWidth}%` }}
+                          />
+                        </div>
+                        <div className="flex items-center gap-1">
+                          <Badge tone="danger" className="text-[10px] py-0 h-5">
+                            {Math.abs(p.growth_pct)}%
+                          </Badge>
+                        </div>
                       </div>
-                      <Badge tone="danger" className="gap-1">
-                        <ArrowDownRight className="h-3 w-3" />
-                        {Math.abs(p.growth_pct)}%
-                      </Badge>
+                    );
+                  })}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
+          {/* Top Selling Products */}
+          <Card className="rounded-2xl">
+            <CardHeader className="space-y-1 pb-4">
+              <div className="flex items-center gap-2">
+                <Package className="h-4 w-4 text-[#2563EB]" />
+                <CardTitle className="text-base">Most Ordered by Distributor</CardTitle>
+              </div>
+            </CardHeader>
+            <CardContent>
+              {isLoading ? (
+                <div className="flex justify-center py-4">
+                  <Loader2 className="h-5 w-5 animate-spin text-[#94A3B8]" />
+                </div>
+              ) : topSelling.length === 0 ? (
+                <p className="text-sm text-[#64748B]">Tidak ada data.</p>
+              ) : (
+                <div className="space-y-3">
+                  {topSelling.map((p, idx) => (
+                    <div key={p.id} className="flex items-center gap-3 border-b border-[#E2E8F0] pb-2 last:border-0 last:pb-0">
+                      <span className="flex h-6 w-6 items-center justify-center rounded-full bg-[#EFF6FF] text-xs font-semibold text-[#2563EB]">
+                        {idx + 1}
+                      </span>
+                      <div className="flex-1">
+                        <p className="text-sm font-medium text-[#0F172A]">{p.name}</p>
+                        <p className="text-xs text-[#64748B]">{p.category}</p>
+                      </div>
+                      <p className="text-sm font-semibold text-[#0F172A]">{formatNumber(p.current_demand)}</p>
                     </div>
                   ))}
                 </div>
