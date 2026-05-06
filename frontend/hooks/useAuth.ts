@@ -43,17 +43,21 @@ export function useLogin() {
     setError(null);
     try {
       const { data: res } = await api.post<ApiResponse<LoginResponseData>>("/auth/login", payload);
+      if (!res.success || !res.data) {
+        setError(res.message ?? "Login gagal. Periksa email dan password kamu.");
+        return;
+      }
       const { access_token, refresh_token, ...user } = res.data;
-      // Backend login doesn't return email — inject from payload
-      setAuth({ ...user, email: payload.email }, access_token, refresh_token);
+      setAuth({ ...user, email: user.email ?? payload.email }, access_token, refresh_token);
       router.push("/dashboard/dashboard");
     } catch (err: unknown) {
       const apiError = err as { response?: { data?: ApiResponse } };
       const code = apiError.response?.data?.error_code;
+      const msg = apiError.response?.data?.message;
       if (code === "CAPTCHA_FAILED" || code === "CAPTCHA_MISSING") {
         setError("Verifikasi gagal, coba lagi.");
       } else {
-        setError(apiError.response?.data?.message ?? "Login gagal. Periksa email dan password kamu.");
+        setError(msg ?? "Login gagal. Periksa email dan password kamu.");
       }
     } finally {
       setIsLoading(false);
@@ -81,14 +85,15 @@ export function useRegister() {
         return;
       }
       if (!res.data?.access_token) {
-        // Email confirmation required — not an error
-        setSuccessMessage("Registrasi berhasil! Cek email untuk konfirmasi, lalu login.");
+        // No auto-login token — email confirmation required
+        setSuccessMessage("Registrasi berhasil! Silakan login dengan akun yang sudah dibuat.");
         return;
       }
+      // Auto-login on register
       setAuth(
         {
           user_id: res.data.user_id,
-          email: res.data.email,
+          email: res.data.email ?? payload.email,
           role: res.data.role,
           full_name: payload.full_name,
           business_name: payload.business_name,
@@ -99,8 +104,7 @@ export function useRegister() {
       router.push("/dashboard/dashboard");
     } catch (err: unknown) {
       const apiError = err as { response?: { data?: ApiResponse } };
-      const msg = apiError.response?.data?.message;
-      setError(msg ?? "Registrasi gagal. Periksa koneksi atau coba lagi.");
+      setError(apiError.response?.data?.message ?? "Registrasi gagal. Periksa koneksi atau coba lagi.");
     } finally {
       setIsLoading(false);
     }

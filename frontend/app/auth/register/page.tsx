@@ -1,5 +1,5 @@
-import { ShieldEllipsis, Building2, TrendingUp, Clock } from "lucide-react";
-import Link from "next/link";
+import { ShieldEllipsis, Building2, TrendingUp } from "lucide-react";
+import { RegisterForm } from "@/components/auth/register-form";
 
 const highlights = [
   {
@@ -58,23 +58,7 @@ export default function RegisterPage() {
         </section>
 
         <div className="flex justify-center lg:justify-end">
-          <div className="w-full max-w-md rounded-2xl border border-[#E2E8F0] bg-white p-8 shadow-[0_1px_2px_rgba(15,23,42,0.04)] space-y-5">
-            <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-[#FEF9C3] text-[#CA8A04]">
-              <Clock className="h-5 w-5" />
-            </div>
-            <div className="space-y-2">
-              <h2 className="text-xl font-semibold text-[#0F172A]">Pendaftaran Sementara Ditutup</h2>
-              <p className="text-sm leading-6 text-[#64748B]">
-                Registrasi akun baru sedang tidak tersedia untuk sementara. Hubungi admin untuk mendapatkan akses.
-              </p>
-            </div>
-            <Link
-              href="/auth/login"
-              className="block w-full rounded-xl bg-[#0F172A] px-4 py-2.5 text-center text-sm font-medium text-white hover:bg-[#1E293B] transition-colors"
-            >
-              Kembali ke Login
-            </Link>
-          </div>
+          <RegisterForm />
         </div>
       </div>
     </main>
