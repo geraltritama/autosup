@@ -1472,33 +1472,26 @@ def get_partnership_requests(status: str = ""):
 def create_partnership_request(body: dict):
     """Distributor sends partnership request to supplier."""
     supplier_id = body.get("supplier_id", "")
-    distributor_id = body.get("distributor_id", "")
     distributor_name = body.get("distributor_name", "")
+    # partnerships table columns: retailir_name, supplier_name, status
     try:
         res = supabase.table("partnerships").insert({
-            "supplier_id": supplier_id,
-            "distributor_id": distributor_id,
-            "distributor_name": distributor_name or "Distributor",
+            "retailer_name": distributor_name or "Distributor",
+            "supplier_name": supplier_id,
             "status": "pending",
-            "created_at": now_iso(),
         }).execute()
         if res.data:
+            row = res.data[0]
             return success_response(data={
-                "request_id": res.data[0].get("id", ""),
+                "request_id": row.get("id", ""),
                 "supplier_id": supplier_id,
                 "supplier_name": "",
                 "status": "pending",
                 "created_at": now_iso(),
             }, message="Partnership request sent")
-    except:
-        pass
-    return success_response(data={
-        "request_id": f"req-{uuid.uuid4().hex[:8]}",
-        "supplier_id": supplier_id,
-        "supplier_name": "",
-        "status": "pending",
-        "created_at": now_iso(),
-    }, message="Request kemitraan dikirim")
+    except Exception as e:
+        print(f"[partnership] insert error: {e}")
+    return error_response("Failed to create partnership request.")
 
 
 @app.get("/suppliers/{supplier_id}/stock")

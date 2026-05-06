@@ -63,6 +63,9 @@ export default function SuppliersPage() {
   const [type, setType] = useState("");
   const [selectedSupplier, setSelectedSupplier] = useState<Supplier | null>(null);
   const [dialogOpen, setDialogOpen] = useState(false);
+  const [stockDialogOpen, setStockDialogOpen] = useState(false);
+  const [stockSupplier, setStockSupplier] = useState<Supplier | null>(null);
+  const [requestedIds, setRequestedIds] = useState<Set<string>>(new Set());
 
   const { data, isLoading, isError, refetch } = useSuppliers({ search, type });
 
@@ -157,7 +160,9 @@ export default function SuppliersPage() {
                 <SupplierCard
                   key={supplier.supplier_id}
                   supplier={supplier}
+                  isRequested={requestedIds.has(supplier.supplier_id)}
                   onRequestPartnership={role === "distributor" ? handleRequestPartnership : undefined}
+                  onViewStock={(s) => { setStockSupplier(s); setStockDialogOpen(true); }}
                 />
               ))}
             </div>
@@ -180,6 +185,17 @@ export default function SuppliersPage() {
           open={dialogOpen}
           onClose={() => setDialogOpen(false)}
           supplier={selectedSupplier}
+          onSuccess={(id) => setRequestedIds((prev) => new Set(prev).add(id))}
+        />
+      )}
+
+      {/* View stock dialog */}
+      {stockSupplier && (
+        <SupplierStockDialog
+          supplierId={stockSupplier.supplier_id}
+          supplierName={stockSupplier.name}
+          open={stockDialogOpen}
+          onClose={() => { setStockDialogOpen(false); setStockSupplier(null); }}
         />
       )}
     </main>

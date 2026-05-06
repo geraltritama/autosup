@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowUpRight, Building2, Clock3, Link2, Loader2, Wallet } from "lucide-react";
+import { ArrowUpRight, Building2, Clock3, Eye, Link2, Loader2, Package, Wallet } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -11,9 +11,11 @@ type Props = {
   supplier: Supplier;
   onRequestPartnership?: (supplier: Supplier) => void;
   isRequesting?: boolean;
+  isRequested?: boolean;
+  onViewStock?: (supplier: Supplier) => void;
 };
 
-export function SupplierCard({ supplier, onRequestPartnership, isRequesting }: Props) {
+export function SupplierCard({ supplier, onRequestPartnership, isRequesting, isRequested, onViewStock }: Props) {
   const isPartner = supplier.type === "partner";
 
   return (
@@ -85,12 +87,20 @@ export function SupplierCard({ supplier, onRequestPartnership, isRequesting }: P
         <div className="flex flex-wrap gap-3">
           {isPartner ? (
             <>
-              <Button className="gap-2">Create Order</Button>
+              <Button className="gap-2" onClick={() => onViewStock?.(supplier)}>
+                <Package className="h-4 w-4" />
+                View Stock
+              </Button>
               <Button variant="ghost" className="gap-2 text-[#22C55E]" disabled>
                 <Link2 className="h-4 w-4" />
                 Partnered
               </Button>
             </>
+          ) : isRequested ? (
+            <Button variant="secondary" className="gap-2" disabled>
+              <Clock3 className="h-4 w-4" />
+              Requested
+            </Button>
           ) : (
             <>
               <Button
