@@ -11,13 +11,13 @@ type Props = {
   open: boolean;
   onClose: () => void;
   supplier: Supplier | null;
+  onSuccess?: (supplierId: string) => void;
 };
 
-export function RequestPartnershipDialog({ open, onClose, supplier }: Props) {
+export function RequestPartnershipDialog({ open, onClose, supplier, onSuccess }: Props) {
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
   const request = useRequestPartnership();
-  const user = useAuthStore((s) => s.user);
 
   async function handleConfirm() {
     if (!supplier) return;
@@ -25,6 +25,7 @@ export function RequestPartnershipDialog({ open, onClose, supplier }: Props) {
     try {
       await request.mutateAsync(supplier.supplier_id);
       setSuccess(true);
+      onSuccess?.(supplier.supplier_id);
     } catch {
       setError("Failed to send request. Try again.");
     }
