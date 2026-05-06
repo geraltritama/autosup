@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { useScrollLock } from "@/hooks/useScrollLock";
 import {
   Building2,
   Loader2,
@@ -414,6 +415,7 @@ export default function RetailersPage() {
   const [status, setStatus] = useState<RetailerStatus | "">("");
   const [showAdd, setShowAdd] = useState(false);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  useScrollLock(!!selectedId);
 
   const { data, isLoading, isError, refetch } = useRetailers({
     search: search || undefined,

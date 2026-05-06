@@ -3,9 +3,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, type ApiResponse } from "@/lib/api";
 
-const USE_MOCK = process.env.NEXT_PUBLIC_USE_MOCK === "true";
-
-export type ShipmentStatus = "processing" | "in_transit" | "delivered" | "delayed";
+export type ShipmentStatus = "packed" | "dispatched" | "in_transit" | "delivered" | "delayed" | "failed";
 
 export type Shipment = {
   id: string;
@@ -32,36 +30,6 @@ export type LogisticsResponse = {
   partners: LogisticsPartner[];
 };
 
-const mockShipments: Shipment[] = [
-  {
-    id: "shp-001",
-    order_id: "ord-881",
-    retailer_name: "Toko Budi Jaya",
-    destination: "Jakarta Selatan",
-    status: "in_transit",
-    eta: new Date(Date.now() + 1000 * 60 * 60 * 2).toISOString(),
-    carrier: "GoBox Logistics",
-  },
-  {
-    id: "shp-002",
-    order_id: "ord-882",
-    retailer_name: "Cafe Senja",
-    destination: "Bandung",
-    status: "delayed",
-    eta: new Date(Date.now() + 1000 * 60 * 60 * 24).toISOString(),
-    carrier: "JNE Trucking",
-  },
-  {
-    id: "shp-003",
-    order_id: "ord-883",
-    retailer_name: "Restoran Nusantara",
-    destination: "Surabaya",
-    status: "processing",
-    eta: new Date(Date.now() + 1000 * 60 * 60 * 48).toISOString(),
-    carrier: "Deliveree",
-  },
-];
-
 export type OptimizeRouteResult = {
   shipment_id: string;
   new_eta: string;
@@ -72,16 +40,6 @@ export function useOptimizeRoute() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async (shipment_id: string): Promise<OptimizeRouteResult> => {
-      if (USE_MOCK) {
-        await new Promise((r) => setTimeout(r, 700));
-        const shp = mockShipments.find((s) => s.id === shipment_id);
-        if (shp) shp.status = "in_transit";
-        return {
-          shipment_id,
-          new_eta: new Date(Date.now() + 1000 * 60 * 60 * 4).toISOString(),
-          optimized: true,
-        };
-      }
       const { data } = await api.put<ApiResponse<OptimizeRouteResult>>(
         `/logistics/shipments/${shipment_id}/route`,
       );
@@ -97,20 +55,6 @@ export function useLogistics() {
   return useQuery({
     queryKey: ["logistics"],
     queryFn: async (): Promise<LogisticsResponse> => {
-      if (USE_MOCK) {
-        await new Promise((r) => setTimeout(r, 600));
-        return {
-          active_shipments: 42,
-          delayed_shipments: 3,
-          delivered_today: 15,
-          shipments: mockShipments,
-          partners: [
-            { id: "p1", name: "GoBox Logistics", reliability_score: 98, active_shipments: 12 },
-            { id: "p2", name: "Deliveree", reliability_score: 95, active_shipments: 8 },
-            { id: "p3", name: "JNE Trucking", reliability_score: 89, active_shipments: 22 },
-          ],
-        };
-      }
       const { data } = await api.get<ApiResponse<LogisticsResponse>>("/logistics/shipments");
       return data.data;
     },
