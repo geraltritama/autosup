@@ -34,7 +34,7 @@ export default function InventoryPage() {
   const [dialog, setDialog] = useState<DialogState>({ type: "closed" });
   const [restock, setRestock] = useState<RestockRecommendation | null>(null);
   const [orderOpen, setOrderOpen] = useState(false);
-  const [orderPrefill, setOrderPrefill] = useState<{ supplierId?: string; itemName?: string; qty?: number; unit?: string } | undefined>();
+  const [orderPrefill, setOrderPrefill] = useState<{ sellerId?: string; sellerType?: "supplier" | "distributor"; itemName?: string; qty?: number; unit?: string } | undefined>();
 
   const { data, isLoading, isError, refetch } = useInventory({ search, category, status });
   const restockMutation = useRestockRecommendation();
@@ -56,7 +56,8 @@ export default function InventoryPage() {
 
   function handleCreateOrder(rec: RestockRecommendation) {
     setOrderPrefill({
-      supplierId: rec.suggested_supplier?.supplier_id,
+      sellerId: rec.suggested_seller?.seller_id,
+      sellerType: rec.suggested_seller?.seller_type,
       itemName: rec.item_name,
       qty: rec.suggested_qty,
       unit: rec.suggested_unit,

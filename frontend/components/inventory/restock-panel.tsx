@@ -4,6 +4,7 @@ import { Sparkles, Star, Truck, X } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
+import { useAuthStore } from "@/store/useAuthStore";
 import type { RestockRecommendation } from "@/hooks/useInventory";
 
 const urgencyTone = { high: "danger", medium: "warning", low: "info" } as const;
@@ -16,6 +17,9 @@ type Props = {
 };
 
 export function RestockPanel({ recommendation: rec, onClose, onCreateOrder }: Props) {
+  const role = useAuthStore((s) => s.user?.role);
+  const sellerLabel = role === "retailer" ? "Suggested distributor" : role === "distributor" ? "Suggested supplier" : "Suggested partner";
+
   return (
     <Card className="rounded-2xl border-blue-100 bg-[linear-gradient(135deg,#EFF6FF_0%,#FFFFFF_70%)]">
       <CardContent className="p-5">
@@ -54,22 +58,22 @@ export function RestockPanel({ recommendation: rec, onClose, onCreateOrder }: Pr
             </p>
           </div>
 
-          {rec.suggested_supplier && (
+          {rec.suggested_seller && (
             <div className="rounded-xl border border-white/80 bg-white/70 p-3">
               <p className="text-xs font-medium uppercase tracking-[0.18em] text-[#64748B]">
-                Suggested supplier
+                {sellerLabel}
               </p>
               <p className="mt-1.5 text-sm font-semibold text-[#0F172A]">
-                {rec.suggested_supplier.name}
+                {rec.suggested_seller.name}
               </p>
               <div className="mt-1 flex items-center gap-3 text-xs text-[#64748B]">
                 <span className="flex items-center gap-1">
                   <Star className="h-3 w-3 text-[#F59E0B]" />
-                  {rec.suggested_supplier.reputation_score}
+                  {rec.suggested_seller.reputation_score}
                 </span>
                 <span className="flex items-center gap-1">
                   <Truck className="h-3 w-3" />
-                  {rec.suggested_supplier.estimated_delivery_days} hari
+                  {rec.suggested_seller.estimated_delivery_days} hari
                 </span>
               </div>
             </div>
@@ -80,7 +84,7 @@ export function RestockPanel({ recommendation: rec, onClose, onCreateOrder }: Pr
           <Button variant="secondary" onClick={onClose}>
             Tutup
           </Button>
-          {rec.suggested_supplier && (
+          {rec.suggested_seller && (
             <Button onClick={() => onCreateOrder(rec)} className="gap-2">
               <Truck className="h-4 w-4" />
               Buat Order
