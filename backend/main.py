@@ -502,15 +502,60 @@ def get_dashboard_summary(x_user_role: Optional[str] = Header(default=None)):
         role = x_user_role or "distributor"
         ai_alerts = [
             {"type": "restock_alert", "message": "Beberapa produk mendekati batas minimum stok.", "urgency": "high", "item_id": ""},
-            {"type": "cash_flow_recommendation", "message": "Jadwalkan ulang pembayaran untuk optimalkan cash flow.", "urgency": "medium", "item_id": ""},
         ]
+
+        # ── Real counts from partnerships ──────────────────────────────────
+        try:
+            partnerships = supabase.table("partnerships").select("*").execute().data or []
+            distributors = supabase.table("distributors").select("*").execute().data or []
+            retailers = supabase.table("retailers").select("*").execute().data or []
+            suppliers_list = supabase.table("suppliers").select("*").execute().data or []
+
+            # Also check profiles/users tables
+            try:
+                profiles = supabase.table("profiles").select("*").execute().data or []
+            except:
+                profiles = []
+
+            # Count by role from profiles if partnerships table is empty
+            if not partnerships:
+                supplier_profiles = [p for p in profiles if p.get("role") == "supplier"]
+                distributor_profiles = [p for p in profiles if p.get("role") == "distributor"]
+                retailer_profiles = [p for p in profiles if p.get("role") == "retailer"]
+            else:
+                supplier_profiles = []
+                distributor_profiles = []
+                retailer_profiles = []
+
+            # Partnership counts
+            active_partnerships = [p for p in partnerships if p.get("status") in ["accepted", "approved", "partner"]]
+            pending_partnerships = [p for p in partnerships if p.get("status") == "pending"]
+
+            supplier_partner_count = len(suppliers_list) + len(supplier_profiles) + len([p for p in active_partnerships if "supplier" in str(p.get("type", "")).lower()])
+            distributor_partner_count = len(distributors) + len(distributor_profiles) + len([p for p in active_partnerships if "distributor" in str(p.get("type", "")).lower()])
+            retailer_partner_count = len(retailers) + len(retailer_profiles) + len([p for p in active_partnerships if "retailer" in str(p.get("type", "")).lower()])
+            pending_supplier_requests = len([p for p in pending_partnerships if "supplier" in str(p.get("type", "")).lower()])
+            pending_retailer_requests = len([p for p in pending_partnerships if "retailer" in str(p.get("type", "")).lower()])
+
+            if supplier_partner_count == 0:
+                supplier_partner_count = 0
+            if distributor_partner_count == 0:
+                distributor_partner_count = 0
+            if retailer_partner_count == 0:
+                retailer_partner_count = 0
+        except:
+            supplier_partner_count = 0
+            distributor_partner_count = 0
+            retailer_partner_count = 0
+            pending_supplier_requests = 0
+            pending_retailer_requests = 0
 
         if role == "supplier":
             data = {
                 "role": "supplier",
                 "products": {"total_active": total_inv, "low_stock_count": low_stock, "out_of_stock_count": out_of_stock},
                 "orders": {"incoming_orders": pending, "processing": processing, "completed_this_month": completed},
-                "partners": {"distributor_count": 5, "pending_requests": 1},
+                "partners": {"distributor_count": distributor_partner_count, "pending_requests": pending_supplier_requests},
                 "ai_insights": ai_alerts,
             }
         elif role == "retailer":
@@ -520,9 +565,9 @@ def get_dashboard_summary(x_user_role: Optional[str] = Header(default=None)):
                 "orders": {"active_orders": processing, "pending_approval": pending, "in_transit": processing,
                            "completed_this_month": completed, "order_accuracy_rate": 97},
                 "spending": {"total_outstanding": 4800000, "monthly_spending": 12500000, "available_credit": 5000000,
-                             "upcoming_due_payments": 1, "payment_success_rate": 98},
-                "distributors": {"active_partnered": 4, "pending_requests": 1, "average_reliability_score": 91, "avg_delivery_time": 2},
-                "forecast_accuracy_pct": 84,
+                              "upcoming_due_payments": 1, "payment_success_rate": 98},
+                "distributors": {"active_partnered": distributor_partner_count, "pending_requests": 0, "average_reliability_score": 0, "avg_delivery_time": 0},
+                "forecast_accuracy_pct": 0,
                 "ai_insights": ai_alerts,
             }
         else:  # distributor
@@ -530,8 +575,8 @@ def get_dashboard_summary(x_user_role: Optional[str] = Header(default=None)):
                 "role": "distributor",
                 "inventory": {"total_items": total_inv, "low_stock_count": low_stock, "out_of_stock_count": out_of_stock},
                 "orders": {"active_orders": processing, "pending_orders": pending, "completed_this_month": completed},
-                "suppliers": {"partner_count": 8, "pending_requests": 2},
-                "retailers": {"partner_count": 24, "pending_requests": 3},
+                "suppliers": {"partner_count": supplier_partner_count, "pending_requests": pending_supplier_requests},
+                "retailers": {"partner_count": retailer_partner_count, "pending_requests": pending_retailer_requests},
                 "ai_insights": ai_alerts,
             }
 
