@@ -1,19 +1,22 @@
 # AUTOSUP Frontend — Context File
 
 > **Tujuan file ini:** Continuity antar sesi. Baca ini dulu sebelum mulai coding agar tidak re-explore dari nol.  
-> **Update terakhir:** 2026-04-29  
-> **Status project:** Dokumen selesai v2.0 · Kode MVP Core 5/14+ fitur  
-> **Progress terbaru:** `lib/mocks/orders.ts` ✅ · `hooks/useOrders.ts` ✅ · `orders/page.tsx` ✅ wired — next: order creation dialog
+> **Update terakhir:** 2026-05-05  
+> **Status project:** Dokumen selesai v3.0 · 3 role login (supplier, distributor, retailer) · Kode MVP Core 10/20+ fitur  
+> **Progress terbaru:** Semua roles implemented · `hooks/useOrders.ts` ✅ · `lib/mocks/orders.ts` ✅ · order creation dialog ✅ · analytics 3-role ✅ · partnerships 3-role ✅ · inventory restock 3-way ✅
 
 ---
 
 ## 1. Project Overview
 
-**AUTOSUP** adalah platform supply chain berbasis AI dan trust layer untuk UMKM. Dua role login:
+**AUTOSUP** adalah platform supply chain berbasis AI dan trust layer untuk UMKM. Tiga role login (3-tier supply chain):
+- `supplier` — penyedia barang. Kelola produk, proses incoming order dari distributor, pantau demand & partner.
 - `distributor` — bisnis yang beli dari supplier, jual ke retailer. Kelola stok, partner, order, kredit, payment, logistik, analytics.
-- `supplier` — penyedia barang. Kelola produk, proses incoming order, pantau demand & partner.
+- `retailer` — bisnis end-user (kafe, restoran, bakery, UMKM). Beli stok dari distributor, kelola inventory, order, payment, analytics.
 
-**Retailer & logistics partner = entitas yang dikelola distributor, bukan role login.**
+**Hierarki strict (MVP): Supplier → Distributor → Retailer → Consumer. Retailer TIDAK boleh order langsung dari supplier.**
+
+**Logistics partner = entitas yang dikelola distributor (bukan role login). `retailers/*` endpoint = CRM distributor, bukan akses retailer-as-login.**
 
 **Trust layer** (Partnership NFT Solana + Smart Escrow IDR + On-chain Reputation) dikelola backend, frontend hanya surface hasilnya (badge/status chip).
 
@@ -72,8 +75,7 @@ NEXT_PUBLIC_USE_MOCK=true   # toggle mock vs real API
 
 ### ⚠️ Ada UI, belum ada hook/API wiring
 
-- Orders page — UI ada (order-card, filter, progress), tapi data hardcoded, `useOrders.ts` masih kosong.
-- AI Restock → Create Order — button prefill sudah ada di restock-panel tapi flow belum tersambung ke order creation.
+- AI Restock → Create Order — `suggested_seller` prefill 3-way ada di `useInventory.ts`, perlu verify end-to-end flow ke order dialog.
 
 ### ❌ Belum ada (planned Core MVP v2.0)
 
@@ -93,7 +95,8 @@ NEXT_PUBLIC_USE_MOCK=true   # toggle mock vs real API
 - `app/dashboard/analytics/` — Supplier Analytics
 - `app/dashboard/settings/` — Settings
 
-**Missing hooks:** `useOrders.ts`, `useRetailers.ts`, `useCredit.ts`, `usePayments.ts`, `useLogistics.ts`, `useAnalytics.ts`, `useAiAgents.ts`, `useSettings.ts`
+**Missing hooks:** `useLogistics.ts`, `useSettings.ts`
+**Done hooks:** ~~`useOrders.ts`~~ ✅ · ~~`useRetailers.ts`~~ ✅ · ~~`useCredit.ts`~~ ✅ · ~~`usePayments.ts`~~ ✅ · ~~`useAnalytics.ts`~~ ✅ · ~~`useAiAgents.ts`~~ ✅
 
 **Missing mocks:** ~~`lib/mocks/orders.ts`~~ ✅, `lib/mocks/retailers.ts`, `lib/mocks/credit.ts`, `lib/mocks/payments.ts`, `lib/mocks/logistics.ts`, `lib/mocks/analytics.ts`, `lib/mocks/ai-agents.ts`, `lib/mocks/settings.ts`
 
@@ -255,7 +258,7 @@ if (USE_MOCK) {
 ## 7. Enum & Types (Fixed, Jangan Diubah)
 
 ```typescript
-type UserRole = "distributor" | "supplier";
+type UserRole = "supplier" | "distributor" | "retailer";
 
 type InventoryStatus = "in_stock" | "low_stock" | "out_of_stock";
 
@@ -376,9 +379,9 @@ Urut berdasarkan blocker impact:
 
 ### P0 — Blocker untuk banyak fitur lain
 
-1. **`hooks/useOrders.ts`** + **`lib/mocks/orders.ts`** — Order list, detail, create, status update. Semua page lain (payment, logistics, AI restock flow) depend on orders.
-2. **Order creation form** (`components/orders/order-form-dialog.tsx`) — Form: pilih supplier partner, items[], qty, price_per_unit, delivery_address, notes.
-3. **AI Restock → Create Order linkage** — Di `restock-panel.tsx` ada TODO: prefill order form dari recommendation (suggested_supplier, suggested_qty).
+1. ~~**`hooks/useOrders.ts`** + **`lib/mocks/orders.ts`**~~ ✅ DONE — `seller_id` + `seller_type` shape, 3-role order flow.
+2. ~~**Order creation form** (`components/orders/order-form-dialog.tsx`)~~ ✅ DONE — Retailer pilih distributor, distributor pilih supplier, `seller_id+seller_type` payload.
+3. **AI Restock → Create Order linkage** — `restock-panel.tsx` prefill sudah ada via `suggested_seller` 3-way, tapi end-to-end flow perlu verify.
 
 ### P1 — Core experience, berdiri sendiri
 

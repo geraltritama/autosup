@@ -628,10 +628,10 @@ Retailer manage internal stock untuk operasional bisnis (bahan baku kafe, packag
 ### 3C.3 Orders (Retailer)
 
 **Tujuan**
-Buat purchase order ke distributor (atau supplier langsung), pantau delivery, dan dapat AI purchasing optimization (combine orders untuk hemat biaya).
+Buat purchase order ke distributor, pantau delivery, dan dapat AI purchasing optimization (combine orders untuk hemat biaya).
 
 **User stories**
-- Sebagai retailer, saya ingin membuat order dengan memilih vendor (distributor partner atau supplier), item, qty, price_per_unit, delivery_address, notes.
+- Sebagai retailer, saya ingin membuat order dengan memilih vendor (distributor partner), item, qty, price_per_unit, delivery_address, notes.
 - Sebagai retailer, saya ingin lihat KPI: Total Orders, Pending Approval, In Transit, Completed, Order Accuracy Rate.
 - Sebagai retailer, saya ingin filter order by status, vendor, date range.
 - Sebagai retailer, saya ingin Delivery Tracking timeline (Processing → Shipped → In Transit → Delivered).
