@@ -1,9 +1,10 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   Bell,
   Building2,
+  Check,
   Key,
   Loader2,
   Lock,
@@ -14,6 +15,7 @@ import {
   Smartphone,
   User,
 } from "lucide-react";
+import { QRCodeSVG } from "qrcode.react";
 import { PageErrorState } from "@/components/dashboard/page-error-state";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -32,6 +34,7 @@ import {
   useSessionsSettings,
   useEnable2FA,
   useDisable2FA,
+  useVerify2FA,
 } from "@/hooks/useSettings";
 import { useAuthStore } from "@/store/useAuthStore";
 
@@ -59,9 +62,16 @@ function formatDate(iso: string) {
 
 function ProfileTab() {
   const { data, isLoading, isError, refetch } = useProfileSettings();
+  const authEmail = useAuthStore((s) => s.user?.email);
   const updateProfile = useUpdateProfile();
   const [form, setForm] = useState({ full_name: "", phone: "" });
   const [saved, setSaved] = useState(false);
+
+  useEffect(() => {
+    if (data) {
+      setForm({ full_name: data.full_name, phone: data.phone ?? "" });
+    }
+  }, [data]);
 
   if (isError) {
     return <PageErrorState message="Gagal memuat data profil" onRetry={() => refetch()} />;
@@ -77,16 +87,26 @@ function ProfileTab() {
 
   function handleSave(e: React.FormEvent) {
     e.preventDefault();
-    const body: { full_name?: string; phone?: string } = {};
-    if (form.full_name) body.full_name = form.full_name;
-    if (form.phone) body.phone = form.phone;
-    updateProfile.mutate(body, {
-      onSuccess: () => {
-        setSaved(true);
-        setTimeout(() => setSaved(false), 3000);
+    updateProfile.mutate(
+      { full_name: form.full_name, phone: form.phone },
+      {
+        onSuccess: () => {
+          const user = useAuthStore.getState().user;
+          if (user && form.full_name) {
+            useAuthStore.getState().setAuth(
+              { ...user, full_name: form.full_name },
+              useAuthStore.getState().accessToken!,
+              useAuthStore.getState().refreshToken!,
+            );
+          }
+          setSaved(true);
+          setTimeout(() => setSaved(false), 3000);
+        },
       },
-    });
+    );
   }
+
+  const displayEmail = data.email || authEmail || "";
 
   return (
     <form onSubmit={handleSave} className="space-y-6">
@@ -101,7 +121,7 @@ function ProfileTab() {
             </div>
             <div>
               <p className="text-sm font-semibold text-[#0F172A]">{data.full_name}</p>
-              <p className="text-xs text-[#64748B]">{data.email}</p>
+              <p className="text-xs text-[#64748B]">{displayEmail}</p>
               <Badge tone="info" className="mt-1 capitalize">
                 {data.role}
               </Badge>
@@ -110,24 +130,26 @@ function ProfileTab() {
 
           <div className="grid gap-4 sm:grid-cols-2">
             <div className="space-y-1.5">
-              <Label>Nama Lengkap</Label>
+              <Label htmlFor="full_name">Nama Lengkap</Label>
               <Input
-                defaultValue={data.full_name}
+                id="full_name"
+                value={form.full_name}
                 onChange={(e) => setForm((f) => ({ ...f, full_name: e.target.value }))}
-                placeholder={data.full_name}
+                placeholder="Masukkan nama lengkap"
               />
             </div>
             <div className="space-y-1.5">
-              <Label>No. Telepon</Label>
+              <Label htmlFor="phone">No. Telepon</Label>
               <Input
-                defaultValue={data.phone}
+                id="phone"
+                value={form.phone}
                 onChange={(e) => setForm((f) => ({ ...f, phone: e.target.value }))}
-                placeholder={data.phone}
+                placeholder="Masukkan no. telepon"
               />
             </div>
             <div className="space-y-1.5">
-              <Label>Email</Label>
-              <Input value={data.email} disabled className="text-[#94A3B8]" />
+              <Label htmlFor="email">Email</Label>
+              <Input id="email" value={displayEmail} disabled className="text-[#94A3B8]" />
               <p className="text-xs text-[#94A3B8]">Email tidak dapat diubah.</p>
             </div>
           </div>
@@ -158,6 +180,21 @@ function BusinessTab() {
   const { data, isLoading, isError, refetch } = useBusinessSettings(role);
   const updateBusiness = useUpdateBusiness();
   const [saved, setSaved] = useState(false);
+  const [form, setForm] = useState({
+    business_name: "",
+    business_type: "",
+    tax_id: "",
+  });
+
+  useEffect(() => {
+    if (data) {
+      setForm({
+        business_name: data.business_name ?? "",
+        business_type: data.business_type ?? "",
+        tax_id: data.tax_id ?? "",
+      });
+    }
+  }, [data]);
 
   if (isError) {
     return <PageErrorState message="Gagal memuat data bisnis" onRetry={() => refetch()} />;
@@ -173,15 +210,12 @@ function BusinessTab() {
 
   function handleSave(e: React.FormEvent) {
     e.preventDefault();
-    updateBusiness.mutate(
-      {},
-      {
-        onSuccess: () => {
-          setSaved(true);
-          setTimeout(() => setSaved(false), 3000);
-        },
+    updateBusiness.mutate(form, {
+      onSuccess: () => {
+        setSaved(true);
+        setTimeout(() => setSaved(false), 3000);
       },
-    );
+    });
   }
 
   return (
@@ -193,16 +227,31 @@ function BusinessTab() {
         <CardContent className="space-y-4">
           <div className="grid gap-4 sm:grid-cols-2">
             <div className="space-y-1.5">
-              <Label>Nama Bisnis</Label>
-              <Input defaultValue={data.business_name} readOnly className="bg-[#F8FAFC]" />
+              <Label htmlFor="business_name">Nama Bisnis</Label>
+              <Input
+                id="business_name"
+                value={form.business_name}
+                onChange={(e) => setForm((f) => ({ ...f, business_name: e.target.value }))}
+                placeholder="Masukkan nama bisnis"
+              />
             </div>
             <div className="space-y-1.5">
-              <Label>Jenis Bisnis</Label>
-              <Input defaultValue={data.business_type} readOnly className="bg-[#F8FAFC]" />
+              <Label htmlFor="business_type">Jenis Bisnis</Label>
+              <Input
+                id="business_type"
+                value={form.business_type}
+                onChange={(e) => setForm((f) => ({ ...f, business_type: e.target.value }))}
+                placeholder="Masukkan jenis bisnis"
+              />
             </div>
             <div className="space-y-1.5">
-              <Label>NPWP</Label>
-              <Input defaultValue={data.tax_id} readOnly className="bg-[#F8FAFC]" />
+              <Label htmlFor="tax_id">NPWP</Label>
+              <Input
+                id="tax_id"
+                value={form.tax_id}
+                onChange={(e) => setForm((f) => ({ ...f, tax_id: e.target.value }))}
+                placeholder="Masukkan NPWP"
+              />
             </div>
             {data.preferred_currency && (
               <div className="space-y-1.5">
@@ -213,16 +262,11 @@ function BusinessTab() {
             {data.operational_timezone && (
               <div className="space-y-1.5">
                 <Label>Timezone</Label>
-                <Input
-                  defaultValue={data.operational_timezone}
-                  readOnly
-                  className="bg-[#F8FAFC]"
-                />
+                <Input defaultValue={data.operational_timezone} readOnly className="bg-[#F8FAFC]" />
               </div>
             )}
           </div>
 
-          {/* Distributor: warehouse + service regions */}
           {data.warehouse_locations && data.warehouse_locations.length > 0 && (
             <div className="space-y-2 pt-2">
               <Label>Lokasi Gudang</Label>
@@ -253,7 +297,6 @@ function BusinessTab() {
             </div>
           )}
 
-          {/* Retailer: branch + billing */}
           {data.branch_locations && data.branch_locations.length > 0 && (
             <div className="space-y-2 pt-2">
               <Label>Lokasi Cabang</Label>
@@ -353,16 +396,28 @@ function NotificationsTab() {
   const notifData = data;
 
   function handleChannelToggle(key: ChannelKey) {
+    const newValue = !notifData.channels[key];
     updateNotifications.mutate(
-      { channels: { ...notifData.channels, [key]: !notifData.channels[key] } },
-      { onSuccess: () => { setSaved(true); setTimeout(() => setSaved(false), 2000); } },
+      { channels: { ...notifData.channels, [key]: newValue } },
+      {
+        onSuccess: () => {
+          setSaved(true);
+          setTimeout(() => setSaved(false), 2000);
+        },
+      },
     );
   }
 
   function handlePrefToggle(key: PrefKey) {
+    const newValue = !notifData.preferences[key];
     updateNotifications.mutate(
-      { preferences: { ...notifData.preferences, [key]: !notifData.preferences[key] } },
-      { onSuccess: () => { setSaved(true); setTimeout(() => setSaved(false), 2000); } },
+      { preferences: { ...notifData.preferences, [key]: newValue } },
+      {
+        onSuccess: () => {
+          setSaved(true);
+          setTimeout(() => setSaved(false), 2000);
+        },
+      },
     );
   }
 
@@ -385,6 +440,7 @@ function NotificationsTab() {
               <Switch
                 checked={notifData.channels[key]}
                 onCheckedChange={() => handleChannelToggle(key)}
+                disabled={updateNotifications.isPending}
               />
             </div>
           ))}
@@ -403,6 +459,7 @@ function NotificationsTab() {
                 <Switch
                   checked={notifData.preferences[key]}
                   onCheckedChange={() => handlePrefToggle(key)}
+                  disabled={updateNotifications.isPending}
                 />
               </div>
             ),
@@ -418,13 +475,30 @@ function NotificationsTab() {
 function SecurityTab() {
   const { data: sessions, isLoading: loadingSessions, isError: isSessionsError, refetch: refetchSessions } = useSessionsSettings();
   const enable2FA = useEnable2FA();
+  const verify2FA = useVerify2FA();
   const disable2FA = useDisable2FA();
   const [totpCode, setTotpCode] = useState("");
   const [qrData, setQrData] = useState<{ secret: string; qr_code_url: string } | null>(null);
+  const [verified2FA, setVerified2FA] = useState(false);
 
   function handleEnable() {
     enable2FA.mutate(undefined, {
-      onSuccess: (result) => setQrData(result),
+      onSuccess: (result) => {
+        setQrData(result);
+        setVerified2FA(false);
+      },
+    });
+  }
+
+  function handleVerify(e: React.FormEvent) {
+    e.preventDefault();
+    verify2FA.mutate(totpCode, {
+      onSuccess: () => {
+        setTotpCode("");
+        setQrData(null);
+        setVerified2FA(true);
+        setTimeout(() => setVerified2FA(false), 3000);
+      },
     });
   }
 
@@ -449,6 +523,13 @@ function SecurityTab() {
           </div>
         </CardHeader>
         <CardContent className="space-y-4">
+          {verified2FA && (
+            <div className="flex items-center gap-2 rounded-xl border border-green-200 bg-green-50 px-4 py-3 text-sm text-[#22C55E]">
+              <Check className="h-4 w-4" />
+              2FA berhasil diverifikasi dan diaktifkan!
+            </div>
+          )}
+
           {!qrData ? (
             <div className="flex items-center justify-between">
               <p className="text-sm text-[#64748B]">
@@ -475,8 +556,8 @@ function SecurityTab() {
                 <p className="text-sm font-medium text-[#0F172A]">
                   Scan QR code ini dengan aplikasi authenticator Anda:
                 </p>
-                <div className="flex h-32 w-32 items-center justify-center rounded-xl border border-[#E2E8F0] bg-white">
-                  <Key className="h-12 w-12 text-[#94A3B8]" />
+                <div className="flex h-48 w-48 items-center justify-center rounded-xl border border-[#E2E8F0] bg-white mx-auto">
+                  <QRCodeSVG value={qrData.qr_code_url} size={176} />
                 </div>
                 <div>
                   <p className="text-xs text-[#64748B] mb-1">Secret key (backup):</p>
@@ -485,24 +566,34 @@ function SecurityTab() {
                   </code>
                 </div>
               </div>
-              <form onSubmit={handleDisable} className="flex gap-2">
+              <form onSubmit={handleVerify} className="flex gap-2">
                 <Input
                   value={totpCode}
                   onChange={(e) => setTotpCode(e.target.value)}
-                  placeholder="Masukkan kode TOTP untuk nonaktifkan"
+                  placeholder="Masukkan kode TOTP dari authenticator"
                   className="flex-1"
                 />
                 <Button
                   type="submit"
-                  variant="outline"
-                  disabled={disable2FA.isPending || !totpCode}
-                  className="text-[#EF4444] hover:text-[#EF4444]"
+                  disabled={verify2FA.isPending || !totpCode}
+                  className="gap-2"
                 >
-                  {disable2FA.isPending ? (
+                  {verify2FA.isPending ? (
                     <Loader2 className="h-4 w-4 animate-spin" />
                   ) : (
-                    "Nonaktifkan"
+                    <Check className="h-4 w-4" />
                   )}
+                  Verifikasi
+                </Button>
+              </form>
+              <form onSubmit={handleDisable}>
+                <Button
+                  type="submit"
+                  variant="outline"
+                  disabled={disable2FA.isPending}
+                  className="text-[#94A3B8] hover:text-[#EF4444]"
+                >
+                  Batal & Nonaktifkan
                 </Button>
               </form>
             </div>
@@ -604,7 +695,6 @@ function IntegrationsTab() {
 
   return (
     <div className="space-y-6">
-      {/* Wallet */}
       <Card className="rounded-2xl">
         <CardHeader>
           <CardTitle className="text-base">Web3 Wallet</CardTitle>
@@ -628,7 +718,6 @@ function IntegrationsTab() {
         </CardContent>
       </Card>
 
-      {/* Integrations */}
       <Card className="rounded-2xl">
         <CardHeader>
           <CardTitle className="text-base">Sistem Eksternal</CardTitle>
@@ -662,7 +751,6 @@ function IntegrationsTab() {
         </CardContent>
       </Card>
 
-      {/* API Keys */}
       <Card className="rounded-2xl">
         <CardHeader>
           <div className="flex items-center justify-between">
@@ -712,7 +800,6 @@ export default function SettingsPage() {
 
   return (
     <main className="space-y-6 px-6 py-6 lg:px-8 lg:py-8">
-      {/* Header */}
       <section className="flex flex-col gap-4 rounded-3xl border border-[#E2E8F0] bg-white px-6 py-6 shadow-[0_1px_2px_rgba(15,23,42,0.04)]">
         <div className="space-y-3">
           <Badge tone="neutral">Pengaturan</Badge>
@@ -727,7 +814,6 @@ export default function SettingsPage() {
       </section>
 
       <div className="flex gap-6 flex-col lg:flex-row">
-        {/* Sidebar nav */}
         <nav className="flex lg:flex-col gap-1 overflow-x-auto lg:w-52 flex-shrink-0">
           {tabs.map((tab) => {
             const Icon = tab.icon;
@@ -748,7 +834,6 @@ export default function SettingsPage() {
           })}
         </nav>
 
-        {/* Content */}
         <div className="flex-1 min-w-0">
           {activeTab === "profile" && <ProfileTab />}
           {activeTab === "business" && <BusinessTab />}

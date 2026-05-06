@@ -215,7 +215,9 @@ export function useUpdateProfile() {
       const { data } = await api.put<ApiResponse<ProfileSettings>>("/settings/profile", body);
       return data.data;
     },
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["settings", "profile"] }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["settings", "profile"] });
+    },
   });
 }
 
@@ -282,6 +284,28 @@ export function useUpdateNotifications() {
       );
       return data.data;
     },
+    onMutate: async (body) => {
+      await qc.cancelQueries({ queryKey: ["settings", "notifications"] });
+      const prev = qc.getQueryData<NotificationSettings>(["settings", "notifications"]);
+      if (prev && body.channels) {
+        qc.setQueryData(["settings", "notifications"], {
+          ...prev,
+          channels: { ...prev.channels, ...body.channels },
+        });
+      }
+      if (prev && body.preferences) {
+        qc.setQueryData(["settings", "notifications"], {
+          ...prev,
+          preferences: { ...prev.preferences, ...body.preferences },
+        });
+      }
+      return { prev };
+    },
+    onError: (_err, _vars, context) => {
+      if (context?.prev) {
+        qc.setQueryData(["settings", "notifications"], context.prev);
+      }
+    },
     onSuccess: () => qc.invalidateQueries({ queryKey: ["settings", "notifications"] }),
   });
 }
@@ -334,6 +358,20 @@ export function useEnable2FA() {
       );
       return data.data;
     },
+  });
+}
+
+export function useVerify2FA() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (totp_code: string): Promise<void> => {
+      if (USE_MOCK) {
+        await new Promise((r) => setTimeout(r, 600));
+        return;
+      }
+      await api.post("/settings/security/2fa/verify", { totp_code });
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["settings", "sessions"] }),
   });
 }
 
