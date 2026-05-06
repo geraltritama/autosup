@@ -32,8 +32,6 @@ type RegisterResponseData = {
   access_token: string;
 };
 
-const USE_MOCK = process.env.NEXT_PUBLIC_USE_MOCK === "true";
-
 export function useLogin() {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -44,26 +42,10 @@ export function useLogin() {
     setIsLoading(true);
     setError(null);
     try {
-      if (USE_MOCK) {
-        await new Promise((resolve) => setTimeout(resolve, 800)); // Simulate delay
-        setAuth(
-          {
-            user_id: "mock-user-123",
-            email: payload.email,
-            role: "distributor", // Default for mock, could be inferred if needed
-            full_name: "Mock User",
-            business_name: "Mock Business",
-          },
-          "mock-access-token",
-          "mock-refresh-token",
-        );
-        router.push("/dashboard/dashboard");
-        return;
-      }
-
       const { data: res } = await api.post<ApiResponse<LoginResponseData>>("/auth/login", payload);
       const { access_token, refresh_token, ...user } = res.data;
-      setAuth(user, access_token, refresh_token);
+      // Backend login doesn't return email — inject from payload
+      setAuth({ ...user, email: payload.email }, access_token, refresh_token);
       router.push("/dashboard/dashboard");
     } catch (err: unknown) {
       const apiError = err as { response?: { data?: ApiResponse } };
@@ -84,33 +66,25 @@ export function useLogin() {
 export function useRegister() {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const { setAuth } = useAuthStore();
   const router = useRouter();
 
   async function register(payload: RegisterPayload) {
     setIsLoading(true);
     setError(null);
+    setSuccessMessage(null);
     try {
-      if (USE_MOCK) {
-        await new Promise((resolve) => setTimeout(resolve, 800)); // Simulate delay
-        setAuth(
-          {
-            user_id: "mock-user-456",
-            email: payload.email,
-            role: payload.role,
-            full_name: payload.full_name,
-            business_name: payload.business_name,
-          },
-          "mock-access-token-reg",
-          "", // no refresh token on register
-        );
-        router.push("/dashboard/dashboard");
+      const { data: res } = await api.post<ApiResponse<RegisterResponseData>>("/auth/register", payload);
+      if (!res.success) {
+        setError(res.message ?? "Registrasi gagal. Coba lagi.");
         return;
       }
-
-      const { data: res } = await api.post<ApiResponse<RegisterResponseData>>("/auth/register", payload);
-      // Register returns access_token but not refresh_token — redirect to login for full session
-      // Store partial so user lands logged in; refresh_token will be populated on next login
+      if (!res.data?.access_token) {
+        // Email confirmation required — not an error
+        setSuccessMessage("Registrasi berhasil! Cek email untuk konfirmasi, lalu login.");
+        return;
+      }
       setAuth(
         {
           user_id: res.data.user_id,
@@ -125,13 +99,14 @@ export function useRegister() {
       router.push("/dashboard/dashboard");
     } catch (err: unknown) {
       const apiError = err as { response?: { data?: ApiResponse } };
-      setError(apiError.response?.data?.message ?? "Registrasi gagal. Coba lagi.");
+      const msg = apiError.response?.data?.message;
+      setError(msg ?? "Registrasi gagal. Periksa koneksi atau coba lagi.");
     } finally {
       setIsLoading(false);
     }
   }
 
-  return { register, isLoading, error };
+  return { register, isLoading, error, successMessage };
 }
 
 export function useLogout() {
@@ -140,9 +115,8 @@ export function useLogout() {
 
   async function logout() {
     try {
-      if (refreshToken) {
-        await api.post("/auth/logout", { refresh_token: refreshToken });
-      }
+      await api.post("/auth/logout");
+      void refreshToken; // kept in scope for clearAuth below
     } catch {
       // silently fail — clear local state regardless
     } finally {
