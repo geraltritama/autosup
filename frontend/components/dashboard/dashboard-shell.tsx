@@ -49,7 +49,7 @@ function getNavigation(role?: UserRole) {
   if (role === "retailer") {
     return [
       ...base,
-      { href: "/dashboard/suppliers", label: "Vendors", icon: BarChart3 },
+      { href: "/dashboard/distributors", label: "Distributors", icon: BarChart3 },
       { href: "/dashboard/partnerships", label: "Partnership", icon: Handshake },
       { href: "/dashboard/payment", label: "Payment", icon: Wallet },
       { href: "/dashboard/ai-agents", label: "AI Agents", icon: Bot },
@@ -110,7 +110,7 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
                   className={cn(
                     "flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition",
                     isActive
-                      ? "bg-[#EFF6FF] text-[#2563EB]"
+                      ? "bg-[#155DFC] text-white"
                       : "text-[#64748B] hover:bg-slate-50 hover:text-[#0F172A]",
                   )}
                 >
