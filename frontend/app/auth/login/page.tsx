@@ -1,30 +1,30 @@
-import { ShieldEllipsis, Building2, TrendingUp, ArrowRight } from "lucide-react";
+import { ShieldEllipsis, Building2, TrendingUp } from "lucide-react";
 import { LoginForm } from "@/components/auth/login-form";
 
 const highlights = [
   {
     icon: TrendingUp,
     title: "Demand-first operations",
-    description: "Pantau demand, fulfillment, dan readiness partner dari satu workspace yang terintegrasi.",
+    description: "Monitor demand, fulfillment, and partner readiness from one integrated workspace.",
   },
   {
     icon: Building2,
     title: "Multi-role workspace",
-    description: "Dashboard yang mengenali peran kamu — supplier, distributor, atau retailer — dengan data yang relevan.",
+    description: "Role-aware dashboards built for suppliers, distributors, and retailers — each with relevant data.",
   },
   {
     icon: ShieldEllipsis,
     title: "Trust layer ready",
-    description: "Partnership, escrow, dan reputasi partner ditampilkan sebagai hasil sistem. Tanpa kerumitan crypto.",
+    description: "Partnerships, escrow, and partner reputation surfaced as system results. No crypto complexity.",
   },
 ];
 
 export default function LoginPage() {
   return (
-    <main className="min-h-screen bg-gradient-to-br from-[#F8FAFC] via-white to-[#EFF6FF]">
-      <div className="mx-auto grid min-h-screen max-w-7xl items-center gap-16 px-6 py-12 lg:grid-cols-[1fr_448px] lg:px-10">
+    <main className="h-screen overflow-hidden bg-gradient-to-br from-[#F8FAFC] via-white to-[#EFF6FF]">
+      <div className="mx-auto grid h-screen max-w-7xl items-center gap-16 px-6 lg:grid-cols-[1fr_448px] lg:px-10">
         {/* ── Left: Hero + Features ────────────────────────────────────── */}
-        <section className="space-y-14">
+        <section className="space-y-10">
           {/* Headline */}
           <div className="space-y-6">
             <span className="inline-flex items-center gap-2 rounded-full border border-[#BFDBFE] bg-[#EFF6FF] px-4 py-1.5 text-xs font-semibold uppercase tracking-[0.22em] text-[#2563EB]">
@@ -34,11 +34,11 @@ export default function LoginPage() {
 
             <div className="max-w-2xl space-y-5">
               <h1 className="text-[2.75rem] font-bold leading-[1.15] tracking-tight text-[#0F172A] md:text-[3.5rem]">
-                Supply chain workspace yang dibuat untuk{" "}
-                <span className="text-[#2563EB]">keputusan operasional</span> harian.
+                A supply chain workspace built for{" "}
+                <span className="text-[#2563EB]">daily operational</span> decisions.
               </h1>
-              <p className="max-w-xl text-lg leading-8 text-[#64748B]">
-                Mulai dari login yang bersih dan cepat, lalu lanjut ke dashboard yang data-driven, terstruktur, dan siap berkembang ke seluruh flow AUTOSUP.
+              <p className="max-w-lg text-base leading-7 text-[#64748B]">
+                One platform to monitor inventory, manage orders, track partnerships, and move faster — without the noise.
               </p>
             </div>
           </div>
@@ -60,23 +60,6 @@ export default function LoginPage() {
                 </div>
               );
             })}
-          </div>
-
-          {/* CTA section */}
-          <div className="rounded-2xl border border-[#BFDBFE] bg-gradient-to-r from-[#EFF6FF] to-[#DBEAFE] p-6 sm:p-8">
-            <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-              <div className="space-y-1.5">
-                <h2 className="text-lg font-semibold text-[#0F172A]">Enter AUTOSUP</h2>
-                <p className="text-sm leading-6 text-[#475569] max-w-md">
-                  Akses dashboard operasional yang dirancang untuk supplier, distributor, dan retailer. Satu platform untuk seluruh supply chain kamu.
-                </p>
-              </div>
-              <div className="hidden sm:block">
-                <div className="flex h-10 w-10 items-center justify-center rounded-full bg-[#2563EB] text-white">
-                  <ArrowRight className="h-4 w-4" />
-                </div>
-              </div>
-            </div>
           </div>
         </section>
 
