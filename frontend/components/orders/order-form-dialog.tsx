@@ -7,6 +7,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useCreateOrder, type CreateOrderPayload } from "@/hooks/useOrders";
 import { useSuppliers } from "@/hooks/useSuppliers";
+import { useDistributors } from "@/hooks/useDistributors";
+import { useAuthStore } from "@/store/useAuthStore";
 
 const UNITS = ["kg", "liter", "pcs", "bottle", "box", "karung", "dus"];
 
@@ -25,7 +27,8 @@ const emptyItem = (): OrderItem => ({
 });
 
 type OrderPrefill = {
-  supplierId?: string;
+  sellerId?: string;
+  sellerType?: "supplier" | "distributor";
   itemName?: string;
   qty?: number;
   unit?: string;
@@ -46,7 +49,8 @@ function formatCurrency(amount: number) {
 }
 
 export function OrderFormDialog({ open, onClose, prefill }: Props) {
-  const [supplierId, setSupplierId] = useState("");
+  const role = useAuthStore((s) => s.user?.role);
+  const [sellerId, setSellerId] = useState("");
   const [items, setItems] = useState<OrderItem[]>([emptyItem()]);
   const [deliveryAddress, setDeliveryAddress] = useState("");
   const [notes, setNotes] = useState("");
@@ -55,13 +59,26 @@ export function OrderFormDialog({ open, onClose, prefill }: Props) {
   const create = useCreateOrder();
   const isLoading = create.isPending;
 
+  const isRetailer = role === "retailer";
+  const sellerType = isRetailer ? "distributor" as const : "supplier" as const;
+
   const { data: suppliersData, isLoading: suppliersLoading } = useSuppliers({ type: "partner" });
-  const partners = suppliersData?.suppliers ?? [];
+  const { data: distributorsData, isLoading: distributorsLoading } = useDistributors({ type: "partner" });
+
+  const partners = isRetailer
+    ? (distributorsData?.distributors ?? [])
+    : (suppliersData?.suppliers ?? []);
+  const partnersLoading = isRetailer ? distributorsLoading : suppliersLoading;
+  const sellerLabel = isRetailer ? "Distributor partner" : "Supplier partner";
+  const sellerLoading = isRetailer ? "Memuat distributor..." : "Memuat supplier...";
+  const sellerEmpty = isRetailer
+    ? "Belum ada distributor partner. Tambahkan partner di halaman Distributors terlebih dahulu."
+    : "Belum ada supplier partner. Tambahkan partner di halaman Suppliers terlebih dahulu.";
 
   useEffect(() => {
     if (!open) return;
     const t = setTimeout(() => {
-      setSupplierId(prefill?.supplierId ?? "");
+      setSellerId(prefill?.sellerId ?? "");
       setItems([
         prefill?.itemName
           ? { item_name: prefill.itemName, qty: prefill.qty ?? 1, unit: prefill.unit ?? "kg", price_per_unit: 0 }
@@ -89,7 +106,7 @@ export function OrderFormDialog({ open, onClose, prefill }: Props) {
   const totalAmount = items.reduce((sum, item) => sum + item.qty * item.price_per_unit, 0);
 
   const isFormValid =
-    !!supplierId &&
+    !!sellerId &&
     !!deliveryAddress.trim() &&
     items.length > 0 &&
     items.every((item) => item.item_name.trim() && item.qty > 0 && item.price_per_unit > 0);
@@ -98,7 +115,8 @@ export function OrderFormDialog({ open, onClose, prefill }: Props) {
     e.preventDefault();
     setError(null);
     const payload: CreateOrderPayload = {
-      supplier_id: supplierId,
+      seller_id: sellerId,
+      seller_type: prefill?.sellerType ?? sellerType,
       items: items.map(({ item_name, qty, unit, price_per_unit }) => ({
         item_name,
         qty,
@@ -121,31 +139,34 @@ export function OrderFormDialog({ open, onClose, prefill }: Props) {
       open={open}
       onClose={onClose}
       title="Buat Order Baru"
-      description="Pilih supplier partner dan isi detail item yang ingin dipesan."
+      description={`Pilih ${sellerLabel.toLowerCase()} dan isi detail item yang ingin dipesan.`}
     >
       <form onSubmit={handleSubmit} className="space-y-5">
-        {/* Supplier */}
+        {/* Seller */}
         <div className="space-y-1.5">
-          <label className="text-sm font-medium text-[#0F172A]">Supplier partner</label>
+          <label className="text-sm font-medium text-[#0F172A]">{sellerLabel}</label>
           <select
             className="h-11 w-full rounded-lg border border-[#E2E8F0] bg-white px-3 text-sm text-[#0F172A] outline-none focus:border-[#3B82F6] focus:ring-2 focus:ring-[#BFDBFE] disabled:opacity-50"
-            value={supplierId}
-            onChange={(e) => setSupplierId(e.target.value)}
-            disabled={isLoading || suppliersLoading}
+            value={sellerId}
+            onChange={(e) => setSellerId(e.target.value)}
+            disabled={isLoading || partnersLoading}
             required
           >
             <option value="">
-              {suppliersLoading ? "Memuat supplier..." : "Pilih supplier"}
+              {partnersLoading ? sellerLoading : `Pilih ${isRetailer ? "distributor" : "supplier"}`}
             </option>
-            {partners.map((s) => (
-              <option key={s.supplier_id} value={s.supplier_id}>
-                {s.name}
-              </option>
-            ))}
+            {partners.map((p) => {
+              const id = "distributor_id" in p ? p.distributor_id : p.supplier_id;
+              return (
+                <option key={id} value={id}>
+                  {p.name}
+                </option>
+              );
+            })}
           </select>
-          {!suppliersLoading && partners.length === 0 && (
+          {!partnersLoading && partners.length === 0 && (
             <p className="text-xs text-[#64748B]">
-              Belum ada supplier partner. Tambahkan partner di halaman Suppliers terlebih dahulu.
+              {sellerEmpty}
             </p>
           )}
         </div>
@@ -301,3 +322,6 @@ export function OrderFormDialog({ open, onClose, prefill }: Props) {
     </Dialog>
   );
 }
+
+
+
