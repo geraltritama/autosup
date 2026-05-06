@@ -1429,14 +1429,18 @@ def get_suppliers(search: str = "", type: str = "", page: int = 1, limit: int = 
 
     # Filter by type
     if type == "partner":
+        accepted_ids = set()
         try:
-            accepted = supabase.table("partnerships").select("supplier_id").eq("status", "accepted").execute().data or []
-            accepted_ids = {p.get("supplier_id", "") for p in accepted}
-            supplier_users = [s for s in supplier_users if s["supplier_id"] in accepted_ids]
+            accepted = supabase.table("partnerships").select("supplier_name").eq("status", "accepted").execute().data or []
+            accepted_ids = {p.get("supplier_name", "") for p in accepted}
         except Exception:
             pass
-        for s in supplier_users:
-            s["type"] = "partner"
+        if accepted_ids:
+            supplier_users = [s for s in supplier_users if s["supplier_id"] in accepted_ids]
+            for s in supplier_users:
+                s["type"] = "partner"
+        else:
+            supplier_users = []
     elif type == "discover":
         supplier_users = [s for s in supplier_users if s.get("type") != "partner"]
 
