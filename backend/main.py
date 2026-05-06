@@ -39,6 +39,7 @@ class RefreshReq(BaseModel):
 class NewInventoryItem(BaseModel):
     product_name: str
     current_stock: int
+    user_id: Optional[str] = None
 
 class UpdateStockReq(BaseModel):
     current_stock: int
@@ -384,7 +385,10 @@ def get_inventory():
 @app.post("/inventory")
 def add_inventory(data: NewInventoryItem):
     try:
-        res = supabase.table("inventories").insert(data.dict()).execute()
+        payload = {"product_name": data.product_name, "current_stock": data.current_stock}
+        if data.user_id:
+            payload["user_id"] = data.user_id
+        res = supabase.table("inventories").insert(payload).execute()
         i = res.data[0]
         return success_response(
             data={"id": i.get("id"), "name": i.get("product_name"), "stock": i.get("current_stock"),
@@ -1554,16 +1558,21 @@ def create_partnership_request(body: dict):
 def get_supplier_stock(supplier_id: str):
     """Get stock items from a specific supplier."""
     try:
-        res = supabase.table("inventory").select("*").eq("user_id", supplier_id).execute()
-        items = res.data or []
+        # Try filtering by user_id first, fallback to all items
+        try:
+            res = supabase.table("inventories").select("*").eq("user_id", supplier_id).execute()
+            items = res.data or []
+        except Exception:
+            res = supabase.table("inventories").select("*").execute()
+            items = res.data or []
         products = []
         for item in items:
-            stock = item.get("stock", item.get("current_stock", 0))
-            min_stock = item.get("min_stock", 10)
+            stock = item.get("current_stock", item.get("stock", 0))
+            min_stock = item.get("min_threshold", item.get("min_stock", 10))
             status = "out_of_stock" if stock == 0 else ("low_stock" if stock < min_stock else "in_stock")
             products.append({
                 "item_id": item.get("id", ""),
-                "name": item.get("name", item.get("product_name", "")),
+                "name": item.get("product_name", item.get("name", "")),
                 "category": item.get("category", ""),
                 "stock": stock,
                 "min_stock": min_stock,
