@@ -899,7 +899,7 @@ def get_distributors(search: Optional[str] = None, status: Optional[str] = None,
                     "distributor_id": u["id"],
                     "name": u.get("business_name", u.get("full_name", "")),
                     "city": u.get("city", ""),
-                    "reliability_score": u.get("reputation_score", 80),
+                    "reliability_score": u.get("reputation_score", 0),
                     "active_products": 0,
                     "partnership_status": "active",
                     "avg_delivery_time": 0,
@@ -1504,10 +1504,11 @@ def get_partnership_requests(status: str = ""):
         for r in (res.data or []):
             requests.append({
                 "request_id": r.get("id", r.get("request_id", "")),
+                "supplier_id": r.get("supplier_name", ""),
                 "distributor": {
-                    "id": r.get("distributor_id", r.get("retailer_name", "")),
-                    "name": r.get("distributor_name", r.get("retailer_name", "")),
-                    "business_name": r.get("distributor_name", r.get("retailer_name", "")),
+                    "id": r.get("retailer_name", r.get("distributor_id", "")),
+                    "name": r.get("retailer_name", r.get("distributor_name", "")),
+                    "business_name": r.get("retailer_name", r.get("distributor_name", "")),
                 },
                 "status": r.get("status", "pending"),
                 "created_at": r.get("created_at", now_iso()),

@@ -20,6 +20,7 @@ export type Supplier = {
 
 export type PartnershipRequest = {
   request_id: string;
+  supplier_id?: string;
   distributor: {
     id: string;
     name: string;
