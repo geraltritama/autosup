@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { ArrowRight, ShieldCheck, AlertCircle, Building2, Truck, ShoppingBag } from "lucide-react";
+import { ArrowRight, ShieldCheck, AlertCircle, CheckCircle2, Building2, Truck, ShoppingBag } from "lucide-react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -26,7 +26,7 @@ const ROLES: { value: UserRole; label: string; description: string; icon: typeof
   {
     value: "retailer",
     label: "Retailer",
-    description: "Kelola stok operasional dan beli dari vendor pilihan",
+    description: "Kelola stok operasional dan beli dari distributor pilihan",
     icon: ShoppingBag,
   },
 ];
@@ -38,7 +38,7 @@ export function RegisterForm() {
   const [businessName, setBusinessName] = useState("");
   const [phone, setPhone] = useState("");
   const [role, setRole] = useState<UserRole>("distributor");
-  const { register, isLoading, error } = useRegister();
+  const { register, isLoading, error, successMessage } = useRegister();
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -174,6 +174,13 @@ export function RegisterForm() {
             <div className="flex items-start gap-2 rounded-lg border border-[#FCA5A5] bg-[#FEF2F2] px-3 py-2.5 text-sm text-[#DC2626]">
               <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
               <span>{error}</span>
+            </div>
+          )}
+
+          {successMessage && (
+            <div className="flex items-start gap-2 rounded-lg border border-[#86EFAC] bg-[#F0FDF4] px-3 py-2.5 text-sm text-[#16A34A]">
+              <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" />
+              <span>{successMessage}</span>
             </div>
           )}
 
