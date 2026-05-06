@@ -468,15 +468,18 @@ def update_order_status(order_id: str, data: UpdateOrderStatusReq):
         update_payload: dict = {"status": data.status, "updated_at": now_iso()}
         if data.shipping_info:
             update_payload["shipping_info"] = data.shipping_info
-        if data.status == "delivered":
-            update_payload["escrow_status"] = "released"
-        res = supabase.table("orders").update(update_payload).eq("id", order_id).execute()
-        if not res.data:
-            return error_response("Pesanan tidak ditemukan.")
-        return success_response(
-            data={"order_id": order_id, "status": data.status, "updated_at": now_iso()},
-            message="Status pesanan berhasil diupdate",
-        )
+        supabase.table("orders").update(update_payload).eq("id", order_id).execute()
+        return success_response(data={"order_id": order_id, "status": data.status}, message="Status diperbarui")
+    except Exception as e:
+        return error_response(str(e))
+
+
+@app.delete("/orders/{order_id}")
+def delete_order(order_id: str):
+    """Hapus order test/dummy."""
+    try:
+        supabase.table("orders").delete().eq("id", order_id).execute()
+        return success_response(data={"order_id": order_id}, message="Order dihapus")
     except Exception as e:
         return error_response(str(e))
 
@@ -1325,75 +1328,97 @@ def disable_2fa(data: Disable2FAReq):
 
 @app.get("/suppliers")
 def get_suppliers(search: str = "", type: str = "", page: int = 1, limit: int = 20):
-    """Returns supplier list with optional search/type filter."""
+    """Returns supplier list — pulls from Supabase Auth users with role=supplier."""
+    supplier_users = []
+
+    # Try Supabase Auth Admin API first
     try:
-        # Fetch users with role=supplier from Supabase auth users
-        res = supabase.table("users").select("*").eq("role", "supplier")
-        if search:
-            res = res.or_(f"full_name.ilike.%{search}%,business_name.ilike.%{search}%")
-        res = res.execute()
-        users = res.data or []
+        auth_users = supabase.auth.admin.list_users()
+        for u in auth_users:
+            meta = u.user_metadata or {}
+            if meta.get("role") == "supplier":
+                supplier_users.append({
+                    "supplier_id": u.id,
+                    "name": meta.get("business_name", meta.get("full_name", u.email or "")),
+                    "category": meta.get("business_type", meta.get("category", "Umum")),
+                    "type": "discover",
+                    "reputation_score": meta.get("reputation_score", 0),
+                    "total_transactions": meta.get("total_transactions", 0),
+                    "on_time_delivery_rate": meta.get("on_time_delivery_rate", 0),
+                    "wallet_address": meta.get("wallet_address", ""),
+                    "is_active": True,
+                })
+    except Exception:
+        pass
 
-        # Also check Supabase auth users via admin API
-        # For now, fallback to hardcoded list if table not ready
-        if not users:
-            # Query profiles/users table for suppliers
-            try:
-                profiles = supabase.table("profiles").select("*").eq("role", "supplier").execute().data or []
-            except:
-                profiles = []
+    # Fallback: public.profiles table
+    if not supplier_users:
+        try:
+            profiles = supabase.table("profiles").select("*").eq("role", "supplier").execute().data or []
+            for p in profiles:
+                supplier_users.append({
+                    "supplier_id": p.get("id", p.get("user_id", "")),
+                    "name": p.get("business_name", p.get("full_name", "")),
+                    "category": p.get("business_type", p.get("category", "Umum")),
+                    "type": "discover",
+                    "reputation_score": p.get("reputation_score", 0),
+                    "total_transactions": p.get("total_transactions", 0),
+                    "on_time_delivery_rate": p.get("on_time_delivery_rate", 0),
+                    "wallet_address": p.get("wallet_address", ""),
+                    "is_active": True,
+                })
+        except Exception:
+            pass
 
-        all_users = users or profiles or []
-        partners = [u for u in all_users if u.get("partner_status") == "partner" or u.get("type") == "partner"]
-        discover = [u for u in all_users if u not in partners]
+    # Fallback: public.users table
+    if not supplier_users:
+        try:
+            users = supabase.table("users").select("*").eq("role", "supplier").execute().data or []
+            for u in users:
+                supplier_users.append({
+                    "supplier_id": u.get("id", u.get("user_id", "")),
+                    "name": u.get("business_name", u.get("full_name", "")),
+                    "category": u.get("business_type", u.get("category", "Umum")),
+                    "type": "discover",
+                    "reputation_score": u.get("reputation_score", 0),
+                    "total_transactions": u.get("total_transactions", 0),
+                    "on_time_delivery_rate": u.get("on_time_delivery_rate", 0),
+                    "wallet_address": u.get("wallet_address", ""),
+                    "is_active": True,
+                })
+        except Exception:
+            pass
 
-        if type == "partner":
-            result = partners
-        elif type == "discover":
-            result = discover
-        else:
-            result = all_users
+    # Filter by search
+    if search:
+        q = search.lower()
+        supplier_users = [s for s in supplier_users if q in s["name"].lower()]
 
-        suppliers = []
-        for u in result:
-            suppliers.append({
-                "supplier_id": u.get("id", u.get("user_id", "")),
-                "name": u.get("business_name", u.get("full_name", "")),
-                "category": u.get("category", u.get("business_type", "Umum")),
-                "type": "partner" if u in partners else "discover",
-                "reputation_score": u.get("reputation_score", 0),
-                "total_transactions": u.get("total_transactions", 0),
-                "on_time_delivery_rate": u.get("on_time_delivery_rate", 0),
-                "wallet_address": u.get("wallet_address", ""),
-                "is_active": u.get("is_active", True),
-            })
+    # Filter by type
+    if type == "partner":
+        try:
+            accepted = supabase.table("partnerships").select("supplier_id").eq("status", "accepted").execute().data or []
+            accepted_ids = {p.get("supplier_id", "") for p in accepted}
+            supplier_users = [s for s in supplier_users if s["supplier_id"] in accepted_ids]
+        except Exception:
+            pass
+        for s in supplier_users:
+            s["type"] = "partner"
+    elif type == "discover":
+        supplier_users = [s for s in supplier_users if s.get("type") != "partner"]
 
-        return success_response(data={
-            "suppliers": suppliers,
-            "summary": {
-                "partner_count": len(partners),
-                "discover_count": len(discover),
-                "pending_requests": 0,
-            },
-            "pagination": {"page": page, "limit": limit, "total": len(suppliers)},
-        })
-    except Exception as e:
-        # Fallback: return from discover list + hardcoded partners
-        discover_list = [
-            {"supplier_id": "sup-001", "name": "PT Padi Nusantara Jaya", "category": "Beras & Biji-bijian", "type": "discover", "reputation_score": 95, "total_transactions": 0, "on_time_delivery_rate": 0, "wallet_address": "", "is_active": True},
-            {"supplier_id": "sup-002", "name": "CV Makmur Minyak", "category": "Minyak Goreng", "type": "discover", "reputation_score": 82, "total_transactions": 0, "on_time_delivery_rate": 0, "wallet_address": "", "is_active": True},
-        ]
-        all_sup = discover_list
-        if type == "partner":
-            all_sup = []
-        elif type == "discover":
-            all_sup = discover_list
+    partners = [s for s in supplier_users if s.get("type") == "partner"]
+    discover = [s for s in supplier_users if s.get("type") != "partner"]
 
-        return success_response(data={
-            "suppliers": all_sup,
-            "summary": {"partner_count": 0, "discover_count": len(discover_list), "pending_requests": 0},
-            "pagination": {"page": page, "limit": limit, "total": len(all_sup)},
-        })
+    return success_response(data={
+        "suppliers": supplier_users,
+        "summary": {
+            "partner_count": len(partners),
+            "discover_count": len(discover),
+            "pending_requests": 0,
+        },
+        "pagination": {"page": page, "limit": limit, "total": len(supplier_users)},
+    })
 
 
 @app.get("/suppliers/partnership-requests")
