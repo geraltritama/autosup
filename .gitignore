@@ -19,3 +19,6 @@ logs
 *.sln
 *.sw?
 .claude
+__pycache__/
+*.pyc
+*.pyo
