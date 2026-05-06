@@ -44,7 +44,7 @@ import {
   type CreditRiskResult,
   type RiskLevel,
 } from "@/hooks/useCredit";
-import { mockRetailers } from "@/hooks/useRetailers";
+import { useRetailers } from "@/hooks/useRetailers";
 import { useAuthStore } from "@/store/useAuthStore";
 
 function formatCurrency(amount: number) {
@@ -103,6 +103,7 @@ function OpenCreditDialog({
 }) {
   const openCredit = useOpenCreditAccount();
   const aiRisk = useAiCreditRisk();
+  const { data: retailersData } = useRetailers({});
   const [form, setForm] = useState({
     retailer_id: "",
     credit_limit: "",
@@ -157,7 +158,7 @@ function OpenCreditDialog({
                 <SelectValue placeholder="Pilih retailer..." />
               </SelectTrigger>
               <SelectContent>
-                {mockRetailers.map((r) => (
+                {(retailersData?.retailers ?? []).map((r) => (
                   <SelectItem key={r.retailer_id} value={r.retailer_id}>
                     {r.name}
                   </SelectItem>
