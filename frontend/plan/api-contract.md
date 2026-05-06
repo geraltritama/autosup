@@ -54,9 +54,9 @@ Jika error:
 ### Role User
 | Role | Deskripsi |
 |------|-----------|
-| `supplier` | Punya produk, terima order dari distributor (atau langsung dari retailer) |
+| `supplier` | Punya produk, terima order dari distributor |
 | `distributor` | Beli dari supplier, jual ke retailer; manage credit line, payment, logistics |
-| `retailer` | Bisnis end-user (kafe, restoran, bakery, retail UMKM) — beli stok dari distributor (atau langsung supplier) untuk operasional/dijual ke konsumen |
+| `retailer` | Bisnis end-user (kafe, restoran, bakery, retail UMKM) — beli stok dari distributor untuk operasional/dijual ke konsumen |
 
 > **Catatan:** `retailer` (role login) ≠ `retailer` entity di `/retailers/*`. Endpoint `/retailers/*` adalah CRM distributor untuk manage retailer clients-nya. Retailer yang login pakai akun sendiri me-reuse endpoint generic role-aware (`/inventory`, `/orders`, `/suppliers`, `/payments`, `/settings`, `/analytics/*`, `/ai/*`).
 
@@ -682,8 +682,8 @@ Ambil daftar produk supplier beserta visibilitas stok untuk perencanaan order.
 
 > **Schema generic (buyer/seller).** Filter `?role=buyer` valid untuk semua role:
 > - `distributor` sebagai buyer → seller = `supplier`
-> - `retailer` sebagai buyer → seller = `distributor` (atau `supplier` jika beli langsung)
-> - `supplier` sebagai seller → buyer = `distributor` (atau `retailer`)
+> - `retailer` sebagai buyer → seller = `distributor` (MVP strict: retailer HANYA beli dari distributor)
+> - `supplier` sebagai seller → buyer = `distributor` 
 >
 > BE menentukan visibility & filter berdasarkan auth context.
 
@@ -760,7 +760,8 @@ Buat order baru.
 **Request Body:**
 ```json
 {
-  "supplier_id": "supplier-uuid-001",
+  "seller_id": "supplier-uuid-001",
+  "seller_type": "supplier",
   "items": [
     {
       "item_name": "Tepung Terigu",
