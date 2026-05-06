@@ -43,7 +43,7 @@ export function LoginForm() {
       await api.post("/auth/forgot-password", { email: forgotEmail });
       setForgotSent(true);
     } catch {
-      setForgotError("Gagal mengirim reset password. Coba lagi.");
+      setForgotError("Failed to send reset link. Please try again.");
     } finally {
       setForgotLoading(false);
     }
@@ -55,9 +55,9 @@ export function LoginForm() {
         <div className="inline-flex h-11 w-11 items-center justify-center rounded-xl bg-[#DBEAFE] text-[#2563EB]">
           <ShieldCheck className="h-5 w-5" />
         </div>
-        <CardTitle className="text-xl">Masuk ke AUTOSUP</CardTitle>
+        <CardTitle className="text-xl">Sign in to AUTOSUP</CardTitle>
         <CardDescription>
-          Akses dashboard operasional supplier dan distributor dari satu workspace.
+          Access your operational dashboard — one workspace for suppliers, distributors, and retailers.
         </CardDescription>
       </CardHeader>
 
@@ -88,14 +88,14 @@ export function LoginForm() {
                 onClick={() => setForgotOpen(true)}
                 className="text-xs font-medium text-[#3B82F6] hover:underline"
               >
-                Lupa password?
+                Forgot password?
               </button>
             </div>
             <div className="relative">
               <Input
                 id="password"
                 type={showPassword ? "text" : "password"}
-                placeholder="Masukkan password"
+                placeholder="Enter password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 required
@@ -121,15 +121,15 @@ export function LoginForm() {
           )}
 
           <Button className="w-full gap-2" type="submit" disabled={isLoading || !email || !password}>
-            {isLoading ? "Memverifikasi..." : "Masuk"}
+            {isLoading ? "Signing in..." : "Sign In"}
             {!isLoading && <ArrowRight className="h-4 w-4" />}
           </Button>
         </form>
 
         <p className="text-center text-sm text-[#64748B]">
-          Belum punya akun?{" "}
+          Don&apos;t have an account?{" "}
           <Link href="/auth/register" className="font-medium text-[#3B82F6] hover:underline">
-            Daftar sekarang
+            Sign up
           </Link>
         </p>
       </CardContent>
@@ -138,18 +138,18 @@ export function LoginForm() {
       {forgotOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
           <div className="w-full max-w-sm rounded-2xl bg-white p-6 shadow-xl">
-            <h3 className="text-lg font-semibold text-[#0F172A]">Lupa Password</h3>
+            <h3 className="text-lg font-semibold text-[#0F172A]">Forgot Password</h3>
             <p className="mt-1 text-sm text-[#64748B]">
-              Masukkan email kamu dan kami akan kirim link reset password.
+              Enter your email and we&apos;ll send you a password reset link.
             </p>
             {forgotSent ? (
               <div className="mt-4 space-y-4">
                 <div className="flex items-start gap-2 rounded-lg border border-[#86EFAC] bg-[#F0FDF4] px-3 py-2.5 text-sm text-[#16A34A]">
                   <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" />
-                  <span>Link reset password telah dikirim ke email kamu.</span>
+                  <span>A password reset link has been sent to your email.</span>
                 </div>
                 <Button onClick={() => setForgotOpen(false)} className="w-full">
-                  Kembali ke Login
+                  Back to Login
                 </Button>
               </div>
             ) : (
@@ -172,10 +172,10 @@ export function LoginForm() {
                     onClick={() => { setForgotOpen(false); setForgotSent(false); setForgotError(""); }}
                     className="flex-1"
                   >
-                    Batal
+                    Cancel
                   </Button>
                   <Button type="submit" disabled={forgotLoading || !forgotEmail} className="flex-1">
-                    {forgotLoading ? "Mengirim..." : "Kirim Reset"}
+                    {forgotLoading ? "Sending..." : "Send Reset"}
                   </Button>
                 </div>
               </form>
