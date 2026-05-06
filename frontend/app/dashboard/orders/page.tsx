@@ -181,7 +181,10 @@ export default function OrdersPage() {
           )}
 
           {!isLoading && !isError && filtered.length === 0 && (
-            <OrdersEmptyState />
+            <OrdersEmptyState
+              showCreate={showCreateOrder}
+              onCreateOrder={() => setCreateDialogOpen(true)}
+            />
           )}
 
           {!isLoading &&
