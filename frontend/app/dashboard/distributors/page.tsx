@@ -1,13 +1,16 @@
 "use client";
 
-import { useState } from "react";
+import { useCallback, useState } from "react";
 import {
   BarChart3,
   CheckCircle2,
   Clock,
   Handshake,
   Loader2,
+  Network,
+  Plus,
   Search,
+  Truck,
   XCircle,
 } from "lucide-react";
 import { KpiCard } from "@/components/dashboard/kpi-card";
@@ -16,10 +19,17 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { DistributorCard } from "@/components/distributors/distributor-card";
+import { DistributorDetailDialog } from "@/components/distributors/distributor-detail-dialog";
+import { DistributorStockDialog } from "@/components/distributors/distributor-stock-dialog";
+import { PartnershipRequestDetailDialog } from "@/components/distributors/partnership-request-detail-dialog";
 import {
   useDistributors,
   useDistributorRequests,
   useRespondDistributorRequest,
+  useRequestDistributorPartnership,
+  type Distributor,
+  type DistributorPartnershipRequest,
 } from "@/hooks/useDistributors";
 import { useAuthStore } from "@/store/useAuthStore";
 
@@ -27,34 +37,52 @@ export default function DistributorsPage() {
   const role = useAuthStore((s) => s.user?.role);
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
+const [selectedDistributor, setSelectedDistributor] = useState<Distributor | null>(null);
+  const [stockDialogOpen, setStockDialogOpen] = useState(false);
+  const [distributorDetailOpen, setDistributorDetailOpen] = useState(false);
+  const [selectedRequest, setSelectedRequest] = useState<DistributorPartnershipRequest | null>(null);
+  const [requestDetailOpen, setRequestDetailOpen] = useState(false);
 
-  const {
-    data,
-    isLoading,
-    isError,
-    refetch,
-  } = useDistributors({ search, status: statusFilter });
+  const handleViewStock = useCallback((distributor: Distributor) => {
+    setSelectedDistributor(distributor);
+    setStockDialogOpen(true);
+  }, []);
+
+  const handleViewDetail = useCallback((distributor: Distributor) => {
+    setSelectedDistributor(distributor);
+    setDistributorDetailOpen(true);
+  }, []);
+
+  const { data, isLoading, isError, refetch } = useDistributors({
+    search,
+    status: statusFilter !== "all" ? statusFilter : undefined,
+    type: role === "retailer" ? "partner" : undefined,
+  });
+
   const {
     data: requestsData,
     isLoading: isRequestsLoading,
     isError: isRequestsError,
     refetch: refetchRequests,
   } = useDistributorRequests("pending");
-  const respond = useRespondDistributorRequest();
 
-  if (role !== "supplier") {
+  const respond = useRespondDistributorRequest();
+  const requestPartnership = useRequestDistributorPartnership();
+
+  if (role !== "supplier" && role !== "retailer") {
     return (
       <main className="flex h-[80vh] items-center justify-center p-8">
         <div className="text-center">
           <h2 className="text-xl font-semibold text-[#0F172A]">Akses Ditolak</h2>
           <p className="mt-2 text-sm text-[#64748B]">
-            Halaman Distributor Management khusus untuk Supplier.
+            Halaman ini hanya untuk Supplier dan Retailer.
           </p>
         </div>
       </main>
     );
   }
 
+  const isRetailer = role === "retailer";
   const distributors = data?.distributors ?? [];
   const summary = data?.summary;
   const requests = requestsData?.requests ?? [];
@@ -64,25 +92,37 @@ export default function DistributorsPage() {
       {/* Header */}
       <section className="flex flex-col gap-4 rounded-3xl border border-[#E2E8F0] bg-white px-6 py-6 shadow-[0_1px_2px_rgba(15,23,42,0.04)] lg:flex-row lg:items-end lg:justify-between">
         <div className="space-y-3">
-          <Badge tone="info">Partner Network</Badge>
+          <Badge tone="info">
+            {isRetailer ? "Distributor catalog" : "Partner Network"}
+          </Badge>
           <div className="space-y-2">
             <h1 className="text-3xl font-semibold tracking-tight text-[#0F172A]">
-              Distributor Management
+              {isRetailer ? "Distributors" : "Distributor Management"}
             </h1>
             <p className="max-w-3xl text-sm leading-7 text-[#64748B]">
-              Kelola distributor partner, pantau performa order dan ketepatan pembayaran, serta tanggapi permintaan kemitraan baru.
+              {isRetailer
+                ? "Temukan distributor partner, lihat ketersediaan stok, dan kirim permintaan kemitraan."
+                : "Kelola distributor partner, pantau performa order dan ketepatan pembayaran, serta tanggapi permintaan kemitraan baru."}
             </p>
           </div>
         </div>
+        {isRetailer && (
+          <div className="flex flex-wrap gap-3">
+            <Button className="gap-2" onClick={() => { setSearch(""); setStatusFilter(""); }}>
+              <Plus className="h-4 w-4" />
+              Explore Distributors
+            </Button>
+          </div>
+        )}
       </section>
 
       {/* KPI cards */}
       {summary && (
         <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
           <KpiCard
-            label="Active Partners"
+            label={isRetailer ? "Partner Distributors" : "Active Partners"}
             value={String(summary.partner_count)}
-            meta="Distributor partner aktif"
+            meta={isRetailer ? "Distributor partner aktif" : "Distributor partner aktif"}
             tone="success"
             icon={Handshake}
           />
@@ -93,20 +133,40 @@ export default function DistributorsPage() {
             tone="warning"
             icon={Clock}
           />
-          <KpiCard
-            label="Total Order Volume"
-            value={String(summary.total_order_volume)}
-            meta="Pesanan dari distributor"
-            tone="info"
-            icon={BarChart3}
-          />
-          <KpiCard
-            label="Avg. Punctuality"
-            value={`${summary.avg_punctuality}%`}
-            meta="Ketepatan pembayaran"
-            tone="success"
-            icon={CheckCircle2}
-          />
+          {isRetailer ? (
+            <KpiCard
+              label="Avg. Delivery"
+              value={`${summary.avg_delivery_days} hari`}
+              meta="Rata-rata waktu pengiriman"
+              tone="info"
+              icon={Truck}
+            />
+          ) : (
+            <KpiCard
+              label="Total Order Volume"
+              value={String(summary.total_order_volume)}
+              meta="Pesanan dari distributor"
+              tone="info"
+              icon={BarChart3}
+            />
+          )}
+          {isRetailer ? (
+            <KpiCard
+              label="Total Pesanan"
+              value={String(summary.total_order_volume)}
+              meta="Pesanan ke distributor"
+              tone="info"
+              icon={BarChart3}
+            />
+          ) : (
+            <KpiCard
+              label="Avg. Punctuality"
+              value={`${summary.avg_punctuality}%`}
+              meta="Ketepatan pembayaran"
+              tone="success"
+              icon={CheckCircle2}
+            />
+          )}
         </section>
       )}
 
@@ -162,152 +222,225 @@ export default function DistributorsPage() {
                 Belum ada distributor ditemukan
               </span>
               <span className="mt-1 text-xs text-[#64748B]">
-                Distributor yang menjalin kemitraan akan muncul di sini.
+                {isRetailer
+                  ? "Cari distributor di halaman ini atau kirim permintaan kemitraan."
+                  : "Distributor yang menjalin kemitraan akan muncul di sini."}
               </span>
             </div>
           )}
 
           {!isLoading && !isError && distributors.length > 0 && (
             <div className="grid gap-4">
-              {distributors.map((dist) => (
-                <Card key={dist.distributor_id} className="rounded-2xl">
-                  <CardContent className="flex items-center justify-between gap-4 p-5">
-                    <div className="flex items-center gap-4">
-                      <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-slate-50 text-[#3B82F6]">
-                        <Handshake className="h-6 w-6" />
+              {isRetailer ? (
+                distributors.map((dist) => (
+                  <DistributorCard
+                    key={dist.distributor_id}
+                    distributor={dist}
+                    role="retailer"
+                    onRequestPartnership={
+                      dist.partnership_status === "none"
+                        ? (d) => requestPartnership.mutate(d.distributor_id)
+                        : undefined
+                    }
+                    isRequesting={requestPartnership.isPending}
+                    onViewStock={
+                      dist.partnership_status === "partner"
+                        ? handleViewStock
+                        : undefined
+                    }
+                  />
+                ))
+              ) : (
+                distributors.map((dist) => (
+                  <Card key={dist.distributor_id} className="rounded-2xl">
+                    <CardContent className="flex items-center justify-between gap-4 p-5">
+                      <div className="flex items-center gap-4">
+                        <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-slate-50 text-[#3B82F6]">
+                          <Handshake className="h-6 w-6" />
+                        </div>
+                        <div>
+                          <p className="font-semibold text-[#0F172A]">{dist.name}</p>
+                          <p className="mt-0.5 text-xs text-[#64748B]">{dist.region}</p>
+                        </div>
                       </div>
-                      <div>
-                        <p className="font-semibold text-[#0F172A]">{dist.name}</p>
-                        <p className="mt-0.5 text-xs text-[#64748B]">{dist.region}</p>
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-6">
-                      {dist.partnership_status === "partner" && (
-                        <>
-                          <div className="text-right">
-                            <p className="text-xs text-[#64748B]">Orders</p>
-                            <p className="text-sm font-semibold text-[#0F172A]">
-                              {dist.order_volume}
-                            </p>
-                          </div>
-                          <div className="text-right">
-                            <p className="text-xs text-[#64748B]">Punctuality</p>
-                            <p className="text-sm font-semibold text-[#22C55E]">
-                              {dist.payment_punctuality}%
-                            </p>
-                          </div>
-                          <div className="text-right">
-                            <p className="text-xs text-[#64748B]">Score</p>
-                            <p className="text-sm font-semibold text-[#3B82F6]">
-                              {dist.reputation_score}
-                            </p>
-                          </div>
-                        </>
-                      )}
-                      <Badge
-                        tone={
-                          dist.partnership_status === "partner"
-                            ? "success"
+                      <div className="flex items-center gap-6">
+                        {dist.partnership_status === "partner" && (
+                          <>
+                            <div className="text-right">
+                              <p className="text-xs text-[#64748B]">Orders</p>
+                              <p className="text-sm font-semibold text-[#0F172A]">
+                                {dist.order_volume}
+                              </p>
+                            </div>
+                            <div className="text-right">
+                              <p className="text-xs text-[#64748B]">Punctuality</p>
+                              <p className="text-sm font-semibold text-[#22C55E]">
+                                {dist.payment_punctuality}%
+                              </p>
+                            </div>
+                            <div className="text-right">
+                              <p className="text-xs text-[#64748B]">Score</p>
+                              <p className="text-sm font-semibold text-[#3B82F6]">
+                                {dist.reputation_score}
+                              </p>
+                            </div>
+                          </>
+                        )}
+                        <Badge
+                          tone={
+                            dist.partnership_status === "partner"
+                              ? "success"
+                              : dist.partnership_status === "pending"
+                                ? "warning"
+                                : "neutral"
+                          }
+                        >
+                          {dist.partnership_status === "partner"
+                            ? "Partner"
                             : dist.partnership_status === "pending"
-                              ? "warning"
-                              : "neutral"
-                        }
-                      >
-                        {dist.partnership_status === "partner"
-                          ? "Partner"
-                          : dist.partnership_status === "pending"
-                            ? "Pending"
-                            : "Belum Partner"}
-                      </Badge>
-                    </div>
-                  </CardContent>
-                </Card>
-              ))}
+                              ? "Pending"
+                              : "Belum Partner"}
+                        </Badge>
+                        {dist.partnership_status === "partner" && (
+                          <Button
+                            size="sm"
+                            variant="secondary"
+                            onClick={() => handleViewDetail(dist)}
+                          >
+                            Lihat Detail
+                          </Button>
+                        )}
+                      </div>
+                    </CardContent>
+                  </Card>
+                ))
+              )}
             </div>
           )}
         </div>
 
-        {/* Partnership requests side panel */}
+        {/* Side panel — role-aware */}
         <div className="space-y-4">
-          <h2 className="text-lg font-semibold text-[#0F172A]">Partnership Requests</h2>
-
-          <Card className="rounded-2xl">
-            <CardContent className="pt-6">
-              {isRequestsLoading && (
-                <div className="flex justify-center py-4">
-                  <Loader2 className="h-5 w-5 animate-spin text-[#94A3B8]" />
+          {isRetailer ? (
+            <Card className="rounded-2xl">
+              <CardContent className="space-y-4 p-5">
+                <div className="flex items-center gap-2">
+                  <Network className="h-5 w-5 text-[#3B82F6]" />
+                  <h3 className="text-sm font-semibold text-[#0F172A]">Kenapa bermitra dengan distributor?</h3>
                 </div>
-              )}
-
-              {isRequestsError && !isRequestsLoading && (
-                <PageErrorState
-                  message="Gagal memuat permintaan kemitraan"
-                  onRetry={() => refetchRequests()}
-                />
-              )}
-
-              {!isRequestsLoading && !isRequestsError && requests.length === 0 && (
-                <p className="text-center text-sm text-[#64748B]">
-                  Tidak ada permintaan kemitraan baru.
+                <p className="text-sm leading-6 text-[#64748B]">
+                  Distributor menyediakan akses ke berbagai produk dengan harga kompetitif dan pengiriman terjadwal.
+                  Bermitra dengan distributor yang tepat membantu kamu menjaga stok toko tetap tersedia.
                 </p>
-              )}
-
-              {!isRequestsLoading && !isRequestsError && requests.length > 0 && (
-                <div className="space-y-4">
-                  {requests.map((req) => (
-                    <div
-                      key={req.request_id}
-                      className="flex items-center justify-between border-b border-[#E2E8F0] pb-4 last:border-0 last:pb-0"
-                    >
-                      <div>
-                        <p className="text-sm font-semibold text-[#0F172A]">
-                          {req.distributor.business_name}
-                        </p>
-                        <p className="mt-0.5 text-xs text-[#64748B]">
-                          {new Intl.DateTimeFormat("id-ID", {
-                            day: "numeric",
-                            month: "short",
-                            year: "numeric",
-                          }).format(new Date(req.created_at))}
-                        </p>
-                      </div>
-                      <div className="flex gap-2">
-                        <Button
-                          size="sm"
-                          onClick={() =>
-                            respond.mutate({
-                              request_id: req.request_id,
-                              action: "accept",
-                            })
-                          }
-                          disabled={respond.isPending}
-                        >
-                          <CheckCircle2 className="mr-1 h-3 w-3" />
-                          Terima
-                        </Button>
-                        <Button
-                          size="sm"
-                          variant="secondary"
-                          onClick={() =>
-                            respond.mutate({
-                              request_id: req.request_id,
-                              action: "reject",
-                            })
-                          }
-                          disabled={respond.isPending}
-                        >
-                          <XCircle className="mr-1 h-3 w-3" />
-                          Tolak
-                        </Button>
-                      </div>
-                    </div>
-                  ))}
+                <div className="space-y-2">
+                  <div className="flex items-center gap-2 text-sm text-[#0F172A]">
+                    <CheckCircle2 className="h-4 w-4 text-[#22C55E]" />
+                    Akses stok real-time
+                  </div>
+                  <div className="flex items-center gap-2 text-sm text-[#0F172A]">
+                    <CheckCircle2 className="h-4 w-4 text-[#22C55E]" />
+                    Fasilitas credit line
+                  </div>
+                  <div className="flex items-center gap-2 text-sm text-[#0F172A]">
+                    <CheckCircle2 className="h-4 w-4 text-[#22C55E]" />
+                    Pengiriman terjadwal
+                  </div>
                 </div>
-              )}
-            </CardContent>
-          </Card>
+              </CardContent>
+            </Card>
+          ) : (
+            <>
+              <h2 className="text-lg font-semibold text-[#0F172A]">Partnership Requests</h2>
+              <Card className="rounded-2xl">
+                <CardContent className="pt-6">
+                  {isRequestsLoading && (
+                    <div className="flex justify-center py-4">
+                      <Loader2 className="h-5 w-5 animate-spin text-[#94A3B8]" />
+                    </div>
+                  )}
+
+                  {isRequestsError && !isRequestsLoading && (
+                    <PageErrorState
+                      message="Gagal memuat permintaan kemitraan"
+                      onRetry={() => refetchRequests()}
+                    />
+                  )}
+
+                  {!isRequestsLoading && !isRequestsError && requests.length === 0 && (
+                    <p className="text-center text-sm text-[#64748B]">
+                      Tidak ada permintaan kemitraan baru.
+                    </p>
+                  )}
+
+                  {!isRequestsLoading && !isRequestsError && requests.length > 0 && (
+                    <div className="space-y-4">
+                      {requests.map((req) => (
+                        <div
+                          key={req.request_id}
+                          className="flex items-center justify-between border-b border-[#E2E8F0] pb-4 last:border-0 last:pb-0 cursor-pointer hover:bg-slate-50 -mx-2 px-2 rounded-lg transition-colors"
+                          onClick={() => { setSelectedRequest(req); setRequestDetailOpen(true); }}
+                        >
+                          <div>
+                            <p className="text-sm font-semibold text-[#0F172A]">
+                              {req.distributor?.business_name ?? req.distributor_name ?? "—"}
+                            </p>
+                            <p className="mt-0.5 text-xs text-[#64748B]">
+                              {new Intl.DateTimeFormat("id-ID", {
+                                day: "numeric",
+                                month: "short",
+                                year: "numeric",
+                              }).format(new Date(req.created_at))}
+                            </p>
+                          </div>
+                          <Badge tone="warning">
+                            Lihat Detail
+                          </Badge>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            </>
+          )}
         </div>
       </section>
+
+      {/* Stock dialog — retailer only */}
+      {isRetailer && (
+        <DistributorStockDialog
+          distributorId={selectedDistributor?.distributor_id ?? null}
+          distributorName={selectedDistributor?.name ?? ""}
+          open={stockDialogOpen}
+          onClose={() => setStockDialogOpen(false)}
+        />
+      )}
+
+      {/* Detail dialog — supplier & retailer */}
+      <DistributorDetailDialog
+        distributor={selectedDistributor}
+        open={distributorDetailOpen}
+        onClose={() => setDistributorDetailOpen(false)}
+        role={isRetailer ? "retailer" : "supplier"}
+      />
+
+      {/* Partnership request detail dialog — supplier only */}
+      <PartnershipRequestDetailDialog
+        request={selectedRequest}
+        open={requestDetailOpen}
+        onClose={() => { setRequestDetailOpen(false); setSelectedRequest(null); }}
+        onAccept={(request_id) => {
+          respond.mutate({ request_id, action: "accept" }, {
+            onSuccess: () => { setRequestDetailOpen(false); setSelectedRequest(null); },
+          });
+        }}
+        onReject={(request_id) => {
+          respond.mutate({ request_id, action: "reject" }, {
+            onSuccess: () => { setRequestDetailOpen(false); setSelectedRequest(null); },
+          });
+        }}
+        isProcessing={respond.isPending}
+      />
     </main>
   );
 }

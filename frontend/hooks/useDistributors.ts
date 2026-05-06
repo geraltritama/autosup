@@ -2,15 +2,45 @@
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, type ApiResponse } from "@/lib/api";
-import {
-  getMockDistributors,
-  getMockDistributorRequests,
-  mockDistributorRequests,
-  type Distributor,
-  type DistributorPartnershipRequest,
-} from "@/lib/mocks/distributors";
 
-const USE_MOCK = process.env.NEXT_PUBLIC_USE_MOCK === "true";
+export type Distributor = {
+  distributor_id: string;
+  name: string;
+  business_name: string;
+  region: string;
+  partnership_status: "partner" | "pending" | "none";
+  order_volume: number;
+  payment_punctuality: number;
+  avg_delivery_days: number;
+  on_time_delivery_rate: number;
+  reputation_score: number;
+  total_transactions: number;
+  is_active: boolean;
+  address?: string;
+  contact_person?: string;
+  phone?: string;
+  email?: string;
+  joined_at?: string;
+};
+
+export type DistributorPartnershipRequest = {
+  request_id: string;
+  distributor: {
+    id: string;
+    name: string;
+    business_name: string;
+    region?: string;
+    contact_person?: string;
+    phone?: string;
+    email?: string;
+    reputation_score?: number;
+  };
+  status: "pending" | "accepted" | "rejected";
+  created_at: string;
+  terms?: string;
+  proposed_start_date?: string;
+  proposed_end_date?: string;
+};
 
 export type DistributorsResponse = {
   distributors: Distributor[];
@@ -19,6 +49,7 @@ export type DistributorsResponse = {
     pending_count: number;
     total_order_volume: number;
     avg_punctuality: number;
+    avg_delivery_days: number;
   };
   pagination: { page: number; limit: number; total: number };
 };
@@ -31,6 +62,7 @@ export type DistributorRequestsResponse = {
 type DistributorFilters = {
   search?: string;
   status?: string;
+  type?: string;
   page?: number;
   limit?: number;
 };
@@ -39,17 +71,14 @@ export function useDistributors(filters: DistributorFilters = {}) {
   return useQuery({
     queryKey: ["distributors", filters],
     queryFn: async (): Promise<DistributorsResponse> => {
-      if (USE_MOCK) {
-        await new Promise((r) => setTimeout(r, 400));
-        return getMockDistributors(filters);
-      }
       const params = new URLSearchParams();
       if (filters.search) params.set("search", filters.search);
       if (filters.status) params.set("status", filters.status);
+      if (filters.type) params.set("type", filters.type);
       if (filters.page) params.set("page", String(filters.page));
       if (filters.limit) params.set("limit", String(filters.limit));
       const { data } = await api.get<ApiResponse<DistributorsResponse>>(
-        `/suppliers?${params.toString()}`,
+        `/distributors?${params.toString()}`,
       );
       return data.data;
     },
@@ -57,20 +86,40 @@ export function useDistributors(filters: DistributorFilters = {}) {
   });
 }
 
+type RawPartnershipRequest = {
+  request_id: string;
+  distributor_id: string;
+  distributor_name: string;
+  city?: string;
+  reliability_score?: number;
+  status: "pending" | "accepted" | "rejected";
+  created_at: string;
+};
+
 export function useDistributorRequests(status?: string) {
   return useQuery({
     queryKey: ["distributor-requests", status],
     queryFn: async (): Promise<DistributorRequestsResponse> => {
-      if (USE_MOCK) {
-        await new Promise((r) => setTimeout(r, 350));
-        return getMockDistributorRequests(status);
-      }
       const params = new URLSearchParams();
       if (status) params.set("status", status);
-      const { data } = await api.get<ApiResponse<DistributorRequestsResponse>>(
-        `/suppliers/partnership-requests?${params.toString()}`,
+      const { data } = await api.get<ApiResponse<{ requests: RawPartnershipRequest[]; pagination: DistributorRequestsResponse["pagination"] }>>(
+        `/distributors/partnership-requests?${params.toString()}`,
       );
-      return data.data;
+      return {
+        requests: (data.data.requests ?? []).map((r) => ({
+          request_id: r.request_id,
+          status: r.status,
+          created_at: r.created_at,
+          distributor: {
+            id: r.distributor_id,
+            name: r.distributor_name,
+            business_name: r.distributor_name,
+            region: r.city,
+            reputation_score: r.reliability_score,
+          },
+        })),
+        pagination: data.data.pagination,
+      };
     },
     staleTime: 30 * 1000,
   });
@@ -86,15 +135,60 @@ export function useRespondDistributorRequest() {
       request_id: string;
       action: "accept" | "reject";
     }) => {
-      if (USE_MOCK) {
-        await new Promise((r) => setTimeout(r, 400));
-        const req = mockDistributorRequests.find((r) => r.request_id === request_id);
-        if (req) req.status = action === "accept" ? "accepted" : "rejected";
-        return { request_id, action };
-      }
       const { data } = await api.put<
         ApiResponse<{ request_id: string; action: string }>
-      >(`/suppliers/partnership-request/${request_id}`, { action });
+      >(`/distributors/partnership-request/${request_id}`, { action });
+      return data.data;
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["distributors"], exact: false });
+      qc.invalidateQueries({ queryKey: ["distributor-requests"], exact: false });
+    },
+  });
+}
+
+export type InventoryStatus = "in_stock" | "low_stock" | "out_of_stock";
+
+export type DistributorStockItem = {
+  item_id: string;
+  name: string;
+  category: string;
+  stock: number;
+  min_stock: number;
+  unit: string;
+  status: InventoryStatus;
+  estimated_restock_days: number | null;
+  last_updated: string;
+};
+
+export type DistributorStockResponse = {
+  distributor: { distributor_id: string; name: string; is_partner: boolean };
+  products: DistributorStockItem[];
+  pagination: { page: number; limit: number; total: number };
+};
+
+export function useDistributorStock(distributorId: string | null) {
+  return useQuery({
+    queryKey: ["distributor-stock", distributorId],
+    enabled: !!distributorId,
+    queryFn: async (): Promise<DistributorStockResponse> => {
+      const { data } = await api.get<ApiResponse<DistributorStockResponse>>(
+        `/distributors/${distributorId}/stock`,
+      );
+      return data.data;
+    },
+    staleTime: 60 * 1000,
+  });
+}
+
+export function useRequestDistributorPartnership() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (distributor_id: string) => {
+      const { data } = await api.post<ApiResponse<{ request_id: string; distributor_id: string; distributor_name: string; status: string; created_at: string }>>(
+        "/distributors/partnership-request",
+        { distributor_id },
+      );
       return data.data;
     },
     onSuccess: () => {
@@ -103,5 +197,3 @@ export function useRespondDistributorRequest() {
     },
   });
 }
-
-export type { Distributor, DistributorPartnershipRequest };
