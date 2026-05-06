@@ -105,7 +105,8 @@ function DistributorDashboard({ data }: { data: Extract<DashboardSummary, { role
   const isEmpty =
     data.inventory.total_items === 0 &&
     data.orders.active_orders === 0 &&
-    data.suppliers.partner_count === 0;
+    data.suppliers.partner_count === 0 &&
+    data.retailers.partner_count === 0;
 
   if (isEmpty) return <DashboardEmpty role="distributor" />;
 
@@ -135,11 +136,14 @@ function DistributorDashboard({ data }: { data: Extract<DashboardSummary, { role
       icon: Building2,
     },
     {
-      label: "Selesai bulan ini",
-      value: String(data.orders.completed_this_month),
-      meta: "order completed",
-      tone: "success" as const,
-      icon: PackageCheck,
+      label: "Retailer partner",
+      value: String(data.retailers.partner_count),
+      meta:
+        data.retailers.pending_requests > 0
+          ? `${data.retailers.pending_requests} request masuk`
+          : "Semua aktif",
+      tone: "info" as const,
+      icon: Users,
     },
   ];
 
@@ -151,16 +155,19 @@ function DistributorDashboard({ data }: { data: Extract<DashboardSummary, { role
           <Badge tone="info">Distributor dashboard</Badge>
           <div className="space-y-1">
             <h1 className="text-3xl font-semibold tracking-tight text-[#0F172A]">
-              Monitor inventory, orders, dan supplier
+              Monitor inventory, orders, dan partner
             </h1>
             <p className="max-w-2xl text-sm leading-7 text-[#64748B]">
-              Pantau stok, kelola pesanan ke supplier, dan ambil keputusan restock lebih cepat dengan AI.
+              Pantau stok, kelola pesanan ke supplier dan dari retailer, dan ambil keputusan restock lebih cepat dengan AI.
             </p>
           </div>
         </div>
         <div className="flex flex-wrap gap-3">
           <Link href="/dashboard/suppliers">
             <Button variant="secondary">Cari supplier</Button>
+          </Link>
+          <Link href="/dashboard/retailers">
+            <Button variant="secondary">Kelola retailer</Button>
           </Link>
           <Link href="/dashboard/orders">
             <Button>Buat order</Button>
@@ -207,7 +214,7 @@ function DistributorDashboard({ data }: { data: Extract<DashboardSummary, { role
       )}
 
       {/* Stats grid */}
-      <section className="grid gap-4 md:grid-cols-3">
+      <section className="grid gap-4 md:grid-cols-4">
         <Card className="rounded-2xl">
           <CardContent className="p-5">
             <p className="text-xs uppercase tracking-[0.18em] text-[#64748B]">Low stock items</p>
@@ -241,6 +248,19 @@ function DistributorDashboard({ data }: { data: Extract<DashboardSummary, { role
               {data.suppliers.partner_count}
             </p>
             <Link href="/dashboard/suppliers?type=partner">
+              <p className="mt-2 text-xs font-medium text-[#3B82F6] hover:underline">
+                Lihat semua →
+              </p>
+            </Link>
+          </CardContent>
+        </Card>
+        <Card className="rounded-2xl">
+          <CardContent className="p-5">
+            <p className="text-xs uppercase tracking-[0.18em] text-[#64748B]">Retailer partners</p>
+            <p className="mt-2 text-3xl font-semibold text-[#0F172A]">
+              {data.retailers.partner_count}
+            </p>
+            <Link href="/dashboard/retailers">
               <p className="mt-2 text-xs font-medium text-[#3B82F6] hover:underline">
                 Lihat semua →
               </p>
@@ -312,7 +332,7 @@ function SupplierDashboard({ data }: { data: Extract<DashboardSummary, { role: "
           </div>
         </div>
         <div className="flex flex-wrap gap-3">
-          <Link href="/dashboard/suppliers">
+          <Link href="/dashboard/distributors">
             <Button variant="secondary">Partnership requests</Button>
           </Link>
           <Link href="/dashboard/orders">
@@ -349,7 +369,7 @@ function SupplierDashboard({ data }: { data: Extract<DashboardSummary, { role: "
                   <p className="text-xs text-[#64748B]">Tinjau dan respond request dari distributor.</p>
                 </div>
               </div>
-              <Link href="/dashboard/suppliers">
+<Link href="/dashboard/distributors">
                 <Button variant="secondary" className="shrink-0">
                   Tinjau request
                 </Button>
@@ -391,7 +411,7 @@ function SupplierDashboard({ data }: { data: Extract<DashboardSummary, { role: "
             <p className="mt-2 text-3xl font-semibold text-[#0F172A]">
               {data.partners.distributor_count}
             </p>
-            <Link href="/dashboard/suppliers">
+            <Link href="/dashboard/distributors">
               <p className="mt-2 text-xs font-medium text-[#3B82F6] hover:underline">
                 Lihat semua →
               </p>
@@ -409,7 +429,7 @@ function RetailerDashboard({ data }: { data: Extract<DashboardSummary, { role: "
   const isEmpty =
     data.inventory.total_items === 0 &&
     data.orders.active_orders === 0 &&
-    data.suppliers.active_partnered === 0;
+    data.distributors.active_partnered === 0;
 
   if (isEmpty) return <DashboardEmpty role="retailer" />;
 
@@ -438,7 +458,7 @@ function RetailerDashboard({ data }: { data: Extract<DashboardSummary, { role: "
     {
       label: "Forecast accuracy",
       value: `${data.forecast_accuracy_pct}%`,
-      meta: `${data.suppliers.active_partnered} vendor aktif`,
+      meta: `${data.distributors.active_partnered} distributor aktif`,
       tone: data.forecast_accuracy_pct >= 80 ? ("success" as const) : ("warning" as const),
       icon: Target,
     },
@@ -455,13 +475,13 @@ function RetailerDashboard({ data }: { data: Extract<DashboardSummary, { role: "
               Kontrol operasional bisnis kamu
             </h1>
             <p className="max-w-2xl text-sm leading-7 text-[#64748B]">
-              Pantau stok, order ke vendor, spending bulanan, dan rekomendasi AI untuk bisnis yang lebih efisien.
+              Pantau stok, order ke distributor, spending bulanan, dan rekomendasi AI untuk bisnis yang lebih efisien.
             </p>
           </div>
         </div>
         <div className="flex flex-wrap gap-3">
-          <Link href="/dashboard/suppliers">
-            <Button variant="secondary">Cari vendor</Button>
+          <Link href="/dashboard/distributors">
+            <Button variant="secondary">Cari distributor</Button>
           </Link>
           <Link href="/dashboard/orders">
             <Button>Buat order</Button>
@@ -560,14 +580,14 @@ function RetailerDashboard({ data }: { data: Extract<DashboardSummary, { role: "
         </Card>
         <Card className="rounded-2xl">
           <CardContent className="p-5">
-            <p className="text-xs uppercase tracking-[0.18em] text-[#64748B]">Reliability vendor</p>
+            <p className="text-xs uppercase tracking-[0.18em] text-[#64748B]">Reliability distributor</p>
             <p className="mt-2 text-3xl font-semibold text-[#0F172A]">
-              {data.suppliers.average_reliability_score}
+              {data.distributors.average_reliability_score}
               <span className="text-base font-normal text-[#64748B]">/100</span>
             </p>
-            <Link href="/dashboard/suppliers">
+            <Link href="/dashboard/distributors">
               <p className="mt-2 text-xs font-medium text-[#3B82F6] hover:underline">
-                Lihat vendor →
+                Lihat distributor →
               </p>
             </Link>
           </CardContent>

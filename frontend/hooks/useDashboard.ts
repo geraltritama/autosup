@@ -3,11 +3,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { api, type ApiResponse } from "@/lib/api";
 import { useAuthStore } from "@/store/useAuthStore";
-import {
-  mockDistributorSummary,
-  mockSupplierSummary,
-  mockRetailerSummary,
-} from "@/lib/mocks/dashboard";
 
 export type AiInsight = {
   type: string;
@@ -21,6 +16,7 @@ type DistributorSummaryData = {
   inventory: { total_items: number; low_stock_count: number; out_of_stock_count: number };
   orders: { active_orders: number; pending_orders: number; completed_this_month: number };
   suppliers: { partner_count: number; pending_requests: number };
+  retailers: { partner_count: number; pending_requests: number };
   ai_insights: AiInsight[];
 };
 
@@ -49,7 +45,7 @@ type RetailerSummaryData = {
     upcoming_due_payments: number;
     payment_success_rate: number;
   };
-  suppliers: {
+  distributors: {
     active_partnered: number;
     pending_requests: number;
     average_reliability_score: number;
@@ -64,18 +60,13 @@ export type DashboardSummary =
   | SupplierSummaryData
   | RetailerSummaryData;
 
-const USE_MOCK = process.env.NEXT_PUBLIC_USE_MOCK === "true";
-
 async function fetchDashboardSummary(
   role: "distributor" | "supplier" | "retailer",
 ): Promise<DashboardSummary> {
-  if (USE_MOCK) {
-    await new Promise((r) => setTimeout(r, 400)); // simulate network
-    if (role === "supplier") return mockSupplierSummary;
-    if (role === "retailer") return mockRetailerSummary;
-    return mockDistributorSummary;
-  }
-  const { data } = await api.get<ApiResponse<Omit<DashboardSummary, "role">>>("/dashboard/summary");
+  // Pass role as header so backend returns role-specific data
+  const { data } = await api.get<ApiResponse<Omit<DashboardSummary, "role">>>("/dashboard/summary", {
+    headers: { "x-user-role": role },
+  });
   return { ...data.data, role } as DashboardSummary;
 }
 

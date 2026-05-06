@@ -5,6 +5,7 @@ export const mockDistributorSummary: DashboardSummary = {
   inventory: { total_items: 24, low_stock_count: 3, out_of_stock_count: 1 },
   orders: { active_orders: 5, pending_orders: 2, completed_this_month: 18 },
   suppliers: { partner_count: 8, pending_requests: 1 },
+  retailers: { partner_count: 12, pending_requests: 2 },
   ai_insights: [
     {
       type: "restock_alert",
@@ -53,7 +54,7 @@ export const mockRetailerSummary: DashboardSummary = {
     upcoming_due_payments: 1,
     payment_success_rate: 98,
   },
-  suppliers: {
+  distributors: {
     active_partnered: 4,
     pending_requests: 1,
     average_reliability_score: 91,
