@@ -71,12 +71,12 @@ export function SupplierCard({ supplier, onRequestPartnership, isRequesting }: P
             )}
             <div className="space-y-1">
               <p className="text-sm font-medium text-[#0F172A]">
-                {isPartner ? "Trust-backed partnership is active" : "Ready for partnership request"}
+                {isPartner ? "Active partner" : "Available for partnership"}
               </p>
               <p className="text-sm leading-6 text-[#64748B]">
                 {isPartner
-                  ? "Kemitraan ini aktif dengan trust layer yang dikelola backend. Partnership NFT diterbitkan saat request disetujui."
-                  : "Supplier ini tersedia di discover list dan bisa masuk ke flow partnership request. Proses blockchain dikelola backend."}
+                  ? "You're connected with this supplier. Trust layer is managed by the backend."
+                  : "Request a partnership to unlock ordering, trust scoring, and secure transactions."}
               </p>
             </div>
           </div>
@@ -85,10 +85,10 @@ export function SupplierCard({ supplier, onRequestPartnership, isRequesting }: P
         <div className="flex flex-wrap gap-3">
           {isPartner ? (
             <>
-              <Button variant="secondary">View Profile</Button>
+              <Button className="gap-2">Create Order</Button>
               <Button variant="ghost" className="gap-2 text-[#22C55E]" disabled>
+                <Link2 className="h-4 w-4" />
                 Partnered
-                <ArrowUpRight className="h-4 w-4" />
               </Button>
             </>
           ) : (
@@ -101,7 +101,6 @@ export function SupplierCard({ supplier, onRequestPartnership, isRequesting }: P
                 {isRequesting && <Loader2 className="h-4 w-4 animate-spin" />}
                 Request Partnership
               </Button>
-              <Button variant="secondary">View Profile</Button>
             </>
           )}
         </div>

@@ -2,6 +2,7 @@
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, type ApiResponse } from "@/lib/api";
+import { useAuthStore } from "@/store/useAuthStore";
 
 export type SupplierType = "partner" | "discover";
 
@@ -85,9 +86,14 @@ export function useRequestPartnership() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async (supplier_id: string) => {
+      const user = useAuthStore.getState().user;
       const { data } = await api.post<ApiResponse<{ request_id: string; supplier_id: string; supplier_name: string; status: string; created_at: string }>>(
         "/suppliers/partnership-request",
-        { supplier_id },
+        {
+          supplier_id,
+          distributor_id: user?.user_id ?? "",
+          distributor_name: user?.business_name ?? user?.full_name ?? "",
+        },
       );
       return data.data;
     },
