@@ -14,7 +14,7 @@ import { RequestPartnershipDialog } from "@/components/suppliers/request-partner
 import { LegacyDialog as Dialog } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { useSuppliers, useSupplierStock, type Supplier } from "@/hooks/useSuppliers";
+import { useSuppliers, useSupplierStock, usePartnershipRequests, type Supplier } from "@/hooks/useSuppliers";
 import { useAuthStore } from "@/store/useAuthStore";
 
 const stockStatusTone = { in_stock: "success", low_stock: "warning", out_of_stock: "danger" } as const;
@@ -65,12 +65,16 @@ export default function SuppliersPage() {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [stockDialogOpen, setStockDialogOpen] = useState(false);
   const [stockSupplier, setStockSupplier] = useState<Supplier | null>(null);
-  const [requestedIds, setRequestedIds] = useState<Set<string>>(new Set());
 
   const { data, isLoading, isError, refetch } = useSuppliers({ search, type });
+  const { data: requestsData } = usePartnershipRequests("pending");
 
   const suppliers = data?.suppliers ?? [];
   const summary = data?.summary ?? { partner_count: 0, discover_count: 0, pending_requests: 0 };
+  // Persistent: check which supplier_ids have pending requests
+  const requestedIds = new Set(
+    (requestsData?.requests ?? []).map((r: { supplier_id?: string }) => r.supplier_id ?? "")
+  );
 
   const handleRequestPartnership = useCallback((supplier: Supplier) => {
     setSelectedSupplier(supplier);
@@ -185,7 +189,6 @@ export default function SuppliersPage() {
           open={dialogOpen}
           onClose={() => setDialogOpen(false)}
           supplier={selectedSupplier}
-          onSuccess={(id) => setRequestedIds((prev) => new Set(prev).add(id))}
         />
       )}
 
