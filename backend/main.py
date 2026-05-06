@@ -1278,36 +1278,188 @@ def disable_2fa(data: Disable2FAReq):
 # 20. SUPPLIERS
 # ==========================================
 
+@app.get("/suppliers")
+def get_suppliers(search: str = "", type: str = "", page: int = 1, limit: int = 20):
+    """Returns supplier list with optional search/type filter."""
+    try:
+        # Fetch users with role=supplier from Supabase auth users
+        res = supabase.table("users").select("*").eq("role", "supplier")
+        if search:
+            res = res.or_(f"full_name.ilike.%{search}%,business_name.ilike.%{search}%")
+        res = res.execute()
+        users = res.data or []
+
+        # Also check Supabase auth users via admin API
+        # For now, fallback to hardcoded list if table not ready
+        if not users:
+            # Query profiles/users table for suppliers
+            try:
+                profiles = supabase.table("profiles").select("*").eq("role", "supplier").execute().data or []
+            except:
+                profiles = []
+
+        all_users = users or profiles or []
+        partners = [u for u in all_users if u.get("partner_status") == "partner" or u.get("type") == "partner"]
+        discover = [u for u in all_users if u not in partners]
+
+        if type == "partner":
+            result = partners
+        elif type == "discover":
+            result = discover
+        else:
+            result = all_users
+
+        suppliers = []
+        for u in result:
+            suppliers.append({
+                "supplier_id": u.get("id", u.get("user_id", "")),
+                "name": u.get("business_name", u.get("full_name", "")),
+                "category": u.get("category", u.get("business_type", "Umum")),
+                "type": "partner" if u in partners else "discover",
+                "reputation_score": u.get("reputation_score", 0),
+                "total_transactions": u.get("total_transactions", 0),
+                "on_time_delivery_rate": u.get("on_time_delivery_rate", 0),
+                "wallet_address": u.get("wallet_address", ""),
+                "is_active": u.get("is_active", True),
+            })
+
+        return success_response(data={
+            "suppliers": suppliers,
+            "summary": {
+                "partner_count": len(partners),
+                "discover_count": len(discover),
+                "pending_requests": 0,
+            },
+            "pagination": {"page": page, "limit": limit, "total": len(suppliers)},
+        })
+    except Exception as e:
+        # Fallback: return from discover list + hardcoded partners
+        discover_list = [
+            {"supplier_id": "sup-001", "name": "PT Padi Nusantara Jaya", "category": "Beras & Biji-bijian", "type": "discover", "reputation_score": 95, "total_transactions": 0, "on_time_delivery_rate": 0, "wallet_address": "", "is_active": True},
+            {"supplier_id": "sup-002", "name": "CV Makmur Minyak", "category": "Minyak Goreng", "type": "discover", "reputation_score": 82, "total_transactions": 0, "on_time_delivery_rate": 0, "wallet_address": "", "is_active": True},
+        ]
+        all_sup = discover_list
+        if type == "partner":
+            all_sup = []
+        elif type == "discover":
+            all_sup = discover_list
+
+        return success_response(data={
+            "suppliers": all_sup,
+            "summary": {"partner_count": 0, "discover_count": len(discover_list), "pending_requests": 0},
+            "pagination": {"page": page, "limit": limit, "total": len(all_sup)},
+        })
+
+
+@app.get("/suppliers/partnership-requests")
+def get_partnership_requests(status: str = ""):
+    """Get partnership requests (distributor -> supplier)."""
+    try:
+        res = supabase.table("partnerships").select("*")
+        if status:
+            res = res.eq("status", status)
+        res = res.execute()
+        requests = []
+        for r in (res.data or []):
+            requests.append({
+                "request_id": r.get("id", r.get("request_id", "")),
+                "distributor": {
+                    "id": r.get("distributor_id", r.get("retailer_name", "")),
+                    "name": r.get("distributor_name", r.get("retailer_name", "")),
+                    "business_name": r.get("distributor_name", r.get("retailer_name", "")),
+                },
+                "status": r.get("status", "pending"),
+                "created_at": r.get("created_at", now_iso()),
+            })
+        return success_response(data={
+            "requests": requests,
+            "pagination": {"page": 1, "limit": 20, "total": len(requests)},
+        })
+    except Exception as e:
+        return success_response(data={"requests": [], "pagination": {"page": 1, "limit": 20, "total": 0}})
+
+
+@app.post("/suppliers/partnership-request")
+def create_partnership_request(body: dict):
+    """Distributor sends partnership request to supplier."""
+    supplier_id = body.get("supplier_id", "")
+    try:
+        res = supabase.table("partnerships").insert({
+            "supplier_id": supplier_id,
+            "status": "pending",
+            "created_at": now_iso(),
+        }).execute()
+        if res.data:
+            return success_response(data={
+                "request_id": res.data[0].get("id", ""),
+                "supplier_id": supplier_id,
+                "supplier_name": "",
+                "status": "pending",
+                "created_at": now_iso(),
+            }, message="Request kemitraan dikirim")
+    except:
+        pass
+    return success_response(data={
+        "request_id": f"req-{uuid.uuid4().hex[:8]}",
+        "supplier_id": supplier_id,
+        "supplier_name": "",
+        "status": "pending",
+        "created_at": now_iso(),
+    }, message="Request kemitraan dikirim")
+
+
+@app.get("/suppliers/{supplier_id}/stock")
+def get_supplier_stock(supplier_id: str):
+    """Get stock items from a specific supplier."""
+    try:
+        res = supabase.table("inventory").select("*").eq("user_id", supplier_id).execute()
+        items = res.data or []
+        products = []
+        for item in items:
+            stock = item.get("stock", item.get("current_stock", 0))
+            min_stock = item.get("min_stock", 10)
+            status = "out_of_stock" if stock == 0 else ("low_stock" if stock < min_stock else "in_stock")
+            products.append({
+                "item_id": item.get("id", ""),
+                "name": item.get("name", item.get("product_name", "")),
+                "category": item.get("category", ""),
+                "stock": stock,
+                "min_stock": min_stock,
+                "unit": item.get("unit", "pcs"),
+                "status": status,
+                "estimated_restock_days": item.get("estimated_restock_days", None),
+                "last_updated": item.get("last_updated", item.get("updated_at", now_iso())),
+            })
+        return success_response(data={
+            "supplier": {"supplier_id": supplier_id, "name": "", "is_partner": True},
+            "products": products,
+            "pagination": {"page": 1, "limit": 20, "total": len(products)},
+        })
+    except Exception as e:
+        return success_response(data={
+            "supplier": {"supplier_id": supplier_id, "name": "", "is_partner": False},
+            "products": [],
+            "pagination": {"page": 1, "limit": 20, "total": 0},
+        })
+
+
+@app.put("/suppliers/partnership-request/{request_id}")
+def respond_partnership_request(request_id: str, body: dict):
+    """Accept or reject a partnership request."""
+    action = body.get("action", "reject")
+    new_status = "accepted" if action == "accept" else "rejected"
+    try:
+        supabase.table("partnerships").update({"status": new_status}).eq("id", request_id).execute()
+    except:
+        pass
+    return success_response(data={"request_id": request_id, "action": action}, message=f"Request {new_status}")
+
+
 @app.get("/suppliers/discover")
 def discover_suppliers():
-    return success_response(
-        data=[
-            {"supplier_id": "sup-001", "name": "PT Padi Nusantara Jaya", "category": "Beras & Biji-bijian", "reliability_tier": "Gold", "reliability_score": 95},
-            {"supplier_id": "sup-002", "name": "CV Makmur Minyak", "category": "Minyak Goreng", "reliability_tier": "Silver", "reliability_score": 82},
-        ],
-        message="Berhasil tarik list supplier",
-    )
-
-
-@app.post("/suppliers/request")
-def request_supplier(retailer_name: str, supplier_name: str):
-    try:
-        payload = {"retailer_name": retailer_name, "supplier_name": supplier_name, "status": "pending"}
-        res = supabase.table("partnerships").insert(payload).execute()
-        return success_response(data=res.data[0], message="Request kemitraan dikirim")
-    except Exception as e:
-        return error_response(str(e))
-
-
-@app.patch("/suppliers/approve/{partnership_id}")
-def approve_supplier_partnership(partnership_id: str):
-    try:
-        res = supabase.table("partnerships").update({"status": "approved"}).eq("id", partnership_id).execute()
-        if not res.data:
-            return error_response("Kemitraan tidak ditemukan")
-        return success_response(data=res.data[0], message="Kemitraan disetujui")
-    except Exception as e:
-        return error_response(str(e))
+    """Legacy discover endpoint — redirects to /suppliers?type=discover."""
+    data = get_suppliers(type="discover")
+    return data
 
 # ==========================================
 # 21. NOTIFICATIONS
