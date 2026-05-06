@@ -36,6 +36,20 @@ a {
 }
 
 button,
-input {
+button,
+[role="button"],
+select,
+input[type="submit"],
+input[type="button"] {
+  cursor: pointer;
+}
+
+button:disabled,
+[role="button"][aria-disabled="true"] {
+  cursor: not-allowed;
+}
+
+input,
+textarea {
   font: inherit;
 }
