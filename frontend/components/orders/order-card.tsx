@@ -153,7 +153,7 @@ export function OrderCard({ order, userRole, onViewDetail, onShip }: OrderCardPr
 
           {/* Buyer (distributor / retailer): track delivery untuk order aktif */}
           {(userRole === "distributor" || userRole === "retailer") && !isTerminal && (
-            <Button className="gap-2">
+            <Button className="gap-2" onClick={() => onViewDetail?.(order.order_id)}>
               <Truck className="h-4 w-4" />
               Track Delivery
             </Button>

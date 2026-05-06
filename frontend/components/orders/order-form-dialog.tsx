@@ -62,8 +62,8 @@ export function OrderFormDialog({ open, onClose, prefill }: Props) {
   const isRetailer = role === "retailer";
   const sellerType = isRetailer ? "distributor" as const : "supplier" as const;
 
-  const { data: suppliersData, isLoading: suppliersLoading } = useSuppliers({ type: "partner" });
-  const { data: distributorsData, isLoading: distributorsLoading } = useDistributors({ type: "partner" });
+  const { data: suppliersData, isLoading: suppliersLoading } = useSuppliers({});
+  const { data: distributorsData, isLoading: distributorsLoading } = useDistributors({});
 
   const partners = isRetailer
     ? (distributorsData?.distributors ?? [])
