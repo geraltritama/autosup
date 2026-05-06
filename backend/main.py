@@ -3,6 +3,7 @@ import csv
 import io
 import random
 import uuid
+import requests
 from datetime import datetime, timedelta
 from dotenv import load_dotenv
 from fastapi import FastAPI, Header
@@ -182,6 +183,39 @@ def safe_query(table: str, select="*", filters=None):
 def auth_users_by_role(role: str) -> list[dict]:
     """Fetch users from Supabase Auth by role, return as dict list."""
     results = []
+
+    # Primary: Supabase Auth REST API (most reliable)
+    try:
+        headers = {
+            "apikey": os.getenv("SUPABASE_KEY"),
+            "Authorization": f"Bearer {os.getenv('SUPABASE_KEY')}",
+        }
+        resp = requests.get(
+            f"{os.getenv('SUPABASE_URL')}/auth/v1/admin/users",
+            headers=headers,
+            timeout=10,
+        )
+        if resp.status_code == 200:
+            for u in resp.json().get("users", []):
+                meta = u.get("user_metadata", {}) or {}
+                if meta.get("role") == role:
+                    results.append({
+                        "id": u.get("id", ""),
+                        "email": u.get("email", ""),
+                        "full_name": meta.get("full_name", ""),
+                        "business_name": meta.get("business_name", ""),
+                        "role": role,
+                        "phone": meta.get("phone", ""),
+                        "business_type": meta.get("business_type", ""),
+                        "reputation_score": meta.get("reputation_score", 0),
+                        "city": meta.get("city", ""),
+                        "is_active": True,
+                    })
+            return results
+    except Exception:
+        pass
+
+    # Fallback: supabase-py admin API
     try:
         auth_response = supabase.auth.admin.list_users()
         auth_users = auth_response.users if hasattr(auth_response, 'users') else list(auth_response)
