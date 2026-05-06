@@ -8,6 +8,7 @@ import { SupplierCard } from "@/components/suppliers/supplier-card";
 import { RetailerCard } from "@/components/retailers/retailer-card";
 import { DistributorCard } from "@/components/distributors/distributor-card";
 import { DistributorStockDialog } from "@/components/distributors/distributor-stock-dialog";
+import { SupplierStockDialog } from "@/components/suppliers/supplier-stock-dialog";
 import { DistributorDetailDialog } from "@/components/distributors/distributor-detail-dialog";
 import { SuppliersTrustPanel } from "@/components/suppliers/suppliers-trust-panel";
 import { PageErrorState } from "@/components/dashboard/page-error-state";
@@ -148,6 +149,8 @@ export default function PartnershipsPage() {
 
   const [selectedDistributor, setSelectedDistributor] = useState<Distributor | null>(null);
   const [stockDialogOpen, setStockDialogOpen] = useState(false);
+  const [supplierStockDialogOpen, setSupplierStockDialogOpen] = useState(false);
+  const [selectedSupplierForStock, setSelectedSupplierForStock] = useState<Supplier | null>(null);
   const [distributorDetailOpen, setDistributorDetailOpen] = useState(false);
 
   const summary = summaryData?.summary;
@@ -381,7 +384,10 @@ export default function PartnershipsPage() {
             <div className="grid gap-4">
               {(suppliers as Supplier[]).map((supplier) => (
                 <div key={supplier.supplier_id} className="space-y-2">
-                  <SupplierCard supplier={supplier} />
+                  <SupplierCard
+                    supplier={supplier}
+                    onViewStock={(s) => { setSelectedSupplierForStock(s); setSupplierStockDialogOpen(true); }}
+                  />
                   <SupplierNFTBadge supplierId={supplier.supplier_id} />
                 </div>
               ))}
@@ -425,6 +431,16 @@ export default function PartnershipsPage() {
           distributorName={selectedDistributor?.name ?? ""}
           open={stockDialogOpen}
           onClose={() => setStockDialogOpen(false)}
+        />
+      )}
+
+      {/* Supplier Stock dialog */}
+      {selectedSupplierForStock && (
+        <SupplierStockDialog
+          supplierId={selectedSupplierForStock.supplier_id}
+          supplierName={selectedSupplierForStock.name}
+          open={supplierStockDialogOpen}
+          onClose={() => { setSupplierStockDialogOpen(false); setSelectedSupplierForStock(null); }}
         />
       )}
 
