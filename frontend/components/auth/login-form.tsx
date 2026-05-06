@@ -57,7 +57,7 @@ export function LoginForm() {
         </div>
         <CardTitle className="text-xl">Sign in to AUTOSUP</CardTitle>
         <CardDescription>
-          Access your operational dashboard — one workspace for suppliers, distributors, and retailers.
+          One workspace. Your inventory, orders, and partners.
         </CardDescription>
       </CardHeader>
 
