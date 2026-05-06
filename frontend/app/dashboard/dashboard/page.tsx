@@ -102,14 +102,6 @@ function DashboardEmpty({ role }: { role: "distributor" | "supplier" | "retailer
 // ─── Distributor dashboard ────────────────────────────────────────────────────
 
 function DistributorDashboard({ data }: { data: Extract<DashboardSummary, { role: "distributor" }> }) {
-  const isEmpty =
-    data.inventory.total_items === 0 &&
-    data.orders.active_orders === 0 &&
-    data.suppliers.partner_count === 0 &&
-    data.retailers.partner_count === 0;
-
-  if (isEmpty) return <DashboardEmpty role="distributor" />;
-
   const kpis = [
     {
       label: "Total inventory",
@@ -275,13 +267,6 @@ function DistributorDashboard({ data }: { data: Extract<DashboardSummary, { role
 // ─── Supplier dashboard ───────────────────────────────────────────────────────
 
 function SupplierDashboard({ data }: { data: Extract<DashboardSummary, { role: "supplier" }> }) {
-  const isEmpty =
-    data.products.total_active === 0 &&
-    data.orders.incoming_orders === 0 &&
-    data.partners.distributor_count === 0;
-
-  if (isEmpty) return <DashboardEmpty role="supplier" />;
-
   const kpis = [
     {
       label: "Produk aktif",
@@ -426,13 +411,6 @@ function SupplierDashboard({ data }: { data: Extract<DashboardSummary, { role: "
 // ─── Retailer dashboard ───────────────────────────────────────────────────────
 
 function RetailerDashboard({ data }: { data: Extract<DashboardSummary, { role: "retailer" }> }) {
-  const isEmpty =
-    data.inventory.total_items === 0 &&
-    data.orders.active_orders === 0 &&
-    data.distributors.active_partnered === 0;
-
-  if (isEmpty) return <DashboardEmpty role="retailer" />;
-
   const kpis = [
     {
       label: "Total inventory",
@@ -650,9 +628,9 @@ export default function DashboardPage() {
 
   if (isLoading) return <DashboardLoading />;
   if (isError) return <DashboardError onRetry={() => refetch()} />;
-  if (!data) return <DashboardEmpty role={role} />;
 
-  if (data.role === "supplier") return <SupplierDashboard data={data} />;
-  if (data.role === "retailer") return <RetailerDashboard data={data} />;
-  return <DistributorDashboard data={data} />;
+  if (data?.role === "supplier") return <SupplierDashboard data={data} />;
+  if (data?.role === "retailer") return <RetailerDashboard data={data} />;
+  if (data) return <DistributorDashboard data={data} />;
+  return <DashboardLoading />;
 }
