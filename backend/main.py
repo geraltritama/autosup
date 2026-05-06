@@ -252,6 +252,19 @@ def login_user(req: LoginReq):
         return error_response("Login gagal. Cek kembali email dan password Anda.")
 
 
+@app.post("/auth/forgot-password")
+def forgot_password(body: dict):
+    """Send password reset email via Supabase."""
+    try:
+        email = body.get("email", "")
+        if not email:
+            return error_response("Email diperlukan.")
+        supabase.auth.reset_password_email(email)
+        return success_response(message="Link reset password telah dikirim ke email.")
+    except Exception as e:
+        return error_response(f"Gagal mengirim reset: {str(e)}")
+
+
 @app.post("/auth/refresh")
 def refresh_token(req: RefreshReq):
     try:
