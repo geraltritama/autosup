@@ -929,10 +929,14 @@ def get_distributor_requests(page: int = 1, limit: int = 20):
         res = supabase.table("partnerships").select("*").eq("status", "pending").execute()
         requests = [
             {
-                "request_id": p.get("id"), "distributor_id": p.get("distributor_id", ""),
-                "distributor_name": p.get("distributor_name", p.get("supplier_name", "")),
-                "city": p.get("city", ""), "reliability_score": p.get("reliability_score", 80),
-                "status": p.get("status", "pending"), "created_at": p.get("created_at", now_iso()),
+                "request_id": p.get("id"),
+                "distributor_id": p.get("retailer_name", ""),
+                "distributor_name": p.get("retailer_name", ""),
+                "supplier_id": p.get("supplier_name", ""),
+                "city": p.get("city", ""),
+                "reliability_score": p.get("reliability_score", 0),
+                "status": p.get("status", "pending"),
+                "created_at": p.get("created_at", now_iso()),
             }
             for p in (res.data or [])
         ]

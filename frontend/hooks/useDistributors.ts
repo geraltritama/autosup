@@ -90,6 +90,7 @@ type RawPartnershipRequest = {
   request_id: string;
   distributor_id: string;
   distributor_name: string;
+  supplier_id?: string;
   city?: string;
   reliability_score?: number;
   status: "pending" | "accepted" | "rejected";
