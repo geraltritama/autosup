@@ -5,17 +5,17 @@ const highlights = [
   {
     icon: TrendingUp,
     title: "Demand-first operations",
-    description: "Monitor demand, fulfillment, and partner readiness from one integrated workspace.",
+    description: "See what your partners need, what's running low, and what's coming — all in one view.",
   },
   {
     icon: Building2,
     title: "Multi-role workspace",
-    description: "Role-aware dashboards built for suppliers, distributors, and retailers — each with relevant data.",
+    description: "Your dashboard knows your role. Supplier, distributor, or retailer — you'll see what matters to you.",
   },
   {
     icon: ShieldEllipsis,
     title: "Trust layer ready",
-    description: "Partnerships, escrow, and partner reputation surfaced as system results. No crypto complexity.",
+    description: "Verified partners and secure transactions built right in. No tech setup needed.",
   },
 ];
 

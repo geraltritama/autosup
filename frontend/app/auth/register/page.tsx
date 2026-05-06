@@ -5,17 +5,17 @@ const highlights = [
   {
     icon: TrendingUp,
     title: "Demand-first operations",
-    description: "Pantau demand, fulfillment, dan readiness partner dari satu workspace yang terintegrasi.",
+    description: "See what your partners need, what's running low, and what's coming — all in one view.",
   },
   {
     icon: Building2,
     title: "Multi-role workspace",
-    description: "Dashboard yang mengenali peran kamu — supplier, distributor, atau retailer — dengan data yang relevan.",
+    description: "Your dashboard knows your role. Supplier, distributor, or retailer — you'll see what matters to you.",
   },
   {
     icon: ShieldEllipsis,
     title: "Trust layer ready",
-    description: "Partnership, escrow, dan reputasi partner ditampilkan sebagai hasil sistem. Tanpa kerumitan crypto.",
+    description: "Verified partners and secure transactions built right in. No tech setup needed.",
   },
 ];
 
