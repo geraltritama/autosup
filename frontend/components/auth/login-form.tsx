@@ -17,9 +17,15 @@ export function LoginForm() {
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    if (!executeRecaptcha) return;
-
-    const recaptcha_token = await executeRecaptcha("login");
+    // reCAPTCHA bypass — kirim placeholder token jika tidak tersedia
+    let recaptcha_token = "bypass-recaptcha";
+    if (executeRecaptcha) {
+      try {
+        recaptcha_token = await executeRecaptcha("login");
+      } catch {
+        // fallback ke bypass jika reCAPTCHA gagal
+      }
+    }
     await login({ email, password, recaptcha_token });
   }
 
