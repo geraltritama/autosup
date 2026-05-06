@@ -2,9 +2,6 @@
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, type ApiResponse } from "@/lib/api";
-import { getMockSuppliers, getMockPartnershipRequests, mockSuppliers, mockPartnershipRequests } from "@/lib/mocks/suppliers";
-
-const USE_MOCK = process.env.NEXT_PUBLIC_USE_MOCK === "true";
 
 export type SupplierType = "partner" | "discover";
 
@@ -57,10 +54,6 @@ export function useSuppliers(filters: SupplierFilters = {}) {
   return useQuery({
     queryKey: ["suppliers", filters],
     queryFn: async (): Promise<SuppliersResponse> => {
-      if (USE_MOCK) {
-        await new Promise((r) => setTimeout(r, 400));
-        return getMockSuppliers(filters);
-      }
       const params = new URLSearchParams();
       if (filters.search) params.set("search", filters.search);
       if (filters.type) params.set("type", filters.type);
@@ -77,10 +70,6 @@ export function usePartnershipRequests(status?: string) {
   return useQuery({
     queryKey: ["partnership-requests", status],
     queryFn: async (): Promise<PartnershipRequestsResponse> => {
-      if (USE_MOCK) {
-        await new Promise((r) => setTimeout(r, 350));
-        return getMockPartnershipRequests(status);
-      }
       const params = new URLSearchParams();
       if (status) params.set("status", status);
       const { data } = await api.get<ApiResponse<PartnershipRequestsResponse>>(
@@ -96,17 +85,6 @@ export function useRequestPartnership() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async (supplier_id: string) => {
-      if (USE_MOCK) {
-        await new Promise((r) => setTimeout(r, 500));
-        const supplier = mockSuppliers.find((s) => s.supplier_id === supplier_id);
-        return {
-          request_id: `req-uuid-${Date.now()}`,
-          supplier_id,
-          supplier_name: supplier?.name ?? "Supplier",
-          status: "pending" as const,
-          created_at: new Date().toISOString(),
-        };
-      }
       const { data } = await api.post<ApiResponse<{ request_id: string; supplier_id: string; supplier_name: string; status: string; created_at: string }>>(
         "/suppliers/partnership-request",
         { supplier_id },
@@ -147,24 +125,6 @@ export function useSupplierStock(supplierId: string | null) {
     queryKey: ["supplier-stock", supplierId],
     enabled: !!supplierId,
     queryFn: async (): Promise<SupplierStockResponse> => {
-      if (USE_MOCK) {
-        await new Promise((r) => setTimeout(r, 400));
-        const supplier = mockSuppliers.find((s) => s.supplier_id === supplierId);
-        return {
-          supplier: {
-            supplier_id: supplierId!,
-            name: supplier?.name ?? "Supplier",
-            is_partner: true,
-          },
-          products: [
-            { item_id: "sp-001", name: "Tepung Terigu", category: "bahan_baku", stock: 850, min_stock: 200, unit: "kg", status: "in_stock", estimated_restock_days: null, last_updated: new Date().toISOString() },
-            { item_id: "sp-002", name: "Gula Pasir", category: "bahan_baku", stock: 30, min_stock: 100, unit: "kg", status: "low_stock", estimated_restock_days: 3, last_updated: new Date().toISOString() },
-            { item_id: "sp-003", name: "Minyak Goreng", category: "bahan_baku", stock: 0, min_stock: 50, unit: "liter", status: "out_of_stock", estimated_restock_days: 5, last_updated: new Date().toISOString() },
-            { item_id: "sp-004", name: "Garam Dapur", category: "bahan_baku", stock: 200, min_stock: 80, unit: "kg", status: "in_stock", estimated_restock_days: null, last_updated: new Date().toISOString() },
-          ],
-          pagination: { page: 1, limit: 20, total: 4 },
-        };
-      }
       const { data } = await api.get<ApiResponse<SupplierStockResponse>>(
         `/suppliers/${supplierId}/stock`,
       );
@@ -178,12 +138,6 @@ export function useRespondPartnership() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async ({ request_id, action }: { request_id: string; action: "accept" | "reject" }) => {
-      if (USE_MOCK) {
-        await new Promise((r) => setTimeout(r, 400));
-        const req = mockPartnershipRequests.find((r) => r.request_id === request_id);
-        if (req) req.status = action === "accept" ? "accepted" : "rejected";
-        return { request_id, action };
-      }
       const { data } = await api.put<ApiResponse<{ request_id: string; action: string }>>(
         `/suppliers/partnership-request/${request_id}`,
         { action },

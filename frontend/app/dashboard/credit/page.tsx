@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { useScrollLock } from "@/hooks/useScrollLock";
 import {
   AlertTriangle,
   BadgeDollarSign,
@@ -341,6 +342,7 @@ export default function CreditPage() {
   const [filterStatus, setFilterStatus] = useState<CreditAccountStatus | "">("");
   const [showOpen, setShowOpen] = useState(false);
   const [selectedAccountId, setSelectedAccountId] = useState<string | null>(null);
+  useScrollLock(!!selectedAccountId);
 
   const { data, isLoading, isError, refetch } = useCreditAccounts({
     status: filterStatus || undefined,

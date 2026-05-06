@@ -18,17 +18,21 @@ import { useLogistics, useOptimizeRoute } from "@/hooks/useLogistics";
 import { useAuthStore } from "@/store/useAuthStore";
 
 const statusTone = {
-  processing: "neutral",
+  packed: "neutral",
+  dispatched: "info",
   in_transit: "info",
   delivered: "success",
   delayed: "danger",
+  failed: "danger",
 } as const;
 
 const statusLabel = {
-  processing: "Processing",
+  packed: "Packed",
+  dispatched: "Dispatched",
   in_transit: "In Transit",
   delivered: "Delivered",
   delayed: "Delayed",
+  failed: "Failed",
 } as const;
 
 export default function LogisticsPage() {

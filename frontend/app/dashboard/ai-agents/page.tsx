@@ -15,7 +15,7 @@ import { PageErrorState } from "@/components/dashboard/page-error-state";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { useAiAgents, useUpdateAgentConfig } from "@/hooks/useAiAgents";
+import { useAiAgents, useUpdateAgentConfig, type AiAgentStatus } from "@/hooks/useAiAgents";
 import { useAuthStore } from "@/store/useAuthStore";
 
 function formatCurrency(amount: number) {
@@ -26,8 +26,8 @@ function formatCurrency(amount: number) {
   }).format(amount);
 }
 
-const statusTone = { active: "success", inactive: "neutral", learning: "warning" } as const;
-const statusLabel = { active: "Aktif", inactive: "Nonaktif", learning: "Learning" } as const;
+const statusTone = { active: "success", paused: "warning", disabled: "neutral" } as const;
+const statusLabel = { active: "Aktif", paused: "Paused", disabled: "Nonaktif" } as const;
 
 export default function AiAgentsPage() {
   const role = useAuthStore((s) => s.user?.role);
@@ -138,14 +138,13 @@ export default function AiAgentsPage() {
                           value={agent.automation_level}
                           disabled={updateConfig.isPending}
                           onChange={(e) => {
-                            const val = e.target.value as "manual" | "semi-auto" | "auto";
+                            const val = e.target.value as "manual_approval" | "auto_with_threshold" | "auto_execute";
                             updateConfig.mutate({ id: agent.id, automation_level: val });
                           }}
                         >
-                          <option value="manual">Manual Approval</option>
-                          <option value="semi-auto">Semi-Auto</option>
-                          {/* MVP warning for auto execute handling */}
-                          <option value="auto">Auto-Execute (Disabled)</option>
+                          <option value="manual_approval">Manual Approval</option>
+                          <option value="auto_with_threshold">Auto with Threshold</option>
+                          <option value="auto_execute">Auto Execute</option>
                         </select>
                       </div>
                       
@@ -153,7 +152,7 @@ export default function AiAgentsPage() {
                         variant={agent.status === "active" ? "secondary" : "primary"}
                         disabled={updateConfig.isPending}
                         onClick={() => {
-                          const newStatus = agent.status === "active" ? "inactive" : "active";
+                          const newStatus: AiAgentStatus = agent.status === "active" ? "paused" : "active";
                           updateConfig.mutate({ id: agent.id, status: newStatus });
                         }}
                       >
