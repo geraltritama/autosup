@@ -29,8 +29,8 @@ function formatCurrency(amount: number) {
   }).format(amount);
 }
 
-const statusTone = { pending: "warning", paid: "success", overdue: "danger" } as const;
-const statusLabel = { pending: "Belum Dibayar", paid: "Lunas", overdue: "Jatuh Tempo" } as const;
+const statusTone = { draft: "neutral", sent: "info", pending: "warning", paid: "success", overdue: "danger", cancelled: "danger" } as const;
+const statusLabel = { draft: "Draft", sent: "Terkirim", pending: "Belum Dibayar", paid: "Lunas", overdue: "Jatuh Tempo", cancelled: "Dibatalkan" } as const;
 const distStatusTone = { pending: "warning", settled: "success", processing: "info" } as const;
 const distStatusLabel = { pending: "Pending", settled: "Settled", processing: "Processing" } as const;
 
@@ -77,7 +77,9 @@ export default function PaymentPage() {
           <div className="space-y-2">
             <h1 className="text-3xl font-semibold tracking-tight text-[#0F172A]">Payments & Credit</h1>
             <p className="max-w-3xl text-sm leading-7 text-[#64748B]">
-              Lacak invoice keluar ke vendor, manfaatkan fasilitas credit line, dan optimalkan pengeluaran dengan AI cash flow recommendation.
+              {role === "retailer"
+                ? "Lacak invoice ke distributor, manfaatkan fasilitas credit line, dan optimalkan pengeluaran dengan AI cash flow recommendation."
+                : "Lacak pembayaran masuk dari retailer dan keluar ke supplier, dan optimalkan cash flow dengan AI."}
             </p>
           </div>
         </div>
@@ -115,7 +117,7 @@ export default function PaymentPage() {
       <section className="grid gap-6 xl:grid-cols-[1.5fr_0.85fr]">
         <div className="space-y-4">
           <h2 className="text-lg font-semibold text-[#0F172A]">
-            {role === "distributor" ? "Payment Transactions" : "Vendor Invoices"}
+            {role === "distributor" ? "Payment Transactions" : "Distributor Invoices"}
           </h2>
 
           {isLoading ? (
@@ -173,7 +175,7 @@ export default function PaymentPage() {
           ) : invoices.length === 0 ? (
             <div className="flex h-32 flex-col items-center justify-center rounded-2xl border border-[#E2E8F0] bg-white">
               <span className="text-sm font-medium text-[#0F172A]">Tidak ada tagihan aktif</span>
-              <span className="mt-1 text-xs text-[#64748B]">Semua tagihan vendor sudah lunas.</span>
+              <span className="text-xs text-[#64748B]">Semua tagihan {role === "retailer" ? "distributor" : "supplier"} sudah lunas.</span>
             </div>
           ) : (
             <div className="grid gap-4">
@@ -182,7 +184,7 @@ export default function PaymentPage() {
                   <CardContent className="flex items-center justify-between gap-4 p-5">
                     <div className="space-y-2">
                       <div className="flex items-center gap-3">
-                        <p className="text-sm font-semibold text-[#0F172A]">{inv.vendor_name}</p>
+                        <p className="text-sm font-semibold text-[#0F172A]">{inv.seller_name}</p>
                         <Badge tone={statusTone[inv.status]}>{statusLabel[inv.status]}</Badge>
                       </div>
                       <p className="text-xl font-bold text-[#0F172A]">{formatCurrency(inv.amount)}</p>
