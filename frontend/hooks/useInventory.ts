@@ -2,6 +2,7 @@
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, type ApiResponse } from "@/lib/api";
+import { useAuthStore } from "@/store/useAuthStore";
 
 export type InventoryStatus = "in_stock" | "low_stock" | "out_of_stock";
 
@@ -12,6 +13,7 @@ export type InventoryItem = {
   stock: number;
   min_stock: number;
   unit: string;
+  price: number;
   status: InventoryStatus;
   last_updated: string;
 };
@@ -32,6 +34,7 @@ export type AddItemPayload = {
   stock: number;
   min_stock: number;
   unit: string;
+  price: number;
 };
 
 export type UpdateItemPayload = Partial<AddItemPayload>;
@@ -64,15 +67,16 @@ type InventoryFilters = {
 };
 
 export function useInventory(filters: InventoryFilters = {}) {
+  const userId = useAuthStore((s) => s.user?.user_id);
   return useQuery({
-    queryKey: ["inventory", filters],
+    queryKey: ["inventory", filters, userId],
     queryFn: async (): Promise<InventoryResponse> => {
-      // Backend returns flat array: [{id, name, stock, min_stock, category, unit}]
-      // Filter/pagination done client-side since backend doesn't support query params
-      type BackendItem = { id: string; name: string; stock: number; min_stock: number; category: string; unit: string };
-      const { data } = await api.get<ApiResponse<BackendItem[]>>("/inventory");
-      const allItems: InventoryItem[] = data.data.map((item) => ({
+      type BackendItem = { id: string; name: string; stock: number; min_stock: number; category: string; unit: string; price?: number };
+      const params = userId ? `?user_id=${userId}` : "";
+      const { data } = await api.get<ApiResponse<BackendItem[]>>(`/inventory${params}`);
+      const allItems: InventoryItem[] = (data.data ?? []).map((item) => ({
         ...item,
+        price: item.price ?? 0,
         status: item.stock === 0 ? "out_of_stock" : item.stock < item.min_stock ? "low_stock" : "in_stock",
         last_updated: new Date().toISOString(),
       }));
@@ -98,14 +102,19 @@ export function useInventory(filters: InventoryFilters = {}) {
 
 export function useAddInventoryItem() {
   const qc = useQueryClient();
+  const userId = useAuthStore((s) => s.user?.user_id);
   return useMutation({
     mutationFn: async (payload: AddItemPayload): Promise<InventoryItem> => {
-      // Backend expects {product_name, current_stock}; map from frontend payload
       const { data } = await api.post<ApiResponse<InventoryItem>>("/inventory", {
         product_name: payload.name,
         current_stock: payload.stock,
+        min_threshold: payload.min_stock,
+        category: payload.category,
+        unit: payload.unit,
+        price: payload.price,
+        user_id: userId,
       });
-      const item = data.data as unknown as { id: string; name: string; stock: number; min_stock: number; category: string; unit: string };
+      const item = data.data as unknown as { id: string; name: string; stock: number; min_stock: number; category: string; unit: string; price?: number };
       return {
         id: item.id,
         name: item.name,
@@ -113,6 +122,7 @@ export function useAddInventoryItem() {
         min_stock: item.min_stock ?? payload.min_stock,
         category: item.category ?? payload.category,
         unit: item.unit ?? payload.unit,
+        price: item.price ?? payload.price,
         status: item.stock === 0 ? "out_of_stock" : item.stock < (item.min_stock ?? payload.min_stock) ? "low_stock" : "in_stock",
         last_updated: new Date().toISOString(),
       };
@@ -131,12 +141,13 @@ export function useUpdateInventoryItem() {
       id: string;
       payload: UpdateItemPayload;
     }): Promise<InventoryItem> => {
-      // Backend only accepts {current_stock} via PATCH
+      const patchBody: Record<string, unknown> = { current_stock: payload.stock ?? 0 };
+      if (payload.price !== undefined) patchBody.price = payload.price;
       const { data } = await api.patch<ApiResponse<InventoryItem>>(
         `/inventory/${id}`,
-        { current_stock: payload.stock ?? 0 },
+        patchBody,
       );
-      const item = data.data as unknown as { id: string; name: string; stock: number; min_stock: number; category: string; unit: string };
+      const item = data.data as unknown as { id: string; name: string; stock: number; min_stock: number; category: string; unit: string; price?: number };
       return {
         id: item.id,
         name: item.name,
@@ -144,6 +155,7 @@ export function useUpdateInventoryItem() {
         min_stock: item.min_stock,
         category: item.category,
         unit: item.unit,
+        price: item.price ?? 0,
         status: item.stock === 0 ? "out_of_stock" : item.stock < item.min_stock ? "low_stock" : "in_stock",
         last_updated: new Date().toISOString(),
       };
@@ -171,5 +183,24 @@ export function useRestockRecommendation() {
       );
       return data.data;
     },
+  });
+}
+
+export function useSellerInventory(sellerId: string) {
+  return useQuery({
+    queryKey: ["seller-inventory", sellerId],
+    queryFn: async (): Promise<InventoryItem[]> => {
+      if (!sellerId) return [];
+      type BackendItem = { id: string; name: string; stock: number; min_stock: number; category: string; unit: string; price?: number };
+      const { data } = await api.get<ApiResponse<BackendItem[]>>(`/inventory/seller/${sellerId}`);
+      return (data.data || []).map((item) => ({
+        ...item,
+        price: item.price ?? 0,
+        status: item.stock === 0 ? "out_of_stock" : item.stock < item.min_stock ? "low_stock" : "in_stock",
+        last_updated: new Date().toISOString(),
+      }));
+    },
+    enabled: !!sellerId,
+    staleTime: 30 * 1000,
   });
 }

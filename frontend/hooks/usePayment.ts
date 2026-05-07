@@ -2,6 +2,7 @@
 
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api, type ApiResponse } from "@/lib/api";
+import { useAuthStore } from "@/store/useAuthStore";
 
 export type InvoiceStatus = "draft" | "sent" | "pending" | "paid" | "overdue" | "cancelled";
 
@@ -38,10 +39,12 @@ export type RetailerPaymentResponse = {
 };
 
 export function useRetailerPayments() {
+  const userId = useAuthStore((s) => s.user?.user_id);
   return useQuery({
-    queryKey: ["retailer", "payments"],
+    queryKey: ["retailer", "payments", userId],
     queryFn: async (): Promise<RetailerPaymentResponse> => {
-      const { data } = await api.get<ApiResponse<RetailerPaymentResponse>>("/payments/retailer");
+      const params = userId ? `?user_id=${userId}` : "";
+      const { data } = await api.get<ApiResponse<RetailerPaymentResponse>>(`/payments/retailer${params}`);
       return data.data;
     },
     staleTime: 60 * 1000,
@@ -73,10 +76,12 @@ export type DistributorPaymentResponse = {
 };
 
 export function useDistributorPayments() {
+  const userId = useAuthStore((s) => s.user?.user_id);
   return useQuery({
-    queryKey: ["distributor", "payments"],
+    queryKey: ["distributor", "payments", userId],
     queryFn: async (): Promise<DistributorPaymentResponse> => {
-      const { data } = await api.get<ApiResponse<DistributorPaymentResponse>>("/payments/distributor");
+      const params = userId ? `?user_id=${userId}` : "";
+      const { data } = await api.get<ApiResponse<DistributorPaymentResponse>>(`/payments/distributor${params}`);
       return data.data;
     },
     staleTime: 60 * 1000,

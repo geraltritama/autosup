@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowUpRight, Building2, Clock3, Link2, Loader2, Eye } from "lucide-react";
+import { ArrowUpRight, Building2, Clock3, Link2, Loader2, Eye, Trash2, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -12,10 +12,11 @@ type Props = {
   onRequestPartnership?: (distributor: Distributor) => void;
   onViewStock?: (distributor: Distributor) => void;
   onViewDetail?: (distributor: Distributor) => void;
+  onDeletePartnership?: (distributor: Distributor) => void;
   isRequesting?: boolean;
 };
 
-export function DistributorCard({ distributor, role = "supplier", onRequestPartnership, onViewStock, onViewDetail, isRequesting }: Props) {
+export function DistributorCard({ distributor, role = "supplier", onRequestPartnership, onViewStock, onViewDetail, onDeletePartnership, isRequesting }: Props) {
   const isPartner = distributor.partnership_status === "partner";
 
   return (
@@ -114,6 +115,33 @@ export function DistributorCard({ distributor, role = "supplier", onRequestPartn
                 Partnered
                 <ArrowUpRight className="h-4 w-4" />
               </Button>
+              {onDeletePartnership && (
+                <Button
+                  variant="ghost"
+                  className="gap-2 text-red-500 hover:text-red-600 hover:bg-red-50"
+                  onClick={() => onDeletePartnership(distributor)}
+                >
+                  <Trash2 className="h-4 w-4" />
+                  Putus Kemitraan
+                </Button>
+              )}
+            </>
+          ) : distributor.partnership_status === "pending" ? (
+            <>
+              <Button variant="secondary" className="gap-2" disabled>
+                <Clock3 className="h-4 w-4" />
+                Requested
+              </Button>
+              {onDeletePartnership && (
+                <Button
+                  variant="ghost"
+                  className="gap-2 text-red-500 hover:text-red-600 hover:bg-red-50"
+                  onClick={() => onDeletePartnership(distributor)}
+                >
+                  <X className="h-4 w-4" />
+                  Batalkan
+                </Button>
+              )}
             </>
           ) : (
             <>

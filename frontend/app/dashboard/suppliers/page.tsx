@@ -15,8 +15,9 @@ import { SupplierStockDialog } from "@/components/suppliers/supplier-stock-dialo
 import { LegacyDialog as Dialog } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { useSuppliers, usePartnershipRequests, type Supplier } from "@/hooks/useSuppliers";
+import { useSuppliers, usePartnershipRequests, useDeleteSupplierPartnership, type Supplier } from "@/hooks/useSuppliers";
 import { useAuthStore } from "@/store/useAuthStore";
+import { ConfirmDialog } from "@/components/shared/confirm-dialog";
 
 export default function SuppliersPage() {
   const role = useAuthStore((s) => s.user?.role) ?? "distributor";
@@ -27,9 +28,11 @@ export default function SuppliersPage() {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [stockDialogOpen, setStockDialogOpen] = useState(false);
   const [stockSupplier, setStockSupplier] = useState<Supplier | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<Supplier | null>(null);
 
   const { data, isLoading, isError, refetch } = useSuppliers({ search, type });
   const { data: requestsData } = usePartnershipRequests("pending");
+  const deletePartnership = useDeleteSupplierPartnership();
 
   const suppliers = data?.suppliers ?? [];
   const summary = data?.summary ?? { partner_count: 0, discover_count: 0, pending_requests: 0 };
@@ -129,6 +132,7 @@ export default function SuppliersPage() {
                   isRequested={requestedIds.has(supplier.supplier_id)}
                   onRequestPartnership={role === "distributor" ? handleRequestPartnership : undefined}
                   onViewStock={(s) => { setStockSupplier(s); setStockDialogOpen(true); }}
+                  onDeletePartnership={role === "distributor" ? (s) => setDeleteTarget(s) : undefined}
                 />
               ))}
             </div>
@@ -163,6 +167,26 @@ export default function SuppliersPage() {
           onClose={() => { setStockDialogOpen(false); setStockSupplier(null); }}
         />
       )}
+
+      {/* Delete partnership confirm dialog */}
+      <ConfirmDialog
+        open={!!deleteTarget}
+        onClose={() => setDeleteTarget(null)}
+        onConfirm={() => {
+          if (!deleteTarget) return;
+          deletePartnership.mutate(deleteTarget.supplier_id, {
+            onSuccess: () => setDeleteTarget(null),
+          });
+        }}
+        title={deleteTarget?.type === "partner" ? "Putus Kemitraan" : "Batalkan Permintaan"}
+        description={
+          deleteTarget?.type === "partner"
+            ? `Apakah Anda yakin ingin memutus kemitraan dengan ${deleteTarget?.name}? Tindakan ini tidak dapat dibatalkan.`
+            : `Apakah Anda yakin ingin membatalkan permintaan kemitraan dengan ${deleteTarget?.name}?`
+        }
+        confirmLabel={deleteTarget?.type === "partner" ? "Putus Kemitraan" : "Batalkan Permintaan"}
+        isLoading={deletePartnership.isPending}
+      />
     </main>
   );
 }

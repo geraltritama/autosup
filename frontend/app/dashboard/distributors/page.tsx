@@ -10,6 +10,7 @@ import {
   Network,
   Plus,
   Search,
+  Trash2,
   Truck,
   XCircle,
 } from "lucide-react";
@@ -23,15 +24,18 @@ import { DistributorCard } from "@/components/distributors/distributor-card";
 import { DistributorDetailDialog } from "@/components/distributors/distributor-detail-dialog";
 import { DistributorStockDialog } from "@/components/distributors/distributor-stock-dialog";
 import { PartnershipRequestDetailDialog } from "@/components/distributors/partnership-request-detail-dialog";
+import { PartnershipRequestsPanel } from "@/components/suppliers/partnership-requests-panel";
 import {
   useDistributors,
   useDistributorRequests,
   useRespondDistributorRequest,
   useRequestDistributorPartnership,
+  useDeleteDistributorPartnership,
   type Distributor,
   type DistributorPartnershipRequest,
 } from "@/hooks/useDistributors";
 import { useAuthStore } from "@/store/useAuthStore";
+import { ConfirmDialog } from "@/components/shared/confirm-dialog";
 
 export default function DistributorsPage() {
   const role = useAuthStore((s) => s.user?.role);
@@ -68,6 +72,8 @@ const [selectedDistributor, setSelectedDistributor] = useState<Distributor | nul
 
   const respond = useRespondDistributorRequest();
   const requestPartnership = useRequestDistributorPartnership();
+  const deletePartnership = useDeleteDistributorPartnership();
+  const [deleteTarget, setDeleteTarget] = useState<Distributor | null>(null);
 
   if (role !== "supplier" && role !== "retailer") {
     return (
@@ -248,6 +254,11 @@ const [selectedDistributor, setSelectedDistributor] = useState<Distributor | nul
                         ? handleViewStock
                         : undefined
                     }
+                    onDeletePartnership={
+                      dist.partnership_status !== "none"
+                        ? (d) => setDeleteTarget(d)
+                        : undefined
+                    }
                   />
                 ))
               ) : (
@@ -310,6 +321,16 @@ const [selectedDistributor, setSelectedDistributor] = useState<Distributor | nul
                             Lihat Detail
                           </Button>
                         )}
+                        {dist.partnership_status !== "none" && (
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            className="text-red-500 hover:text-red-600 hover:bg-red-50"
+                            onClick={() => setDeleteTarget(dist)}
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        )}
                       </div>
                     </CardContent>
                   </Card>
@@ -321,6 +342,9 @@ const [selectedDistributor, setSelectedDistributor] = useState<Distributor | nul
 
         {/* Side panel — role-aware */}
         <div className="space-y-4">
+          {!isRetailer && role === "supplier" && (
+            <PartnershipRequestsPanel />
+          )}
           {isRetailer ? (
             <Card className="rounded-2xl">
               <CardContent className="space-y-4 p-5">
@@ -348,8 +372,8 @@ const [selectedDistributor, setSelectedDistributor] = useState<Distributor | nul
                 </div>
               </CardContent>
             </Card>
-          ) : (
-            <>
+          ) : role !== "supplier" ? (
+            <> {/* distributor-side: requests from retailers */}
               <h2 className="text-lg font-semibold text-[#0F172A]">Partnership Requests</h2>
               <Card className="rounded-2xl">
                 <CardContent className="pt-6">
@@ -402,7 +426,7 @@ const [selectedDistributor, setSelectedDistributor] = useState<Distributor | nul
                 </CardContent>
               </Card>
             </>
-          )}
+          ) : null}
         </div>
       </section>
 
@@ -440,6 +464,26 @@ const [selectedDistributor, setSelectedDistributor] = useState<Distributor | nul
           });
         }}
         isProcessing={respond.isPending}
+      />
+
+      {/* Delete partnership confirm dialog */}
+      <ConfirmDialog
+        open={!!deleteTarget}
+        onClose={() => setDeleteTarget(null)}
+        onConfirm={() => {
+          if (!deleteTarget) return;
+          deletePartnership.mutate(deleteTarget.distributor_id, {
+            onSuccess: () => setDeleteTarget(null),
+          });
+        }}
+        title={deleteTarget?.partnership_status === "partner" ? "Putus Kemitraan" : "Batalkan Permintaan"}
+        description={
+          deleteTarget?.partnership_status === "partner"
+            ? `Apakah Anda yakin ingin memutus kemitraan dengan ${deleteTarget?.name}? Tindakan ini tidak dapat dibatalkan.`
+            : `Apakah Anda yakin ingin membatalkan permintaan kemitraan dengan ${deleteTarget?.name}?`
+        }
+        confirmLabel={deleteTarget?.partnership_status === "partner" ? "Putus Kemitraan" : "Batalkan Permintaan"}
+        isLoading={deletePartnership.isPending}
       />
     </main>
   );

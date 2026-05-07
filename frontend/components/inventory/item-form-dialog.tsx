@@ -12,51 +12,75 @@ type Props = {
   open: boolean;
   onClose: () => void;
   editItem?: InventoryItem | null;
+  showPrice?: boolean;
+  priceLabel?: string;
 };
 
 const UNITS = ["kg", "liter", "pcs", "bottle", "box", "karung", "dus"];
 const CATEGORIES = ["bahan_baku", "packaging", "produk_jadi", "peralatan", "lainnya"];
 
-const emptyForm = (): AddItemPayload => ({
-  name: "",
-  category: "bahan_baku",
-  stock: 0,
-  min_stock: 0,
-  unit: "kg",
-});
+function parseNum(s: string): number {
+  const n = parseFloat(s.replace(/,/g, ""));
+  return isNaN(n) || n < 0 ? 0 : n;
+}
 
-export function ItemFormDialog({ open, onClose, editItem }: Props) {
-  const [form, setForm] = useState<AddItemPayload>(emptyForm());
+function normalizeNumStr(s: string): string {
+  const n = parseNum(s);
+  return String(n);
+}
+
+export function ItemFormDialog({ open, onClose, editItem, showPrice = false, priceLabel = "Harga jual (IDR)" }: Props) {
+  const [name, setName] = useState("");
+  const [category, setCategory] = useState("bahan_baku");
+  const [unit, setUnit] = useState("kg");
+  const [stockStr, setStockStr] = useState("0");
+  const [minStockStr, setMinStockStr] = useState("0");
+  const [priceStr, setPriceStr] = useState("0");
   const [error, setError] = useState<string | null>(null);
 
   const add = useAddInventoryItem();
   const update = useUpdateInventoryItem();
   const isLoading = add.isPending || update.isPending;
 
-  // Reset form setiap kali dialog dibuka — pakai key reset di parent lebih ideal,
-  // tapi ini dihandle dengan startTransition agar tidak menyebabkan cascading render.
   useEffect(() => {
     if (!open) return;
-    const next = editItem
-      ? { name: editItem.name, category: editItem.category, stock: editItem.stock, min_stock: editItem.min_stock, unit: editItem.unit }
-      : emptyForm();
-    // schedule setelah paint agar tidak trigger cascading render dalam effect body
-    const t = setTimeout(() => { setForm(next); setError(null); }, 0);
+    const t = setTimeout(() => {
+      if (editItem) {
+        setName(editItem.name);
+        setCategory(editItem.category);
+        setUnit(editItem.unit);
+        setStockStr(String(editItem.stock));
+        setMinStockStr(String(editItem.min_stock));
+        setPriceStr(String(editItem.price ?? 0));
+      } else {
+        setName("");
+        setCategory("bahan_baku");
+        setUnit("kg");
+        setStockStr("0");
+        setMinStockStr("0");
+        setPriceStr("0");
+      }
+      setError(null);
+    }, 0);
     return () => clearTimeout(t);
   }, [open, editItem]);
-
-  function set<K extends keyof AddItemPayload>(key: K, value: AddItemPayload[K]) {
-    setForm((prev) => ({ ...prev, [key]: value }));
-  }
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
+    const payload: AddItemPayload = {
+      name,
+      category,
+      unit,
+      stock: parseNum(stockStr),
+      min_stock: parseNum(minStockStr),
+      price: showPrice ? parseNum(priceStr) : 0,
+    };
     try {
       if (editItem) {
-        await update.mutateAsync({ id: editItem.id, payload: form });
+        await update.mutateAsync({ id: editItem.id, payload });
       } else {
-        await add.mutateAsync(form);
+        await add.mutateAsync(payload);
       }
       onClose();
     } catch {
@@ -76,8 +100,8 @@ export function ItemFormDialog({ open, onClose, editItem }: Props) {
           <label className="text-sm font-medium text-[#0F172A]">Nama item</label>
           <Input
             placeholder="Tepung Terigu"
-            value={form.name}
-            onChange={(e) => set("name", e.target.value)}
+            value={name}
+            onChange={(e) => setName(e.target.value)}
             required
             disabled={isLoading}
           />
@@ -88,8 +112,8 @@ export function ItemFormDialog({ open, onClose, editItem }: Props) {
             <label className="text-sm font-medium text-[#0F172A]">Kategori</label>
             <select
               className="h-11 w-full rounded-lg border border-[#E2E8F0] bg-white px-3 text-sm text-[#0F172A] outline-none focus:border-[#3B82F6] focus:ring-2 focus:ring-[#BFDBFE]"
-              value={form.category}
-              onChange={(e) => set("category", e.target.value)}
+              value={category}
+              onChange={(e) => setCategory(e.target.value)}
               disabled={isLoading}
             >
               {CATEGORIES.map((c) => (
@@ -102,8 +126,8 @@ export function ItemFormDialog({ open, onClose, editItem }: Props) {
             <label className="text-sm font-medium text-[#0F172A]">Unit</label>
             <select
               className="h-11 w-full rounded-lg border border-[#E2E8F0] bg-white px-3 text-sm text-[#0F172A] outline-none focus:border-[#3B82F6] focus:ring-2 focus:ring-[#BFDBFE]"
-              value={form.unit}
-              onChange={(e) => set("unit", e.target.value)}
+              value={unit}
+              onChange={(e) => setUnit(e.target.value)}
               disabled={isLoading}
             >
               {UNITS.map((u) => (
@@ -117,10 +141,11 @@ export function ItemFormDialog({ open, onClose, editItem }: Props) {
           <div className="space-y-1.5">
             <label className="text-sm font-medium text-[#0F172A]">Stok saat ini</label>
             <Input
-              type="number"
-              min={0}
-              value={form.stock}
-              onChange={(e) => set("stock", Number(e.target.value))}
+              inputMode="numeric"
+              value={stockStr}
+              onChange={(e) => setStockStr(e.target.value.replace(/[^0-9]/g, ""))}
+              onBlur={() => setStockStr(normalizeNumStr(stockStr))}
+              onFocus={(e) => { if (e.target.value === "0") e.target.select(); }}
               required
               disabled={isLoading}
             />
@@ -128,15 +153,32 @@ export function ItemFormDialog({ open, onClose, editItem }: Props) {
           <div className="space-y-1.5">
             <label className="text-sm font-medium text-[#0F172A]">Minimum stok</label>
             <Input
-              type="number"
-              min={0}
-              value={form.min_stock}
-              onChange={(e) => set("min_stock", Number(e.target.value))}
+              inputMode="numeric"
+              value={minStockStr}
+              onChange={(e) => setMinStockStr(e.target.value.replace(/[^0-9]/g, ""))}
+              onBlur={() => setMinStockStr(normalizeNumStr(minStockStr))}
+              onFocus={(e) => { if (e.target.value === "0") e.target.select(); }}
               required
               disabled={isLoading}
             />
           </div>
         </div>
+
+        {showPrice && (
+          <div className="space-y-1.5">
+            <label className="text-sm font-medium text-[#0F172A]">{priceLabel}</label>
+            <Input
+              inputMode="numeric"
+              placeholder="Contoh: 15000"
+              value={priceStr}
+              onChange={(e) => setPriceStr(e.target.value.replace(/[^0-9]/g, ""))}
+              onBlur={() => setPriceStr(normalizeNumStr(priceStr))}
+              onFocus={(e) => { if (e.target.value === "0") e.target.select(); }}
+              required
+              disabled={isLoading}
+            />
+          </div>
+        )}
 
         {error && (
           <div className="flex items-center gap-2 rounded-lg border border-[#FCA5A5] bg-[#FEF2F2] px-3 py-2.5 text-sm text-[#DC2626]">
@@ -149,7 +191,7 @@ export function ItemFormDialog({ open, onClose, editItem }: Props) {
           <Button type="button" variant="secondary" onClick={onClose} disabled={isLoading}>
             Batal
           </Button>
-          <Button type="submit" disabled={isLoading || !form.name}>
+          <Button type="submit" disabled={isLoading || !name}>
             {isLoading ? "Menyimpan..." : editItem ? "Simpan Perubahan" : "Tambah Item"}
           </Button>
         </div>

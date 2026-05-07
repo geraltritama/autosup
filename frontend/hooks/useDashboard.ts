@@ -62,9 +62,10 @@ export type DashboardSummary =
 
 async function fetchDashboardSummary(
   role: "distributor" | "supplier" | "retailer",
+  userId: string,
 ): Promise<DashboardSummary> {
-  // Pass role as header so backend returns role-specific data
-  const { data } = await api.get<ApiResponse<Omit<DashboardSummary, "role">>>("/dashboard/summary", {
+  const params = userId ? `?user_id=${userId}` : "";
+  const { data } = await api.get<ApiResponse<Omit<DashboardSummary, "role">>>(`/dashboard/summary${params}`, {
     headers: { "x-user-role": role },
   });
   return { ...data.data, role } as DashboardSummary;
@@ -72,10 +73,11 @@ async function fetchDashboardSummary(
 
 export function useDashboard() {
   const role = useAuthStore((s) => s.user?.role) ?? "distributor";
+  const userId = useAuthStore((s) => s.user?.user_id) ?? "";
 
   return useQuery({
-    queryKey: ["dashboard", "summary", role],
-    queryFn: () => fetchDashboardSummary(role),
+    queryKey: ["dashboard", "summary", role, userId],
+    queryFn: () => fetchDashboardSummary(role, userId),
     staleTime: 60 * 1000,
   });
 }

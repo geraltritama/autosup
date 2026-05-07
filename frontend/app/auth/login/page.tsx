@@ -34,11 +34,11 @@ export default function LoginPage() {
 
             <div className="max-w-2xl space-y-5">
               <h1 className="text-[2.75rem] font-bold leading-[1.15] tracking-tight text-[#0F172A] md:text-[3.5rem]">
-                Smarter supply chain,{" "}
-                <span className="text-[#2563EB]">less headache</span>.
+                Autonomous Supply Chains, {" "}
+                <span className="text-[#2563EB]">Powered by Intelligence</span>.
               </h1>
               <p className="max-w-lg text-base leading-7 text-[#64748B]">
-                Track inventory, manage orders, and grow your partner network — all in one place.
+                Transform demand into action. Manage inventory, fulfillment, and partnerships through a single intelligent workspace.
               </p>
             </div>
           </div>

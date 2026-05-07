@@ -2,6 +2,7 @@
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, type ApiResponse } from "@/lib/api";
+import { useAuthStore } from "@/store/useAuthStore";
 
 export type ShipmentStatus = "packed" | "dispatched" | "in_transit" | "delivered" | "delayed" | "failed";
 
@@ -52,10 +53,12 @@ export function useOptimizeRoute() {
 }
 
 export function useLogistics() {
+  const userId = useAuthStore((s) => s.user?.user_id);
   return useQuery({
-    queryKey: ["logistics"],
+    queryKey: ["logistics", userId],
     queryFn: async (): Promise<LogisticsResponse> => {
-      const { data } = await api.get<ApiResponse<LogisticsResponse>>("/logistics/shipments");
+      const params = userId ? `?user_id=${userId}` : "";
+      const { data } = await api.get<ApiResponse<LogisticsResponse>>(`/logistics/shipments${params}`);
       return data.data;
     },
     staleTime: 60 * 1000,

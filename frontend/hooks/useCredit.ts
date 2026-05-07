@@ -2,6 +2,7 @@
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, type ApiResponse } from "@/lib/api";
+import { useAuthStore } from "@/store/useAuthStore";
 
 const USE_MOCK = process.env.NEXT_PUBLIC_USE_MOCK === "true";
 
@@ -137,6 +138,8 @@ export function useCreditAccounts(filters: CreditFilters = {}) {
       const params = new URLSearchParams();
       if (filters.status) params.set("status", filters.status);
       if (filters.retailer_id) params.set("retailer_id", filters.retailer_id);
+      const userId = useAuthStore.getState().user?.user_id;
+      if (userId) params.set("user_id", userId);
       const { data } = await api.get<ApiResponse<CreditAccountsResponse>>(
         `/credit/accounts?${params.toString()}`,
       );

@@ -2,6 +2,7 @@
 
 import { useQuery } from "@tanstack/react-query";
 import { api, type ApiResponse } from "@/lib/api";
+import { useAuthStore } from "@/store/useAuthStore";
 
 // --- Distributor / Retailer Analytics (shared shape) ---
 
@@ -26,11 +27,13 @@ export type AnalyticsResponse = {
 };
 
 export function useRetailerAnalytics(enabled = true) {
+  const userId = useAuthStore((s) => s.user?.user_id);
   return useQuery({
-    queryKey: ["analytics", "retailer"],
+    queryKey: ["analytics", "retailer", userId],
     enabled,
     queryFn: async (): Promise<AnalyticsResponse> => {
-      const { data } = await api.get<ApiResponse<AnalyticsResponse>>("/analytics/retailer/overview");
+      const params = userId ? `?user_id=${userId}` : "";
+      const { data } = await api.get<ApiResponse<AnalyticsResponse>>(`/analytics/retailer/overview${params}`);
       return data.data;
     },
     staleTime: 60 * 1000,
@@ -38,11 +41,13 @@ export function useRetailerAnalytics(enabled = true) {
 }
 
 export function useDistributorAnalytics(enabled = true) {
+  const userId = useAuthStore((s) => s.user?.user_id);
   return useQuery({
-    queryKey: ["analytics", "distributor"],
+    queryKey: ["analytics", "distributor", userId],
     enabled,
     queryFn: async (): Promise<AnalyticsResponse> => {
-      const { data } = await api.get<ApiResponse<AnalyticsResponse>>("/analytics/distributor/overview");
+      const params = userId ? `?user_id=${userId}` : "";
+      const { data } = await api.get<ApiResponse<AnalyticsResponse>>(`/analytics/distributor/overview${params}`);
       return data.data;
     },
     staleTime: 60 * 1000,
@@ -133,11 +138,13 @@ function transformSupplierAnalytics(raw: RawSupplierAnalytics): SupplierAnalytic
 }
 
 export function useSupplierAnalytics(enabled = true) {
+  const userId = useAuthStore((s) => s.user?.user_id);
   return useQuery({
-    queryKey: ["analytics", "supplier"],
+    queryKey: ["analytics", "supplier", userId],
     enabled,
     queryFn: async (): Promise<SupplierAnalyticsResponse> => {
-      const { data } = await api.get<ApiResponse<RawSupplierAnalytics>>("/analytics/supplier/overview");
+      const params = userId ? `?user_id=${userId}` : "";
+      const { data } = await api.get<ApiResponse<RawSupplierAnalytics>>(`/analytics/supplier/overview${params}`);
       return transformSupplierAnalytics(data.data);
     },
     staleTime: 60 * 1000,
@@ -203,15 +210,17 @@ export type ProductInsightsResponse = {
 };
 
 export function useProductInsights(enabled = true) {
+  const userId = useAuthStore((s) => s.user?.user_id);
   return useQuery({
-    queryKey: ["analytics", "products", "insights"],
+    queryKey: ["analytics", "products", "insights", userId],
     enabled,
     queryFn: async (): Promise<ProductInsightsResponse> => {
+      const params = userId ? `?user_id=${userId}` : "";
       const { data } = await api.get<ApiResponse<{
         top_selling: { name: string; units: number; growth_pct: number }[];
         declining: { name: string; units: number; decline_pct: number }[];
         stock_risk: { name: string; stock: number; min_stock: number }[];
-      }>>("/analytics/products/insights");
+      }>>(`/analytics/products/insights${params}`);
       const raw = data.data;
       return {
         top_selling: (raw.top_selling ?? []).map((p, i) => ({

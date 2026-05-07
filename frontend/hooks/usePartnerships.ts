@@ -93,11 +93,13 @@ export function useRetailerPartnershipNFT(retailerId: string | null) {
 
 export function usePartnershipsSummary() {
   const role = useAuthStore((s) => s.user?.role);
+  const userId = useAuthStore((s) => s.user?.user_id);
 
   return useQuery({
-    queryKey: ["partnerships", "summary", role],
+    queryKey: ["partnerships", "summary", role, userId],
     queryFn: async (): Promise<PartnershipsResponse> => {
-      const { data } = await api.get<ApiResponse<PartnershipsResponse>>("/partnerships/summary");
+      const params = userId ? `?user_id=${userId}` : "";
+      const { data } = await api.get<ApiResponse<PartnershipsResponse>>(`/partnerships/summary${params}`);
       return data.data;
     },
     staleTime: 60 * 1000,

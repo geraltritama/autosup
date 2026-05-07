@@ -2,6 +2,7 @@
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, type ApiResponse } from "@/lib/api";
+import { useAuthStore } from "@/store/useAuthStore";
 
 export type Distributor = {
   distributor_id: string;
@@ -68,8 +69,9 @@ type DistributorFilters = {
 };
 
 export function useDistributors(filters: DistributorFilters = {}) {
+  const userId = useAuthStore((s) => s.user?.user_id);
   return useQuery({
-    queryKey: ["distributors", filters],
+    queryKey: ["distributors", filters, userId],
     queryFn: async (): Promise<DistributorsResponse> => {
       const params = new URLSearchParams();
       if (filters.search) params.set("search", filters.search);
@@ -77,6 +79,7 @@ export function useDistributors(filters: DistributorFilters = {}) {
       if (filters.type) params.set("type", filters.type);
       if (filters.page) params.set("page", String(filters.page));
       if (filters.limit) params.set("limit", String(filters.limit));
+      if (userId) params.set("user_id", userId);
       const { data } = await api.get<ApiResponse<DistributorsResponse>>(
         `/distributors?${params.toString()}`,
       );
@@ -98,11 +101,13 @@ type RawPartnershipRequest = {
 };
 
 export function useDistributorRequests(status?: string) {
+  const userId = useAuthStore((s) => s.user?.user_id);
   return useQuery({
-    queryKey: ["distributor-requests", status],
+    queryKey: ["distributor-requests", status, userId],
     queryFn: async (): Promise<DistributorRequestsResponse> => {
       const params = new URLSearchParams();
       if (status) params.set("status", status);
+      if (userId) params.set("user_id", userId);
       const { data } = await api.get<ApiResponse<{ requests: RawPartnershipRequest[]; pagination: DistributorRequestsResponse["pagination"] }>>(
         `/distributors/partnership-requests?${params.toString()}`,
       );
@@ -182,13 +187,31 @@ export function useDistributorStock(distributorId: string | null) {
   });
 }
 
+export function useDeleteDistributorPartnership() {
+  const qc = useQueryClient();
+  const userId = useAuthStore((s) => s.user?.user_id);
+  return useMutation({
+    mutationFn: async (distributorId: string) => {
+      const { data } = await api.delete<ApiResponse<{ terminated: number }>>(
+        `/partnerships/between/${distributorId}?user_id=${userId ?? ""}`,
+      );
+      return data.data;
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["distributors"] });
+      qc.invalidateQueries({ queryKey: ["distributor-requests"] });
+    },
+  });
+}
+
 export function useRequestDistributorPartnership() {
   const qc = useQueryClient();
+  const userId = useAuthStore((s) => s.user?.user_id);
   return useMutation({
     mutationFn: async (distributor_id: string) => {
       const { data } = await api.post<ApiResponse<{ request_id: string; distributor_id: string; distributor_name: string; status: string; created_at: string }>>(
         "/distributors/partnership-request",
-        { distributor_id },
+        { distributor_id, requester_id: userId ?? "" },
       );
       return data.data;
     },

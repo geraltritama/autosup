@@ -4,7 +4,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, type ApiResponse } from "@/lib/api";
 import { useAuthStore } from "@/store/useAuthStore";
 
-export type SupplierType = "partner" | "discover";
+export type SupplierType = "partner" | "pending" | "discover";
 
 export type Supplier = {
   supplier_id: string;
@@ -53,14 +53,16 @@ type SupplierFilters = {
 };
 
 export function useSuppliers(filters: SupplierFilters = {}) {
+  const userId = useAuthStore((s) => s.user?.user_id);
   return useQuery({
-    queryKey: ["suppliers", filters],
+    queryKey: ["suppliers", filters, userId],
     queryFn: async (): Promise<SuppliersResponse> => {
       const params = new URLSearchParams();
       if (filters.search) params.set("search", filters.search);
       if (filters.type) params.set("type", filters.type);
       if (filters.page) params.set("page", String(filters.page));
       if (filters.limit) params.set("limit", String(filters.limit));
+      if (userId) params.set("user_id", userId);
       const { data } = await api.get<ApiResponse<SuppliersResponse>>(`/suppliers?${params.toString()}`);
       return data.data;
     },
@@ -69,11 +71,13 @@ export function useSuppliers(filters: SupplierFilters = {}) {
 }
 
 export function usePartnershipRequests(status?: string) {
+  const userId = useAuthStore((s) => s.user?.user_id);
   return useQuery({
-    queryKey: ["partnership-requests", status],
+    queryKey: ["partnership-requests", status, userId],
     queryFn: async (): Promise<PartnershipRequestsResponse> => {
       const params = new URLSearchParams();
       if (status) params.set("status", status);
+      if (userId) params.set("supplier_id", userId);
       const { data } = await api.get<ApiResponse<PartnershipRequestsResponse>>(
         `/suppliers/partnership-requests?${params.toString()}`,
       );
@@ -141,6 +145,23 @@ export function useSupplierStock(supplierId: string | null) {
   });
 }
 
+export function useDeleteSupplierPartnership() {
+  const qc = useQueryClient();
+  const userId = useAuthStore((s) => s.user?.user_id);
+  return useMutation({
+    mutationFn: async (supplierId: string) => {
+      const { data } = await api.delete<ApiResponse<{ terminated: number }>>(
+        `/partnerships/between/${supplierId}?user_id=${userId ?? ""}`,
+      );
+      return data.data;
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["suppliers"] });
+      qc.invalidateQueries({ queryKey: ["partnership-requests"] });
+    },
+  });
+}
+
 export function useRespondPartnership() {
   const qc = useQueryClient();
   return useMutation({
@@ -154,6 +175,7 @@ export function useRespondPartnership() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["partnership-requests"] });
       qc.invalidateQueries({ queryKey: ["suppliers"] });
+      qc.invalidateQueries({ queryKey: ["distributors"] });
     },
   });
 }
