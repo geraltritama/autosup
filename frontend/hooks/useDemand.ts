@@ -2,6 +2,7 @@
 
 import { useQuery } from "@tanstack/react-query";
 import { api, type ApiResponse } from "@/lib/api";
+import { useAuthStore } from "@/store/useAuthStore";
 
 export type DemandInsight = {
   type: "production_recommendation" | "trend_alert" | "inventory_warning" | "demand_forecast";
@@ -45,10 +46,13 @@ export type DemandResponse = {
 };
 
 export function useDemandIntelligence(period: "weekly" | "monthly" = "monthly") {
+  const userId = useAuthStore((s) => s.user?.user_id);
   return useQuery({
-    queryKey: ["demand-intelligence", period],
+    queryKey: ["demand-intelligence", period, userId],
     queryFn: async (): Promise<DemandResponse> => {
-      const { data } = await api.get<ApiResponse<DemandResponse>>(`/analytics/supplier/demand?period=${period}`);
+      const params = new URLSearchParams({ period });
+      if (userId) params.set("user_id", userId);
+      const { data } = await api.get<ApiResponse<DemandResponse>>(`/analytics/supplier/demand?${params.toString()}`);
       return data.data;
     },
     staleTime: 60 * 1000,

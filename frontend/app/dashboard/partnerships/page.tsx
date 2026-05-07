@@ -14,6 +14,7 @@ import { SuppliersTrustPanel } from "@/components/suppliers/suppliers-trust-pane
 import { PageErrorState } from "@/components/dashboard/page-error-state";
 import { Badge } from "@/components/ui/badge";
 import { usePartnershipsSummary, usePartnershipNFT, useDistributorPartnershipNFT, useRetailerPartnershipNFT } from "@/hooks/usePartnerships";
+import { PartnershipRequestsPanel } from "@/components/suppliers/partnership-requests-panel";
 import { useSuppliers, type Supplier } from "@/hooks/useSuppliers";
 import { useDistributors, type Distributor } from "@/hooks/useDistributors";
 import { useRetailers, type Retailer } from "@/hooks/useRetailers";
@@ -415,13 +416,16 @@ export default function PartnershipsPage() {
         </div>
 
         {/* Side panel */}
-        {isRetailer ? (
-          <RetailerTrustPanel />
-        ) : isDistributor && partnerView === "retailers" ? (
-          <DistributorTrustPanel />
-        ) : (
-          <SuppliersTrustPanel />
-        )}
+        <div className="space-y-6">
+          {isSupplier && <PartnershipRequestsPanel />}
+          {isRetailer ? (
+            <RetailerTrustPanel />
+          ) : isDistributor && partnerView === "retailers" ? (
+            <DistributorTrustPanel />
+          ) : (
+            <SuppliersTrustPanel />
+          )}
+        </div>
       </section>
 
       {/* Stock dialog — retailer only */}

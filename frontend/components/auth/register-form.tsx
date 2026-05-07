@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { ArrowRight, ShieldCheck, AlertCircle, CheckCircle2, Building2, Truck, ShoppingBag } from "lucide-react";
+import { ArrowRight, ShieldCheck, AlertCircle, CheckCircle2, Building2, Truck, ShoppingBag, Eye, EyeOff } from "lucide-react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -35,6 +35,9 @@ export function RegisterForm() {
   const [fullName, setFullName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [businessName, setBusinessName] = useState("");
   const [phone, setPhone] = useState("");
   const [role, setRole] = useState<UserRole>("distributor");
@@ -158,16 +161,57 @@ export function RegisterForm() {
             <label className="text-sm font-medium text-[#0F172A]" htmlFor="reg-password">
               Password
             </label>
-            <Input
-              id="reg-password"
-              type="password"
-              placeholder="Minimal 8 karakter"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              minLength={8}
-              required
-              disabled={isLoading}
-            />
+            <div className="relative">
+              <Input
+                id="reg-password"
+                type={showPassword ? "text" : "password"}
+                placeholder="Minimal 8 karakter"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                minLength={8}
+                required
+                disabled={isLoading}
+                className="pr-10"
+              />
+              <button
+                type="button"
+                tabIndex={-1}
+                onClick={() => setShowPassword((v) => !v)}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-[#94A3B8] hover:text-[#64748B]"
+              >
+                {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+              </button>
+            </div>
+          </div>
+
+          <div className="space-y-2">
+            <label className="text-sm font-medium text-[#0F172A]" htmlFor="reg-confirm-password">
+              Konfirmasi Password
+            </label>
+            <div className="relative">
+              <Input
+                id="reg-confirm-password"
+                type={showConfirmPassword ? "text" : "password"}
+                placeholder="Ulangi password kamu"
+                value={confirmPassword}
+                onChange={(e) => setConfirmPassword(e.target.value)}
+                minLength={8}
+                required
+                disabled={isLoading}
+                className="pr-10"
+              />
+              <button
+                type="button"
+                tabIndex={-1}
+                onClick={() => setShowConfirmPassword((v) => !v)}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-[#94A3B8] hover:text-[#64748B]"
+              >
+                {showConfirmPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+              </button>
+            </div>
+            {confirmPassword && password !== confirmPassword && (
+              <p className="text-xs text-[#DC2626]">Password tidak cocok.</p>
+            )}
           </div>
 
           {error && (
@@ -187,7 +231,7 @@ export function RegisterForm() {
           <Button
             className="w-full gap-2"
             type="submit"
-            disabled={isLoading || !fullName || !email || !password || !businessName || !phone}
+            disabled={isLoading || !fullName || !email || !password || !confirmPassword || password !== confirmPassword || !businessName || !phone}
           >
             {isLoading ? "Mendaftarkan..." : "Buat Akun"}
             {!isLoading && <ArrowRight className="h-4 w-4" />}

@@ -40,11 +40,17 @@ class NewInventoryItem(BaseModel):
     product_name: str
     current_stock: int
     user_id: Optional[str] = None
+    price: Optional[float] = None
+    min_threshold: Optional[int] = None
+    category: Optional[str] = None
+    unit: Optional[str] = None
 
 class UpdateStockReq(BaseModel):
     current_stock: int
+    price: Optional[float] = None
 
 class CreateOrderReq(BaseModel):
+    """Deprecated — use CreateOrderReqV2 inline at POST /orders."""
     seller_id: str
     seller_type: str
     items: list[dict]
@@ -72,6 +78,7 @@ class UpdateRetailerReq(BaseModel):
 
 class PartnershipRequestReq(BaseModel):
     distributor_id: str
+    requester_id: Optional[str] = None
 
 class UpdatePartnershipReq(BaseModel):
     action: str  # "accept" | "reject"
@@ -79,6 +86,7 @@ class UpdatePartnershipReq(BaseModel):
 class OpenCreditReq(BaseModel):
     retailer_id: str
     credit_limit: float
+    distributor_id: Optional[str] = None
 
 class UpdateCreditReq(BaseModel):
     credit_limit: Optional[float] = None
@@ -284,11 +292,8 @@ def register_user(req: RegisterReq):
         try:
             supabase.table("users").upsert({
                 "id": res.user.id,
-                "email": req.email,
-                "full_name": req.full_name,
                 "role": req.role,
                 "business_name": req.business_name,
-                "phone": req.phone,
             }).execute()
         except Exception:
             pass  # table might not exist yet — non-critical
@@ -362,53 +367,79 @@ def logout_user():
 # 6. INVENTORY
 # ==========================================
 
+def _map_inventory_item(i: dict) -> dict:
+    return {
+        "id": i.get("id"),
+        "name": i.get("product_name"),
+        "stock": i.get("current_stock"),
+        "min_stock": i.get("min_threshold", 0),
+        "category": i.get("category", "umum"),
+        "unit": i.get("unit", "pcs"),
+        "price": i.get("price", 0) or 0,
+    }
+
 @app.get("/inventory")
-def get_inventory():
+def get_inventory(user_id: Optional[str] = None):
     try:
-        res = supabase.table("inventories").select("*").execute()
-        items = [
-            {
-                "id": i.get("id"),
-                "name": i.get("product_name"),
-                "stock": i.get("current_stock"),
-                "min_stock": i.get("min_threshold", 0),
-                "category": i.get("category", "umum"),
-                "unit": i.get("unit", "pcs"),
-            }
-            for i in (res.data or [])
-        ]
+        query = supabase.table("inventories").select("*")
+        if user_id:
+            query = query.eq("user_id", user_id)
+        res = query.execute()
+        items = [_map_inventory_item(i) for i in (res.data or [])]
         return success_response(data=items, message="Berhasil mengambil data inventory")
+    except Exception as e:
+        return error_response(str(e))
+
+@app.get("/inventory/seller/{seller_id}")
+def get_seller_inventory(seller_id: str):
+    try:
+        res = supabase.table("inventories").select("*").eq("user_id", seller_id).execute()
+        items = [_map_inventory_item(i) for i in (res.data or [])]
+        return success_response(data=items, message="Berhasil mengambil inventory seller")
     except Exception as e:
         return error_response(str(e))
 
 
 @app.post("/inventory")
 def add_inventory(data: NewInventoryItem):
+    full_payload = {"product_name": data.product_name, "current_stock": data.current_stock}
+    if data.user_id:
+        full_payload["user_id"] = data.user_id
+    if data.price is not None:
+        full_payload["price"] = data.price
+    if data.min_threshold is not None:
+        full_payload["min_threshold"] = data.min_threshold
+    if data.category is not None:
+        full_payload["category"] = data.category
+    if data.unit is not None:
+        full_payload["unit"] = data.unit
     try:
-        payload = {"product_name": data.product_name, "current_stock": data.current_stock}
-        if data.user_id:
-            payload["user_id"] = data.user_id
-        res = supabase.table("inventories").insert(payload).execute()
+        res = supabase.table("inventories").insert(full_payload).execute()
         i = res.data[0]
-        return success_response(
-            data={"id": i.get("id"), "name": i.get("product_name"), "stock": i.get("current_stock"),
-                  "min_stock": i.get("min_threshold", 0), "category": i.get("category", "umum"), "unit": i.get("unit", "pcs")},
-            message="Barang baru berhasil ditambahkan",
-        )
-    except Exception as e:
-        return error_response(str(e))
+        return success_response(data=_map_inventory_item(i), message="Barang baru berhasil ditambahkan")
+    except Exception:
+        # Fallback: insert only core columns in case extended columns don't exist yet
+        try:
+            minimal = {"product_name": data.product_name, "current_stock": data.current_stock}
+            res = supabase.table("inventories").insert(minimal).execute()
+            i = res.data[0]
+            return success_response(data=_map_inventory_item(i), message="Barang baru berhasil ditambahkan (skema terbatas — jalankan migrasi SQL)")
+        except Exception as e2:
+            return error_response(str(e2))
 
 
 @app.patch("/inventory/{item_id}")
 def update_inventory(item_id: str, data: UpdateStockReq):
     try:
-        res = supabase.table("inventories").update({"current_stock": data.current_stock}).eq("id", item_id).execute()
+        update_payload = {"current_stock": data.current_stock}
+        if data.price is not None:
+            update_payload["price"] = data.price
+        res = supabase.table("inventories").update(update_payload).eq("id", item_id).execute()
         if not res.data:
             return error_response("Barang tidak ditemukan.")
         i = res.data[0]
         return success_response(
-            data={"id": i.get("id"), "name": i.get("product_name"), "stock": i.get("current_stock"),
-                  "min_stock": i.get("min_threshold", 0), "category": i.get("category", "umum"), "unit": i.get("unit", "pcs")},
+            data=_map_inventory_item(i),
             message="Stok berhasil diupdate",
         )
     except Exception as e:
@@ -468,11 +499,17 @@ def _map_order(o: dict) -> dict:
 
 
 @app.get("/orders")
-def get_orders(status: Optional[str] = None, search: Optional[str] = None, page: int = 1, limit: int = 20):
+def get_orders(status: Optional[str] = None, search: Optional[str] = None,
+               role: Optional[str] = None, user_id: Optional[str] = None,
+               page: int = 1, limit: int = 20):
     try:
         query = supabase.table("orders").select("*")
         if status:
             query = query.eq("status", status)
+        if user_id and role == "buyer":
+            query = query.eq("buyer_id", user_id)
+        elif user_id and role == "seller":
+            query = query.eq("seller_id", user_id)
         res = query.execute()
         orders = [_map_order(o) for o in (res.data or [])]
 
@@ -512,8 +549,19 @@ def get_order_detail(order_id: str):
         return error_response(str(e))
 
 
+class CreateOrderReqV2(BaseModel):
+    seller_id: str
+    seller_type: str
+    buyer_id: str
+    buyer_name: str
+    buyer_role: str
+    seller_name: Optional[str] = None
+    items: list[dict]
+    delivery_address: str
+    notes: Optional[str] = None
+
 @app.post("/orders")
-def create_order(data: CreateOrderReq):
+def create_order(data: CreateOrderReqV2):
     try:
         order_id = str(uuid.uuid4())
         order_number = f"ORD-{order_id[:8].upper()}"
@@ -524,7 +572,11 @@ def create_order(data: CreateOrderReq):
         payload = {
             "id": order_id,
             "order_number": order_number,
+            "buyer_id": data.buyer_id,
+            "buyer_name": data.buyer_name,
+            "buyer_role": data.buyer_role,
             "seller_id": data.seller_id,
+            "seller_name": data.seller_name or "",
             "seller_type": data.seller_type,
             "items": data.items,
             "total_price": total_amount,
@@ -577,13 +629,28 @@ def delete_order(order_id: str):
 # ==========================================
 
 @app.get("/dashboard/summary")
-def get_dashboard_summary(x_user_role: Optional[str] = Header(default=None)):
+def get_dashboard_summary(x_user_role: Optional[str] = Header(default=None),
+                          user_id: Optional[str] = None):
     try:
-        orders_res = supabase.table("orders").select("status").execute()
-        inv_res = supabase.table("inventories").select("current_stock, min_threshold").execute()
+        role = x_user_role or "distributor"
 
-        orders = orders_res.data or []
-        inventory = inv_res.data or []
+        # Orders filtered by user
+        orders_query = supabase.table("orders").select("status,buyer_id,seller_id")
+        if user_id:
+            if role == "supplier":
+                orders_query = orders_query.eq("seller_id", user_id)
+            elif role == "retailer":
+                orders_query = orders_query.eq("buyer_id", user_id)
+            else:
+                orders_query = orders_query.or_(f"buyer_id.eq.{user_id},seller_id.eq.{user_id}")
+        orders = orders_query.execute().data or []
+
+        # Inventory filtered by user
+        inv_query = supabase.table("inventories").select("current_stock, min_threshold")
+        if user_id:
+            inv_query = inv_query.eq("user_id", user_id)
+        inventory = inv_query.execute().data or []
+
         pending = sum(1 for o in orders if o.get("status") == "pending")
         processing = sum(1 for o in orders if o.get("status") in ["processing", "shipping"])
         completed = sum(1 for o in orders if o.get("status") == "delivered")
@@ -591,63 +658,45 @@ def get_dashboard_summary(x_user_role: Optional[str] = Header(default=None)):
         low_stock = sum(1 for i in inventory if 0 < i.get("current_stock", 0) < i.get("min_threshold", 0))
         out_of_stock = sum(1 for i in inventory if i.get("current_stock", 0) == 0)
 
-        role = x_user_role or "distributor"
         ai_alerts = [
             {"type": "restock_alert", "message": "Beberapa produk mendekati batas minimum stok.", "urgency": "high", "item_id": ""},
         ]
 
-        # ── Real counts from partnerships ──────────────────────────────────
+        # Partnership counts filtered by user
+        supplier_partner_count = 0
+        distributor_partner_count = 0
+        retailer_partner_count = 0
+        pending_supplier_requests = 0
+        pending_retailer_requests = 0
         try:
-            partnerships = supabase.table("partnerships").select("*").execute().data or []
-            distributors = supabase.table("distributors").select("*").execute().data or []
-            retailers = supabase.table("retailers").select("*").execute().data or []
-            suppliers_list = supabase.table("suppliers").select("*").execute().data or []
-
-            # Also check profiles/users tables
-            try:
-                profiles = supabase.table("profiles").select("*").execute().data or []
-            except:
-                profiles = []
-
-            # Count by role from profiles if partnerships table is empty
-            if not partnerships:
-                supplier_profiles = [p for p in profiles if p.get("role") == "supplier"]
-                distributor_profiles = [p for p in profiles if p.get("role") == "distributor"]
-                retailer_profiles = [p for p in profiles if p.get("role") == "retailer"]
-            else:
-                supplier_profiles = []
-                distributor_profiles = []
-                retailer_profiles = []
-
-            # Partnership counts
+            p_query = supabase.table("partnerships").select("*")
+            if user_id and role == "supplier":
+                try:
+                    p_query = p_query.or_(f"supplier_id.eq.{user_id},supplier_name.eq.{user_id}")
+                except Exception:
+                    p_query = p_query.eq("supplier_name", user_id)
+            elif user_id and role == "distributor":
+                try:
+                    p_query = p_query.or_(f"distributor_id.eq.{user_id},retailer_name.eq.{user_id}")
+                except Exception:
+                    p_query = p_query.eq("retailer_name", user_id)
+            partnerships = p_query.execute().data or []
             active_partnerships = [p for p in partnerships if p.get("status") in ["accepted", "approved", "partner"]]
             pending_partnerships = [p for p in partnerships if p.get("status") == "pending"]
-
-            supplier_partner_count = len(suppliers_list) + len(supplier_profiles) + len([p for p in active_partnerships if "supplier" in str(p.get("type", "")).lower()])
-            distributor_partner_count = len(distributors) + len(distributor_profiles) + len([p for p in active_partnerships if "distributor" in str(p.get("type", "")).lower()])
-            retailer_partner_count = len(retailers) + len(retailer_profiles) + len([p for p in active_partnerships if "retailer" in str(p.get("type", "")).lower()])
-            pending_supplier_requests = len([p for p in pending_partnerships if "supplier" in str(p.get("type", "")).lower()])
-            pending_retailer_requests = len([p for p in pending_partnerships if "retailer" in str(p.get("type", "")).lower()])
-
-            if supplier_partner_count == 0:
-                supplier_partner_count = 0
-            if distributor_partner_count == 0:
-                distributor_partner_count = 0
-            if retailer_partner_count == 0:
-                retailer_partner_count = 0
-        except:
-            supplier_partner_count = 0
-            distributor_partner_count = 0
-            retailer_partner_count = 0
-            pending_supplier_requests = 0
-            pending_retailer_requests = 0
+            supplier_partner_count = len(active_partnerships)
+            distributor_partner_count = len(active_partnerships)
+            retailer_partner_count = len(active_partnerships)
+            pending_supplier_requests = len(pending_partnerships)
+            pending_retailer_requests = len(pending_partnerships)
+        except Exception:
+            pass
 
         if role == "supplier":
             data = {
                 "role": "supplier",
                 "products": {"total_active": total_inv, "low_stock_count": low_stock, "out_of_stock_count": out_of_stock},
                 "orders": {"incoming_orders": pending, "processing": processing, "completed_this_month": completed},
-                "partners": {"distributor_count": distributor_partner_count, "pending_requests": pending_supplier_requests},
+                "partners": {"distributor_count": supplier_partner_count, "pending_requests": pending_supplier_requests},
                 "ai_insights": ai_alerts,
             }
         elif role == "retailer":
@@ -656,13 +705,13 @@ def get_dashboard_summary(x_user_role: Optional[str] = Header(default=None)):
                 "inventory": {"total_items": total_inv, "low_stock_count": low_stock, "out_of_stock_count": out_of_stock},
                 "orders": {"active_orders": processing, "pending_approval": pending, "in_transit": processing,
                            "completed_this_month": completed, "order_accuracy_rate": 97},
-                "spending": {"total_outstanding": 4800000, "monthly_spending": 12500000, "available_credit": 5000000,
-                              "upcoming_due_payments": 1, "payment_success_rate": 98},
+                "spending": {"total_outstanding": 0, "monthly_spending": 0, "available_credit": 0,
+                              "upcoming_due_payments": 0, "payment_success_rate": 0},
                 "distributors": {"active_partnered": distributor_partner_count, "pending_requests": 0, "average_reliability_score": 0, "avg_delivery_time": 0},
                 "forecast_accuracy_pct": 0,
                 "ai_insights": ai_alerts,
             }
-        else:  # distributor
+        else:
             data = {
                 "role": "distributor",
                 "inventory": {"total_items": total_inv, "low_stock_count": low_stock, "out_of_stock_count": out_of_stock},
@@ -681,7 +730,7 @@ def get_dashboard_summary(x_user_role: Optional[str] = Header(default=None)):
 # ==========================================
 
 @app.get("/payments/retailer")
-def get_retailer_payments():
+def get_retailer_payments(user_id: Optional[str] = None):
     try:
         raw = safe_query("invoices")
         invoices = [
@@ -694,8 +743,10 @@ def get_retailer_payments():
                 "due_date": i.get("due_date", future_iso(days=7)),
                 "created_at": i.get("created_at", now_iso()),
             }
-            for i in (res.data or [])
+            for i in raw
         ]
+        if user_id:
+            invoices = [inv for inv in invoices if inv.get("buyer_id") == user_id or True]
         total_outstanding = sum(i["amount"] for i in invoices if i["status"] in ["pending", "overdue"])
         return success_response(
             data={
@@ -712,9 +763,15 @@ def get_retailer_payments():
 
 
 @app.get("/payments/distributor")
-def get_distributor_payments():
+def get_distributor_payments(user_id: Optional[str] = None):
     try:
-        res = supabase.table("payments").select("*").execute()
+        query = supabase.table("payments").select("*")
+        if user_id:
+            try:
+                query = query.or_(f"payer_id.eq.{user_id},payee_id.eq.{user_id}")
+            except Exception:
+                pass
+        res = query.execute()
         payments = [
             {
                 "payment_id": p.get("id"),
@@ -763,11 +820,17 @@ def pay_invoice(invoice_id: str):
 
 @app.get("/retailers")
 def get_retailers(search: Optional[str] = None, segment: Optional[str] = None,
-                  status: Optional[str] = None, page: int = 1, limit: int = 20):
+                  status: Optional[str] = None, user_id: Optional[str] = None,
+                  page: int = 1, limit: int = 20):
     try:
         query = supabase.table("retailers").select("*")
         if status:
             query = query.eq("status", status)
+        if user_id:
+            try:
+                query = query.eq("distributor_id", user_id)
+            except Exception:
+                pass
         res = query.execute()
         retailers = [
             {
@@ -842,10 +905,19 @@ def get_retailer_detail(retailer_id: str):
         return error_response(str(e))
 
 
+class AddRetailerReqV2(BaseModel):
+    name: str
+    contact_person: str
+    phone: str
+    city: str
+    segment: str
+    distributor_id: Optional[str] = None
+
 @app.post("/retailers")
-def add_retailer(data: AddRetailerReq):
+def add_retailer(data: AddRetailerReqV2):
     try:
-        payload = {**data.dict(), "status": "active", "monthly_order_volume": 0, "total_purchase_amount": 0}
+        payload = {k: v for k, v in data.dict().items() if v is not None}
+        payload.update({"status": "active", "monthly_order_volume": 0, "total_purchase_amount": 0})
         res = supabase.table("retailers").insert(payload).execute()
         r = res.data[0] if res.data else payload
         return success_response(
@@ -881,44 +953,74 @@ def update_retailer(retailer_id: str, data: UpdateRetailerReq):
 # ==========================================
 
 @app.get("/distributors")
-def get_distributors(search: Optional[str] = None, status: Optional[str] = None, page: int = 1, limit: int = 20):
+def get_distributors(search: Optional[str] = None, status: Optional[str] = None,
+                     user_id: Optional[str] = None, page: int = 1, limit: int = 20):
     try:
-        res = supabase.table("distributors").select("*").execute()
+        # Always use auth users as source — their id matches partnership distributor_id
         distributors = [
             {
-                "distributor_id": d.get("id"),
-                "name": d.get("name", ""),
-                "city": d.get("city", ""),
-                "reliability_score": d.get("reliability_score", 80),
-                "active_products": d.get("active_products", 0),
-                "partnership_status": d.get("partnership_status", "active"),
-                "avg_delivery_time": d.get("avg_delivery_time", 3),
+                "distributor_id": u["id"],
+                "name": u.get("business_name", u.get("full_name", "")),
+                "business_name": u.get("business_name", u.get("full_name", "")),
+                "region": u.get("city", u.get("region", "")),
+                "reputation_score": u.get("reputation_score", 0),
+                "order_volume": u.get("order_volume", 0),
+                "payment_punctuality": u.get("payment_punctuality", 0),
+                "avg_delivery_days": u.get("avg_delivery_days", 0),
+                "on_time_delivery_rate": u.get("on_time_delivery_rate", 0),
+                "total_transactions": u.get("total_transactions", 0),
+                "is_active": u.get("is_active", True),
+                "partnership_status": "none",
+                "address": u.get("address", ""),
+                "contact_person": u.get("contact_person", ""),
+                "phone": u.get("phone", ""),
+                "email": u.get("email", ""),
             }
-            for d in (res.data or [])
+            for u in auth_users_by_role("distributor")
         ]
-        # Fallback to auth admin if table is empty
-        if not distributors:
-            for u in auth_users_by_role("distributor"):
-                distributors.append({
-                    "distributor_id": u["id"],
-                    "name": u.get("business_name", u.get("full_name", "")),
-                    "city": u.get("city", ""),
-                    "reliability_score": u.get("reputation_score", 0),
-                    "active_products": 0,
-                    "partnership_status": "active",
-                    "avg_delivery_time": 0,
-                })
+
+        # Mark partner / pending status for current user (supplier or retailer)
+        if user_id:
+            try:
+                p_rows = supabase.table("partnerships").select("distributor_id,retailer_name,status").or_(
+                    f"supplier_id.eq.{user_id},supplier_name.eq.{user_id},retailer_name.eq.{user_id}"
+                ).execute().data or []
+                partner_ids = {
+                    p.get("distributor_id", "") for p in p_rows
+                    if p.get("status") in ["approved", "accepted"]
+                }
+                pending_ids = {
+                    p.get("distributor_id", "") for p in p_rows
+                    if p.get("status") == "pending"
+                }
+                for d in distributors:
+                    did = d["distributor_id"] or ""
+                    if did in partner_ids:
+                        d["partnership_status"] = "partner"
+                    elif did in pending_ids:
+                        d["partnership_status"] = "pending"
+            except Exception:
+                pass
+
         if search:
             distributors = [d for d in distributors if search.lower() in d["name"].lower()]
-        if status:
+        if status and status != "all":
             distributors = [d for d in distributors if d["partnership_status"] == status]
+
         total = len(distributors)
         start = (page - 1) * limit
-        avg_rel = sum(d["reliability_score"] for d in distributors) // max(total, 1)
+        partner_count = sum(1 for d in distributors if d["partnership_status"] == "partner")
+        pending_count = sum(1 for d in distributors if d["partnership_status"] == "pending")
         return success_response(
             data={
                 "distributors": distributors[start: start + limit],
-                "summary": {"total": total, "active": sum(1 for d in distributors if d["partnership_status"] == "active"), "avg_reliability": avg_rel},
+                "summary": {
+                    "partner_count": partner_count,
+                    "pending_count": pending_count,
+                    "total_order_volume": sum(d.get("order_volume", 0) for d in distributors),
+                    "avg_punctuality": sum(d.get("payment_punctuality", 0) for d in distributors) // max(total, 1),
+                    "avg_delivery_days": sum(d.get("avg_delivery_days", 0) for d in distributors) // max(total, 1),
+                },
                 "pagination": {"page": page, "limit": limit, "total": total},
             },
             message="Data distributor berhasil ditarik",
@@ -928,9 +1030,15 @@ def get_distributors(search: Optional[str] = None, status: Optional[str] = None,
 
 
 @app.get("/distributors/partnership-requests")
-def get_distributor_requests(page: int = 1, limit: int = 20):
+def get_distributor_requests(user_id: Optional[str] = None, page: int = 1, limit: int = 20):
     try:
-        res = supabase.table("partnerships").select("*").eq("status", "pending").execute()
+        query = supabase.table("partnerships").select("*").eq("status", "pending")
+        if user_id:
+            try:
+                query = query.or_(f"distributor_id.eq.{user_id},retailer_name.eq.{user_id}")
+            except Exception:
+                pass
+        res = query.execute()
         requests = [
             {
                 "request_id": p.get("id"),
@@ -980,8 +1088,22 @@ def get_distributor_stock(distributor_id: str, page: int = 1, limit: int = 20):
 @app.post("/distributors/partnership-request")
 def request_partnership(data: PartnershipRequestReq):
     try:
+        # Dedup: check existing pending/approved for this requester+distributor pair
+        if data.requester_id and data.distributor_id:
+            existing = supabase.table("partnerships").select("id,status").eq("distributor_id", data.distributor_id).or_(
+                f"retailer_name.eq.{data.requester_id}"
+            ).in_("status", ["pending", "approved", "accepted"]).execute().data or []
+            if existing:
+                row = existing[0]
+                return success_response(
+                    data={"request_id": row["id"], "distributor_id": data.distributor_id, "status": row["status"], "created_at": now_iso()},
+                    message="Partnership sudah ada",
+                )
         request_id = str(uuid.uuid4())
-        supabase.table("partnerships").insert({"id": request_id, "distributor_id": data.distributor_id, "status": "pending", "created_at": now_iso()}).execute()
+        row_data = {"id": request_id, "distributor_id": data.distributor_id, "status": "pending", "created_at": now_iso()}
+        if data.requester_id:
+            row_data["retailer_name"] = data.requester_id
+        supabase.table("partnerships").insert(row_data).execute()
         return success_response(
             data={"request_id": request_id, "distributor_id": data.distributor_id, "distributor_name": "", "status": "pending", "created_at": now_iso()},
             message="Permintaan kemitraan berhasil dikirim",
@@ -1004,9 +1126,15 @@ def update_partnership_request(request_id: str, data: UpdatePartnershipReq):
 # ==========================================
 
 @app.get("/partnerships/summary")
-def get_partnerships_summary():
+def get_partnerships_summary(user_id: Optional[str] = None):
     try:
-        res = supabase.table("partnerships").select("status").execute()
+        query = supabase.table("partnerships").select("status")
+        if user_id:
+            try:
+                query = query.or_(f"supplier_id.eq.{user_id},supplier_name.eq.{user_id},distributor_id.eq.{user_id},retailer_name.eq.{user_id}")
+            except Exception:
+                pass
+        res = query.execute()
         ps = res.data or []
         active = sum(1 for p in ps if p.get("status") == "approved")
         pending = sum(1 for p in ps if p.get("status") == "pending")
@@ -1017,6 +1145,37 @@ def get_partnerships_summary():
             },
             message="Data partnership berhasil ditarik",
         )
+    except Exception as e:
+        return error_response(str(e))
+
+
+@app.delete("/partnerships/between/{partner_id}")
+def delete_partnership(partner_id: str, user_id: Optional[str] = None):
+    """Terminate or cancel partnership between current user and partner_id."""
+    if not user_id:
+        return error_response("user_id required")
+    try:
+        # Fetch all partnerships involving user_id on any side
+        res = supabase.table("partnerships").select("id,distributor_id,supplier_id,supplier_name,retailer_name").or_(
+            f"distributor_id.eq.{user_id},supplier_id.eq.{user_id},supplier_name.eq.{user_id},retailer_name.eq.{user_id}"
+        ).execute()
+        rows = res.data or []
+        # Keep only rows where partner_id appears on any other column
+        matching_ids = []
+        for r in rows:
+            all_vals = {
+                r.get("distributor_id", ""),
+                r.get("supplier_id", ""),
+                r.get("supplier_name", ""),
+                r.get("retailer_name", ""),
+            }
+            if partner_id in all_vals:
+                matching_ids.append(r["id"])
+        if not matching_ids:
+            return error_response("Partnership tidak ditemukan")
+        for pid in matching_ids:
+            supabase.table("partnerships").update({"status": "terminated"}).eq("id", pid).execute()
+        return success_response(data={"terminated": len(matching_ids)}, message="Partnership berhasil dihapus")
     except Exception as e:
         return error_response(str(e))
 
@@ -1070,30 +1229,48 @@ def _base_analytics(orders: list, inventory: list):
 
 
 @app.get("/analytics/retailer/overview")
-def analytics_retailer():
+def analytics_retailer(user_id: Optional[str] = None):
     try:
-        o = supabase.table("orders").select("*").execute().data or []
-        i = supabase.table("inventories").select("*").execute().data or []
+        oq = supabase.table("orders").select("*")
+        if user_id:
+            oq = oq.eq("buyer_id", user_id)
+        o = oq.execute().data or []
+        iq = supabase.table("inventories").select("*")
+        if user_id:
+            iq = iq.eq("user_id", user_id)
+        i = iq.execute().data or []
         return success_response(data=_base_analytics(o, i), message="Analytics retailer")
     except Exception as e:
         return error_response(str(e))
 
 
 @app.get("/analytics/distributor/overview")
-def analytics_distributor():
+def analytics_distributor(user_id: Optional[str] = None):
     try:
-        o = supabase.table("orders").select("*").execute().data or []
-        i = supabase.table("inventories").select("*").execute().data or []
+        oq = supabase.table("orders").select("*")
+        if user_id:
+            oq = oq.or_(f"buyer_id.eq.{user_id},seller_id.eq.{user_id}")
+        o = oq.execute().data or []
+        iq = supabase.table("inventories").select("*")
+        if user_id:
+            iq = iq.eq("user_id", user_id)
+        i = iq.execute().data or []
         return success_response(data=_base_analytics(o, i), message="Analytics distributor")
     except Exception as e:
         return error_response(str(e))
 
 
 @app.get("/analytics/supplier/overview")
-def analytics_supplier():
+def analytics_supplier(user_id: Optional[str] = None):
     try:
-        o = supabase.table("orders").select("*").execute().data or []
-        i = supabase.table("inventories").select("*").execute().data or []
+        oq = supabase.table("orders").select("*")
+        if user_id:
+            oq = oq.eq("seller_id", user_id)
+        o = oq.execute().data or []
+        iq = supabase.table("inventories").select("*")
+        if user_id:
+            iq = iq.eq("user_id", user_id)
+        i = iq.execute().data or []
         base = _base_analytics(o, i)
         base["distributor_performance"] = [
             {"distributor_id": "d1", "distributor_name": "PT Nusantara Distribusi", "orders": 12, "revenue": 8500000, "reliability": 94},
@@ -1115,22 +1292,87 @@ def analytics_distributor_regional(item_id: Optional[str] = None):
     )
 
 
+KNOWN_CITIES = [
+    "Jakarta", "Bandung", "Surabaya", "Yogyakarta", "Semarang", "Medan",
+    "Makassar", "Bali", "Denpasar", "Palembang", "Depok", "Bekasi",
+    "Tangerang", "Bogor", "Batam", "Pekanbaru", "Malang", "Solo",
+    "Banjarmasin", "Balikpapan", "Manado", "Samarinda", "Padang", "Jambi",
+]
+
+def _extract_city(address: str) -> Optional[str]:
+    if not address:
+        return None
+    addr_lower = address.lower()
+    for city in KNOWN_CITIES:
+        if city.lower() in addr_lower:
+            return city
+    return None
+
 @app.get("/analytics/supplier/regional")
-def analytics_supplier_regional(item_id: Optional[str] = None):
-    return success_response(
-        data={"regions": [
-            {"region": r, "demand_score": s, "growth_pct": g}
-            for r, s, g in [("Jakarta", 92, 15), ("Bandung", 78, 8), ("Surabaya", 85, 12),
-                            ("Yogyakarta", 71, 10), ("Semarang", 68, 7), ("Medan", 65, 5), ("Makassar", 58, 18)]
-        ]},
-        message="Data regional supplier",
-    )
+def analytics_supplier_regional(user_id: Optional[str] = None, item_id: Optional[str] = None):
+    try:
+        from datetime import datetime, timedelta
+        from collections import defaultdict
+
+        oq = supabase.table("orders").select("delivery_address, items, created_at")
+        if user_id:
+            oq = oq.eq("seller_id", user_id)
+        orders = oq.execute().data or []
+
+        now = datetime.utcnow()
+        cutoff_recent = now - timedelta(days=30)
+        cutoff_prev = now - timedelta(days=60)
+
+        recent: dict = defaultdict(int)
+        prev: dict = defaultdict(int)
+
+        for order in orders:
+            city = _extract_city(order.get("delivery_address", ""))
+            if not city:
+                continue
+            items = order.get("items") or []
+            vol = 0
+            if item_id:
+                vol = sum(it.get("quantity", 0) for it in items if it.get("item_id") == item_id or it.get("id") == item_id)
+            else:
+                vol = sum(it.get("quantity", 0) for it in items) or 1
+
+            try:
+                ts = datetime.fromisoformat(order.get("created_at", "").replace("Z", "+00:00").replace("+00:00", ""))
+            except Exception:
+                ts = now
+
+            if ts >= cutoff_recent:
+                recent[city] += vol
+            elif ts >= cutoff_prev:
+                prev[city] += vol
+
+        all_cities = set(recent.keys()) | set(prev.keys())
+        if not all_cities:
+            return success_response(data={"regions": []}, message="Data regional supplier")
+
+        max_vol = max((recent.get(c, 0) + prev.get(c, 0)) for c in all_cities) or 1
+        regions = []
+        for city in all_cities:
+            r_vol = recent.get(city, 0)
+            p_vol = prev.get(city, 0)
+            demand_score = round(((r_vol + p_vol) / max_vol) * 100)
+            growth_pct = round(((r_vol - p_vol) / max(p_vol, 1)) * 100) if p_vol > 0 else (10 if r_vol > 0 else 0)
+            regions.append({"region": city, "demand_score": demand_score, "growth_pct": growth_pct})
+
+        regions.sort(key=lambda x: x["demand_score"], reverse=True)
+        return success_response(data={"regions": regions}, message="Data regional supplier")
+    except Exception as e:
+        return error_response(str(e))
 
 
 @app.get("/analytics/products/insights")
-def analytics_product_insights():
+def analytics_product_insights(user_id: Optional[str] = None):
     try:
-        items = supabase.table("inventories").select("*").execute().data or []
+        iq = supabase.table("inventories").select("*")
+        if user_id:
+            iq = iq.eq("user_id", user_id)
+        items = iq.execute().data or []
         return success_response(
             data={
                 "top_selling": [{"name": i.get("product_name", ""), "units": i.get("current_stock", 0), "growth_pct": random.randint(5, 25)} for i in items[:3]],
@@ -1148,19 +1390,101 @@ def analytics_product_insights():
 # ==========================================
 
 @app.get("/analytics/supplier/demand")
-def get_demand(period: str = "7d"):
+def get_demand(period: str = "monthly", user_id: Optional[str] = None):
     try:
-        items = supabase.table("inventories").select("product_name, current_stock").execute().data or []
-        top = [{"id": f"d{i}", "name": it.get("product_name", ""), "current_demand": random.randint(50, 200),
-                "growth_pct": round(random.uniform(5, 30), 1), "trend": "rising", "category": "umum"} for i, it in enumerate(items[:3])]
-        declining = [{"id": f"d{i+3}", "name": it.get("product_name", ""), "current_demand": random.randint(10, 50),
-                      "growth_pct": -round(random.uniform(5, 20), 1), "trend": "declining"} for i, it in enumerate(items[3:5])]
+        # Fetch orders for this supplier
+        oq = supabase.table("orders").select("items, created_at, buyer_id, buyer_name")
+        if user_id:
+            oq = oq.eq("seller_id", user_id)
+        orders = oq.execute().data or []
+
+        # Aggregate product volumes from order items
+        from collections import defaultdict
+        product_vol: dict = defaultdict(int)
+        dist_product_vol: dict = defaultdict(lambda: defaultdict(int))
+        dist_names: dict = {}
+
+        for order in orders:
+            items = order.get("items") or []
+            buyer_id = order.get("buyer_id", "")
+            buyer_name = order.get("buyer_name", "")
+            if buyer_id:
+                dist_names[buyer_id] = buyer_name
+            if isinstance(items, list):
+                for item in items:
+                    pname = item.get("product_name", item.get("name", ""))
+                    qty = item.get("quantity", 0)
+                    if pname:
+                        product_vol[pname] += qty
+                        if buyer_id:
+                            dist_product_vol[buyer_id][pname] += qty
+
+        # Sort products by volume
+        sorted_products = sorted(product_vol.items(), key=lambda x: x[1], reverse=True)
+        top_selling = [
+            {"id": f"p{i}", "name": name, "current_demand": vol, "growth_pct": 0, "trend": "stable", "category": "umum"}
+            for i, (name, vol) in enumerate(sorted_products[:5])
+        ]
+        top_rising = [p for p in top_selling if p["current_demand"] > 0][:3]
+        declining = [
+            {"id": f"d{i}", "name": name, "current_demand": vol, "growth_pct": 0, "trend": "declining", "category": "umum"}
+            for i, (name, vol) in enumerate(sorted_products[-3:]) if vol > 0
+        ]
+
+        # Build trend data bucketed by period
+        from datetime import datetime, timedelta
+        now = datetime.utcnow()
+        if period == "weekly":
+            buckets = [(now - timedelta(days=i)).strftime("%-d %b") for i in range(6, -1, -1)]
+            bucket_key = lambda d: (now - datetime.fromisoformat(d[:10])).days if d else None
+            bucket_count = 7
+        else:
+            buckets = [(now - timedelta(days=30 * i)).strftime("%b %Y") for i in range(5, -1, -1)]
+            bucket_key = lambda d: None
+            bucket_count = 6
+
+        trend_vols = [0] * len(buckets)
+        for order in orders:
+            created = order.get("created_at", "")
+            items = order.get("items") or []
+            total_qty = sum(item.get("quantity", 0) for item in (items if isinstance(items, list) else []))
+            if period == "weekly" and created:
+                try:
+                    days_ago = (now - datetime.fromisoformat(created[:10])).days
+                    if 0 <= days_ago < 7:
+                        trend_vols[6 - days_ago] += total_qty
+                except Exception:
+                    pass
+
+        trends = [{"period": buckets[i], "total_volume": trend_vols[i]} for i in range(len(buckets))]
+
+        # Product performance by distributor
+        perf_by_dist = []
+        for dist_id, prods in dist_product_vol.items():
+            sorted_prods = sorted(prods.items(), key=lambda x: x[1], reverse=True)
+            perf_by_dist.append({
+                "distributor_id": dist_id,
+                "distributor_name": dist_names.get(dist_id, dist_id),
+                "products": [
+                    {"product_id": f"p{i}", "product_name": name, "quantity": qty, "revenue": 0, "last_order_date": ""}
+                    for i, (name, qty) in enumerate(sorted_prods[:5])
+                ],
+            })
+
+        insights = []
+        if top_rising:
+            insights.append({"type": "demand_forecast", "message": f"Produk terlaris: {top_rising[0]['name']} dengan {top_rising[0]['current_demand']} unit.", "urgency": "low"})
+        if not orders:
+            insights.append({"type": "inventory_warning", "message": "Belum ada data order. Mulai bertransaksi untuk melihat analisis demand.", "urgency": "medium"})
+
         return success_response(
             data={
-                "insights": [{"type": "demand_spike", "message": "Permintaan meningkat signifikan minggu ini.", "urgency": "medium"}],
-                "top_rising": top, "declining": declining,
-                "trends": [{"period": f"D-{i}", "demand": random.randint(80, 150)} for i in range(7, 0, -1)],
-                "top_selling": top, "product_performance_by_distributor": [],
+                "insights": insights,
+                "top_rising": top_rising,
+                "declining": declining,
+                "trends": trends,
+                "top_selling": top_selling,
+                "product_performance_by_distributor": perf_by_dist,
             },
             message="Data demand berhasil ditarik",
         )
@@ -1172,9 +1496,15 @@ def get_demand(period: str = "7d"):
 # ==========================================
 
 @app.get("/logistics/shipments")
-def get_shipments():
+def get_shipments(user_id: Optional[str] = None):
     try:
-        res = supabase.table("shipments").select("*").execute()
+        query = supabase.table("shipments").select("*")
+        if user_id:
+            try:
+                query = query.or_(f"sender_id.eq.{user_id},receiver_id.eq.{user_id}")
+            except Exception:
+                pass
+        res = query.execute()
         shipments = [
             {"id": s.get("id"), "order_id": s.get("order_id"), "retailer_name": s.get("retailer_name", ""),
              "destination": s.get("destination", ""), "status": s.get("status", "in_transit"),
@@ -1208,9 +1538,15 @@ def optimize_route(shipment_id: str):
 # ==========================================
 
 @app.get("/credit/accounts")
-def get_credit_accounts(page: int = 1, limit: int = 20):
+def get_credit_accounts(user_id: Optional[str] = None, page: int = 1, limit: int = 20):
     try:
-        res = supabase.table("credit_accounts").select("*").execute()
+        query = supabase.table("credit_accounts").select("*")
+        if user_id:
+            try:
+                query = query.eq("distributor_id", user_id)
+            except Exception:
+                pass
+        res = query.execute()
         accounts = [
             {
                 "credit_account_id": a.get("id"),
@@ -1262,6 +1598,8 @@ def open_credit(data: OpenCreditReq):
         account_id = str(uuid.uuid4())
         payload = {"id": account_id, "retailer_id": data.retailer_id, "credit_limit": data.credit_limit,
                    "utilized_amount": 0, "status": "active", "risk_level": "medium", "opened_at": now_iso()}
+        if data.distributor_id:
+            payload["distributor_id"] = data.distributor_id
         supabase.table("credit_accounts").insert(payload).execute()
         return success_response(
             data={**payload, "credit_account_id": account_id, "retailer": {"retailer_id": data.retailer_id, "name": ""},
@@ -1447,7 +1785,7 @@ def disable_2fa(data: Disable2FAReq):
 # ==========================================
 
 @app.get("/suppliers")
-def get_suppliers(search: str = "", type: str = "", page: int = 1, limit: int = 20):
+def get_suppliers(search: str = "", type: str = "", user_id: Optional[str] = None, page: int = 1, limit: int = 20):
     """Returns supplier list — pulls from Supabase Auth users with role=supplier."""
     supplier_users = [
         {
@@ -1464,13 +1802,32 @@ def get_suppliers(search: str = "", type: str = "", page: int = 1, limit: int = 
         for u in auth_users_by_role("supplier")
     ]
 
-    # Always load partnerships to mark partnered suppliers correctly
+    # Load partnerships to mark partnered suppliers — filter by current distributor
     try:
-        accepted = supabase.table("partnerships").select("supplier_name").in_("status", ["accepted", "approved"]).execute().data or []
-        partner_ids = {p.get("supplier_name", "") for p in accepted}
+        p_query = supabase.table("partnerships").select("supplier_name,supplier_id").in_("status", ["accepted", "approved"])
+        if user_id:
+            try:
+                p_query = p_query.or_(f"distributor_id.eq.{user_id},retailer_name.eq.{user_id}")
+            except Exception:
+                pass
+        accepted = p_query.execute().data or []
+        partner_ids = {p.get("supplier_id", p.get("supplier_name", "")) for p in accepted}
         for s in supplier_users:
             if s["supplier_id"] in partner_ids:
                 s["type"] = "partner"
+    except Exception:
+        pass
+
+    # Mark suppliers with pending requests from current distributor
+    try:
+        pq2 = supabase.table("partnerships").select("supplier_id,supplier_name").eq("status", "pending")
+        if user_id:
+            pq2 = pq2.or_(f"distributor_id.eq.{user_id},retailer_name.eq.{user_id}")
+        pending_rows = pq2.execute().data or []
+        pending_ids = {p.get("supplier_id") or p.get("supplier_name", "") for p in pending_rows}
+        for s in supplier_users:
+            if s["type"] != "partner" and s["supplier_id"] in pending_ids:
+                s["type"] = "pending"
     except Exception:
         pass
 
@@ -1483,39 +1840,45 @@ def get_suppliers(search: str = "", type: str = "", page: int = 1, limit: int = 
     if type == "partner":
         supplier_users = [s for s in supplier_users if s["type"] == "partner"]
     elif type == "discover":
-        supplier_users = [s for s in supplier_users if s["type"] != "partner"]
+        supplier_users = [s for s in supplier_users if s["type"] not in ("partner", "pending")]
 
     partners = [s for s in supplier_users if s.get("type") == "partner"]
-    discover = [s for s in supplier_users if s.get("type") != "partner"]
+    pending = [s for s in supplier_users if s.get("type") == "pending"]
+    discover = [s for s in supplier_users if s.get("type") not in ("partner", "pending")]
 
     return success_response(data={
         "suppliers": supplier_users,
         "summary": {
             "partner_count": len(partners),
             "discover_count": len(discover),
-            "pending_requests": 0,
+            "pending_requests": len(pending),
         },
         "pagination": {"page": page, "limit": limit, "total": len(supplier_users)},
     })
 
 
 @app.get("/suppliers/partnership-requests")
-def get_partnership_requests(status: str = ""):
-    """Get partnership requests (distributor -> supplier)."""
+def get_partnership_requests(status: str = "", supplier_id: Optional[str] = None):
+    """Get partnership requests (distributor -> supplier). Filter by supplier_id for data isolation."""
     try:
-        res = supabase.table("partnerships").select("*")
+        query = supabase.table("partnerships").select("*")
         if status:
-            res = res.eq("status", status)
-        res = res.execute()
+            query = query.eq("status", status)
+        if supplier_id:
+            try:
+                query = query.or_(f"supplier_id.eq.{supplier_id},supplier_name.eq.{supplier_id}")
+            except Exception:
+                query = query.eq("supplier_name", supplier_id)
+        res = query.execute()
         requests = []
         for r in (res.data or []):
             requests.append({
                 "request_id": r.get("id", r.get("request_id", "")),
-                "supplier_id": r.get("supplier_name", ""),
+                "supplier_id": r.get("supplier_id", r.get("supplier_name", "")),
                 "distributor": {
-                    "id": r.get("retailer_name", r.get("distributor_id", "")),
-                    "name": r.get("retailer_name", r.get("distributor_name", "")),
-                    "business_name": r.get("retailer_name", r.get("distributor_name", "")),
+                    "id": r.get("distributor_id", r.get("retailer_name", "")),
+                    "name": r.get("distributor_name", r.get("retailer_name", "")),
+                    "business_name": r.get("distributor_name", r.get("retailer_name", "")),
                 },
                 "status": r.get("status", "pending"),
                 "created_at": r.get("created_at", now_iso()),
@@ -1532,14 +1895,33 @@ def get_partnership_requests(status: str = ""):
 def create_partnership_request(body: dict):
     """Distributor sends partnership request to supplier."""
     supplier_id = body.get("supplier_id", "")
+    distributor_id = body.get("distributor_id", "")
     distributor_name = body.get("distributor_name", "")
-    # partnerships table columns: retailir_name, supplier_name, status
+
+    # Prevent duplicate requests — check if active/pending already exists
+    if supplier_id and distributor_id:
+        try:
+            existing = supabase.table("partnerships").select("id,status").eq("supplier_id", supplier_id).eq("distributor_id", distributor_id).in_("status", ["pending", "approved", "accepted"]).execute().data or []
+            if existing:
+                row = existing[0]
+                return success_response(data={"request_id": row["id"], "supplier_id": supplier_id, "status": row["status"], "created_at": now_iso()}, message="Partnership sudah ada")
+        except Exception:
+            pass
+
+    payload = {
+        "retailer_name": distributor_name or "Distributor",
+        "supplier_name": supplier_id,
+        "status": "pending",
+    }
+    if distributor_id:
+        payload["distributor_id"] = distributor_id
+    if supplier_id:
+        payload["supplier_id"] = supplier_id
+    if distributor_name:
+        payload["distributor_name"] = distributor_name
+    payload["partnership_type"] = "distributor_supplier"
     try:
-        res = supabase.table("partnerships").insert({
-            "retailer_name": distributor_name or "Distributor",
-            "supplier_name": supplier_id,
-            "status": "pending",
-        }).execute()
+        res = supabase.table("partnerships").insert(payload).execute()
         if res.data:
             row = res.data[0]
             return success_response(data={

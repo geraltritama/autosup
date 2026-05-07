@@ -2,6 +2,7 @@
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, type ApiResponse } from "@/lib/api";
+import { useAuthStore } from "@/store/useAuthStore";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -70,6 +71,10 @@ export type OrdersResponse = {
 export type CreateOrderPayload = {
   seller_id: string;
   seller_type: "supplier" | "distributor";
+  seller_name?: string;
+  buyer_id: string;
+  buyer_name: string;
+  buyer_role: "distributor" | "retailer";
   items: {
     item_name: string;
     qty: number;
@@ -99,12 +104,14 @@ type OrderFilters = {
 // ─── Hooks ────────────────────────────────────────────────────────────────────
 
 export function useOrders(filters: OrderFilters = {}) {
+  const userId = useAuthStore((s) => s.user?.user_id);
   return useQuery({
-    queryKey: ["orders", filters],
+    queryKey: ["orders", filters, userId],
     queryFn: async (): Promise<OrdersResponse> => {
       const params = new URLSearchParams();
       if (filters.status) params.set("status", filters.status);
       if (filters.role) params.set("role", filters.role);
+      if (userId) params.set("user_id", userId);
       if (filters.page) params.set("page", String(filters.page));
       if (filters.limit) params.set("limit", String(filters.limit));
       const { data } = await api.get<ApiResponse<OrdersResponse>>(

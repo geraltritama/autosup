@@ -8,13 +8,14 @@ import { Input } from "@/components/ui/input";
 import { useCreateOrder, type CreateOrderPayload } from "@/hooks/useOrders";
 import { useSuppliers } from "@/hooks/useSuppliers";
 import { useDistributors } from "@/hooks/useDistributors";
+import { useSellerInventory } from "@/hooks/useInventory";
 import { useAuthStore } from "@/store/useAuthStore";
 
-const UNITS = ["kg", "liter", "pcs", "bottle", "box", "karung", "dus"];
 
 type OrderItem = {
   item_name: string;
   qty: number;
+  qtyStr: string;
   unit: string;
   price_per_unit: number;
 };
@@ -22,6 +23,7 @@ type OrderItem = {
 const emptyItem = (): OrderItem => ({
   item_name: "",
   qty: 1,
+  qtyStr: "1",
   unit: "kg",
   price_per_unit: 0,
 });
@@ -49,7 +51,8 @@ function formatCurrency(amount: number) {
 }
 
 export function OrderFormDialog({ open, onClose, prefill }: Props) {
-  const role = useAuthStore((s) => s.user?.role);
+  const user = useAuthStore((s) => s.user);
+  const role = user?.role;
   const [sellerId, setSellerId] = useState("");
   const [items, setItems] = useState<OrderItem[]>([emptyItem()]);
   const [deliveryAddress, setDeliveryAddress] = useState("");
@@ -64,6 +67,7 @@ export function OrderFormDialog({ open, onClose, prefill }: Props) {
 
   const { data: suppliersData, isLoading: suppliersLoading } = useSuppliers({});
   const { data: distributorsData, isLoading: distributorsLoading } = useDistributors({});
+  const { data: sellerInventory = [], isLoading: inventoryLoading } = useSellerInventory(sellerId);
 
   const partners = isRetailer
     ? (distributorsData?.distributors ?? [])
@@ -81,7 +85,7 @@ export function OrderFormDialog({ open, onClose, prefill }: Props) {
       setSellerId(prefill?.sellerId ?? "");
       setItems([
         prefill?.itemName
-          ? { item_name: prefill.itemName, qty: prefill.qty ?? 1, unit: prefill.unit ?? "kg", price_per_unit: 0 }
+          ? { item_name: prefill.itemName, qty: prefill.qty ?? 1, qtyStr: String(prefill.qty ?? 1), unit: prefill.unit ?? "kg", price_per_unit: 0 }
           : emptyItem(),
       ]);
       setDeliveryAddress("");
@@ -114,12 +118,20 @@ export function OrderFormDialog({ open, onClose, prefill }: Props) {
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
+    const selectedPartner = partners.find((p) => {
+      const id = "distributor_id" in p ? p.distributor_id : p.supplier_id;
+      return id === sellerId;
+    });
     const payload: CreateOrderPayload = {
       seller_id: sellerId,
       seller_type: prefill?.sellerType ?? sellerType,
-      items: items.map(({ item_name, qty, unit, price_per_unit }) => ({
+      seller_name: selectedPartner?.name ?? "",
+      buyer_id: user?.user_id ?? "",
+      buyer_name: user?.business_name ?? user?.full_name ?? "",
+      buyer_role: (role === "retailer" ? "retailer" : "distributor") as "distributor" | "retailer",
+      items: items.map(({ item_name, qtyStr, unit, price_per_unit }) => ({
         item_name,
-        qty,
+        qty: Math.max(1, parseInt(qtyStr || "1", 10) || 1),
         unit,
         price_per_unit,
       })),
@@ -148,7 +160,7 @@ export function OrderFormDialog({ open, onClose, prefill }: Props) {
           <select
             className="h-11 w-full rounded-lg border border-[#E2E8F0] bg-white px-3 text-sm text-[#0F172A] outline-none focus:border-[#3B82F6] focus:ring-2 focus:ring-[#BFDBFE] disabled:opacity-50"
             value={sellerId}
-            onChange={(e) => setSellerId(e.target.value)}
+            onChange={(e) => { setSellerId(e.target.value); setItems([emptyItem()]); }}
             disabled={isLoading || partnersLoading}
             required
           >
@@ -209,49 +221,85 @@ export function OrderFormDialog({ open, onClose, prefill }: Props) {
                   )}
                 </div>
 
-                <Input
-                  placeholder="Nama item (cth: Tepung Terigu)"
-                  value={item.item_name}
-                  onChange={(e) => updateItem(index, "item_name", e.target.value)}
-                  required
-                  disabled={isLoading}
-                />
+                {/* Item dropdown from seller inventory */}
+                <div className="space-y-1">
+                  <label className="text-xs text-[#64748B]">Nama item</label>
+                  {!sellerId ? (
+                    <p className="text-xs text-[#94A3B8]">Pilih supplier dulu untuk melihat item tersedia.</p>
+                  ) : inventoryLoading ? (
+                    <p className="text-xs text-[#94A3B8]">Memuat item supplier...</p>
+                  ) : sellerInventory.length === 0 ? (
+                    <p className="text-xs text-[#94A3B8]">Supplier belum punya item di inventory.</p>
+                  ) : (
+                    <select
+                      className="h-11 w-full rounded-lg border border-[#E2E8F0] bg-white px-3 text-sm text-[#0F172A] outline-none focus:border-[#3B82F6] focus:ring-2 focus:ring-[#BFDBFE] disabled:opacity-50"
+                      value={item.item_name}
+                      onChange={(e) => {
+                        const selected = sellerInventory.find((inv) => inv.name === e.target.value);
+                        if (selected) {
+                          setItems((prev) =>
+                            prev.map((it, i) =>
+                              i === index
+                                ? { ...it, item_name: selected.name, unit: selected.unit, price_per_unit: selected.price }
+                                : it,
+                            ),
+                          );
+                        } else {
+                          updateItem(index, "item_name", e.target.value);
+                        }
+                      }}
+                      disabled={isLoading}
+                      required
+                    >
+                      <option value="">Pilih item</option>
+                      {sellerInventory.map((inv) => (
+                        <option key={inv.id} value={inv.name}>
+                          {inv.name} ({inv.unit}) — stok: {inv.stock}
+                        </option>
+                      ))}
+                    </select>
+                  )}
+                </div>
 
                 <div className="grid grid-cols-3 gap-2">
                   <div className="space-y-1">
                     <label className="text-xs text-[#64748B]">Qty</label>
                     <Input
-                      type="number"
-                      min={1}
-                      value={item.qty}
-                      onChange={(e) => updateItem(index, "qty", Number(e.target.value))}
+                      inputMode="numeric"
+                      value={item.qtyStr}
+                      onChange={(e) => {
+                        const raw = e.target.value.replace(/[^0-9]/g, "");
+                        setItems((prev) =>
+                          prev.map((it, i) =>
+                            i === index ? { ...it, qtyStr: raw, qty: parseInt(raw || "1", 10) || 1 } : it,
+                          ),
+                        );
+                      }}
+                      onBlur={() =>
+                        setItems((prev) =>
+                          prev.map((it, i) =>
+                            i === index
+                              ? { ...it, qtyStr: String(Math.max(1, parseInt(it.qtyStr || "1", 10) || 1)) }
+                              : it,
+                          ),
+                        )
+                      }
+                      onFocus={(e) => { if (e.target.value === "0" || e.target.value === "1") e.target.select(); }}
                       required
                       disabled={isLoading}
                     />
                   </div>
                   <div className="space-y-1">
                     <label className="text-xs text-[#64748B]">Unit</label>
-                    <select
-                      className="h-11 w-full rounded-lg border border-[#E2E8F0] bg-white px-3 text-sm text-[#0F172A] outline-none focus:border-[#3B82F6] focus:ring-2 focus:ring-[#BFDBFE]"
-                      value={item.unit}
-                      onChange={(e) => updateItem(index, "unit", e.target.value)}
-                      disabled={isLoading}
-                    >
-                      {UNITS.map((u) => (
-                        <option key={u} value={u}>{u}</option>
-                      ))}
-                    </select>
+                    <div className="flex h-11 items-center rounded-lg border border-[#E2E8F0] bg-slate-100 px-3 text-sm text-[#475569]">
+                      {item.unit || "—"}
+                    </div>
                   </div>
                   <div className="space-y-1">
-                    <label className="text-xs text-[#64748B]">Harga/unit (IDR)</label>
-                    <Input
-                      type="number"
-                      min={0}
-                      value={item.price_per_unit}
-                      onChange={(e) => updateItem(index, "price_per_unit", Number(e.target.value))}
-                      required
-                      disabled={isLoading}
-                    />
+                    <label className="text-xs text-[#64748B]">Harga/unit</label>
+                    <div className="flex h-11 items-center rounded-lg border border-[#E2E8F0] bg-slate-100 px-3 text-sm font-medium text-[#0F172A]">
+                      {item.price_per_unit > 0 ? formatCurrency(item.price_per_unit) : "—"}
+                    </div>
                   </div>
                 </div>
 

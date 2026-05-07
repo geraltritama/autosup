@@ -2,6 +2,7 @@
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, type ApiResponse } from "@/lib/api";
+import { useAuthStore } from "@/store/useAuthStore";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -77,8 +78,9 @@ type RetailerFilters = {
 // ─── Hooks ────────────────────────────────────────────────────────────────────
 
 export function useRetailers(filters: RetailerFilters = {}) {
+  const userId = useAuthStore((s) => s.user?.user_id);
   return useQuery({
-    queryKey: ["retailers", filters],
+    queryKey: ["retailers", filters, userId],
     queryFn: async (): Promise<RetailersResponse> => {
       const params = new URLSearchParams();
       if (filters.segment) params.set("segment", filters.segment);
@@ -87,6 +89,7 @@ export function useRetailers(filters: RetailerFilters = {}) {
       if (filters.type) params.set("type", filters.type);
       if (filters.page) params.set("page", String(filters.page));
       if (filters.limit) params.set("limit", String(filters.limit));
+      if (userId) params.set("user_id", userId);
       const { data } = await api.get<ApiResponse<RetailersResponse>>(
         `/retailers?${params.toString()}`,
       );
@@ -112,7 +115,11 @@ export function useAddRetailer() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async (payload: AddRetailerPayload): Promise<Retailer> => {
-      const { data } = await api.post<ApiResponse<Retailer>>("/retailers", payload);
+      const userId = useAuthStore.getState().user?.user_id;
+      const { data } = await api.post<ApiResponse<Retailer>>("/retailers", {
+        ...payload,
+        distributor_id: userId,
+      });
       return data.data;
     },
     onSuccess: () => qc.invalidateQueries({ queryKey: ["retailers"] }),

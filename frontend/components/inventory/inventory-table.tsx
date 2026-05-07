@@ -10,6 +10,7 @@ type Props = {
   onEdit: (item: InventoryItem) => void;
   onDelete: (item: InventoryItem) => void;
   onRestock: (item: InventoryItem) => void;
+  showPrice?: boolean;
 };
 
 function formatDate(iso: string) {
@@ -26,7 +27,7 @@ function formatDate(iso: string) {
   }
 }
 
-export function InventoryTable({ items, onEdit, onDelete, onRestock }: Props) {
+export function InventoryTable({ items, onEdit, onDelete, onRestock, showPrice = false }: Props) {
   return (
     <Card className="rounded-2xl">
       <CardHeader className="border-b border-[#E2E8F0] pb-4">
@@ -37,7 +38,7 @@ export function InventoryTable({ items, onEdit, onDelete, onRestock }: Props) {
           <table className="min-w-full border-collapse">
             <thead>
               <tr className="border-b border-[#E2E8F0] bg-slate-50/70 text-left">
-                {["Item Name", "Category", "Stock", "Min Stock", "Unit", "Status", "Last Updated", "Actions"].map(
+                {["Item Name", "Category", "Stock", "Min Stock", "Unit", ...(showPrice ? ["Harga Jual"] : []), "Status", "Last Updated", "Actions"].map(
                   (col) => (
                     <th
                       key={col}
@@ -60,6 +61,13 @@ export function InventoryTable({ items, onEdit, onDelete, onRestock }: Props) {
                   <td className="px-5 py-4 text-sm font-medium text-[#0F172A]">{item.stock}</td>
                   <td className="px-5 py-4 text-sm text-[#475569]">{item.min_stock}</td>
                   <td className="px-5 py-4 text-sm text-[#475569]">{item.unit}</td>
+                  {showPrice && (
+                    <td className="px-5 py-4 text-sm font-medium text-[#0F172A]">
+                      {item.price > 0
+                        ? new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", maximumFractionDigits: 0 }).format(item.price)
+                        : <span className="text-[#94A3B8]">—</span>}
+                    </td>
+                  )}
                   <td className="px-5 py-4">
                     <InventoryStatusBadge status={item.status} />
                   </td>

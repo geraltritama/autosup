@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowUpRight, Building2, Clock3, Eye, Link2, Loader2, Package, Wallet } from "lucide-react";
+import { ArrowUpRight, Building2, Clock3, Eye, Link2, Loader2, Package, Trash2, Wallet, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -13,10 +13,12 @@ type Props = {
   isRequesting?: boolean;
   isRequested?: boolean;
   onViewStock?: (supplier: Supplier) => void;
+  onDeletePartnership?: (supplier: Supplier) => void;
 };
 
-export function SupplierCard({ supplier, onRequestPartnership, isRequesting, isRequested, onViewStock }: Props) {
+export function SupplierCard({ supplier, onRequestPartnership, isRequesting, isRequested, onViewStock, onDeletePartnership }: Props) {
   const isPartner = supplier.type === "partner";
+  const isPending = isRequested || supplier.type === "pending";
 
   return (
     <Card className="rounded-2xl">
@@ -68,16 +70,20 @@ export function SupplierCard({ supplier, onRequestPartnership, isRequesting, isR
           <div className="flex items-start gap-3">
             {isPartner ? (
               <Link2 className="mt-0.5 h-4 w-4 text-[#22C55E]" />
+            ) : isPending ? (
+              <Clock3 className="mt-0.5 h-4 w-4 text-[#F59E0B]" />
             ) : (
               <Clock3 className="mt-0.5 h-4 w-4 text-[#3B82F6]" />
             )}
             <div className="space-y-1">
               <p className="text-sm font-medium text-[#0F172A]">
-                {isPartner ? "Active partner" : "Available for partnership"}
+                {isPartner ? "Active partner" : isPending ? "Request sent" : "Available for partnership"}
               </p>
               <p className="text-sm leading-6 text-[#64748B]">
                 {isPartner
                   ? "You're connected with this supplier. Trust layer is managed by the backend."
+                  : isPending
+                  ? "Partnership request is pending supplier approval."
                   : "Request a partnership to unlock ordering, trust scoring, and secure transactions."}
               </p>
             </div>
@@ -95,12 +101,34 @@ export function SupplierCard({ supplier, onRequestPartnership, isRequesting, isR
                 <Link2 className="h-4 w-4" />
                 Partnered
               </Button>
+              {onDeletePartnership && (
+                <Button
+                  variant="ghost"
+                  className="gap-2 text-red-500 hover:text-red-600 hover:bg-red-50"
+                  onClick={() => onDeletePartnership(supplier)}
+                >
+                  <Trash2 className="h-4 w-4" />
+                  Putus Kemitraan
+                </Button>
+              )}
             </>
-          ) : isRequested ? (
-            <Button variant="secondary" className="gap-2" disabled>
-              <Clock3 className="h-4 w-4" />
-              Requested
-            </Button>
+          ) : isPending ? (
+            <>
+              <Button variant="secondary" className="gap-2" disabled>
+                <Clock3 className="h-4 w-4" />
+                Requested
+              </Button>
+              {onDeletePartnership && (
+                <Button
+                  variant="ghost"
+                  className="gap-2 text-red-500 hover:text-red-600 hover:bg-red-50"
+                  onClick={() => onDeletePartnership(supplier)}
+                >
+                  <X className="h-4 w-4" />
+                  Batalkan
+                </Button>
+              )}
+            </>
           ) : (
             <>
               <Button

@@ -62,15 +62,6 @@ export default function RegisterPage() {
             })}
           </div>
 
-          {/* CTA section */}
-          <div className="rounded-2xl border border-[#BFDBFE] bg-gradient-to-r from-[#EFF6FF] to-[#DBEAFE] p-6 sm:p-8">
-            <div className="space-y-1.5">
-              <h2 className="text-lg font-semibold text-[#0F172A]">Mulai dengan dashborad kamu</h2>
-              <p className="text-sm leading-6 text-[#475569] max-w-md">
-                Setelah daftar, kamu langsung diarahkan ke dashboard yang sesuai dengan role bisnis kamu. Tidak ada setup rumit.
-              </p>
-            </div>
-          </div>
         </section>
 
         {/* ── Right: Register Form ─────────────────────────────────────── */}
