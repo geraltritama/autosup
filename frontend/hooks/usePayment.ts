@@ -18,11 +18,9 @@ export type Invoice = {
 
 export type PaymentSummary = {
   total_outstanding: number;
+  total_invoices: number;
+  overdue_count: number;
   paid_this_month: number;
-  available_credit: number;
-  upcoming_due_payments: number;
-  payment_success_rate: number;
-  credit_utilization_pct: number;
 };
 
 export type CashFlowInsight = {
@@ -57,17 +55,16 @@ export type DistributorPayment = {
   payment_id: string;
   counterpart_name: string;
   amount: number;
-  type: "incoming" | "outgoing";
+  type: "payable" | "receivable";
   status: DistributorPaymentStatus;
   order_id: string;
   created_at: string;
 };
 
 export type DistributorPaymentSummary = {
-  total_incoming: number;
-  total_outgoing: number;
-  pending_settlements: number;
-  net_flow: number;
+  total_payable: number;
+  total_receivable: number;
+  pending_count: number;
 };
 
 export type DistributorPaymentResponse = {

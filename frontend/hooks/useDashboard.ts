@@ -8,7 +8,10 @@ export type AiInsight = {
   type: string;
   message: string;
   urgency: "high" | "medium" | "low";
-  item_id: string;
+  agent_name?: string;
+  timestamp?: string;
+  item_id?: string;
+  full_result?: string;
 };
 
 type DistributorSummaryData = {

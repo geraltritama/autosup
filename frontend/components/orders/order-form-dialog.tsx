@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { AlertCircle, Plus, Trash2 } from "lucide-react";
+import { AlertCircle, CheckCircle2, CreditCard, Loader2, Plus, Trash2 } from "lucide-react";
 import { LegacyDialog as Dialog } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -50,9 +50,13 @@ function formatCurrency(amount: number) {
   }).format(amount);
 }
 
+type Step = "form" | "payment" | "success";
+
 export function OrderFormDialog({ open, onClose, prefill }: Props) {
   const user = useAuthStore((s) => s.user);
   const role = user?.role;
+  const [step, setStep] = useState<Step>("form");
+  const [pendingPayload, setPendingPayload] = useState<CreateOrderPayload | null>(null);
   const [sellerId, setSellerId] = useState("");
   const [items, setItems] = useState<OrderItem[]>([emptyItem()]);
   const [deliveryAddress, setDeliveryAddress] = useState("");
@@ -65,8 +69,8 @@ export function OrderFormDialog({ open, onClose, prefill }: Props) {
   const isRetailer = role === "retailer";
   const sellerType = isRetailer ? "distributor" as const : "supplier" as const;
 
-  const { data: suppliersData, isLoading: suppliersLoading } = useSuppliers({});
-  const { data: distributorsData, isLoading: distributorsLoading } = useDistributors({});
+  const { data: suppliersData, isLoading: suppliersLoading } = useSuppliers({ type: "partner" });
+  const { data: distributorsData, isLoading: distributorsLoading } = useDistributors({ status: "partner" });
   const { data: sellerInventory = [], isLoading: inventoryLoading } = useSellerInventory(sellerId);
 
   const partners = isRetailer
@@ -82,6 +86,8 @@ export function OrderFormDialog({ open, onClose, prefill }: Props) {
   useEffect(() => {
     if (!open) return;
     const t = setTimeout(() => {
+      setStep("form");
+      setPendingPayload(null);
       setSellerId(prefill?.sellerId ?? "");
       setItems([
         prefill?.itemName
@@ -115,7 +121,7 @@ export function OrderFormDialog({ open, onClose, prefill }: Props) {
     items.length > 0 &&
     items.every((item) => item.item_name.trim() && item.qty > 0 && item.price_per_unit > 0);
 
-  async function handleSubmit(e: React.FormEvent) {
+  function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
     const selectedPartner = partners.find((p) => {
@@ -138,12 +144,100 @@ export function OrderFormDialog({ open, onClose, prefill }: Props) {
       delivery_address: deliveryAddress.trim(),
       notes: notes.trim() || undefined,
     };
+    setPendingPayload(payload);
+    setStep("payment");
+  }
+
+  async function handleConfirmPayment() {
+    if (!pendingPayload) return;
+    setError(null);
     try {
-      await create.mutateAsync(payload);
-      onClose();
+      await create.mutateAsync(pendingPayload);
+      setStep("success");
+      setTimeout(() => onClose(), 1800);
     } catch {
       setError("Gagal membuat order. Coba lagi.");
+      setStep("form");
     }
+  }
+
+  if (step === "success") {
+    return (
+      <Dialog open={open} onClose={onClose} title="Order Berhasil Dibuat">
+        <div className="flex flex-col items-center gap-4 py-6 text-center">
+          <div className="rounded-full bg-[#F0FDF4] p-4">
+            <CheckCircle2 className="h-10 w-10 text-[#16A34A]" />
+          </div>
+          <div>
+            <p className="text-base font-semibold text-[#0F172A]">Pesanan & payment proof berhasil</p>
+            <p className="mt-1 text-sm text-[#64748B]">Transaksi dicatat on-chain via Solana Devnet.</p>
+          </div>
+        </div>
+      </Dialog>
+    );
+  }
+
+  if (step === "payment" && pendingPayload) {
+    const total = pendingPayload.items.reduce(
+      (s, it) => s + it.qty * it.price_per_unit,
+      0,
+    );
+    return (
+      <Dialog open={open} onClose={() => { setStep("form"); setError(null); }} title="Konfirmasi Payment">
+        <div className="space-y-5">
+          <div className="rounded-xl border border-[#DDD6FE] bg-[#F5F3FF] p-4 space-y-3">
+            <div className="flex items-center gap-2">
+              <CreditCard className="h-4 w-4 text-[#7C3AED]" />
+              <span className="text-sm font-semibold text-[#7C3AED]">Simulasi Payment</span>
+            </div>
+            <p className="text-xs text-[#64748B]">
+              Backend akan mencatat bukti pembayaran on-chain via Solana Memo Program (Devnet).
+              Tidak ada transfer token nyata — ini simulasi escrow.
+            </p>
+            <div className="rounded-lg bg-white px-4 py-3 border border-[#E9D5FF]">
+              <p className="text-xs text-[#64748B] uppercase tracking-[0.12em]">Total Amount</p>
+              <p className="mt-1 text-2xl font-semibold text-[#0F172A]">
+                {formatCurrency(total)}
+              </p>
+            </div>
+            <div className="space-y-1.5 text-xs text-[#64748B]">
+              <div className="flex justify-between">
+                <span>Ke</span>
+                <span className="font-medium text-[#0F172A]">{pendingPayload.seller_name || pendingPayload.seller_id.slice(0, 12) + "…"}</span>
+              </div>
+              <div className="flex justify-between">
+                <span>Dari</span>
+                <span className="font-medium text-[#0F172A]">{pendingPayload.buyer_name}</span>
+              </div>
+              <div className="flex justify-between">
+                <span>Escrow status</span>
+                <span className="font-medium text-[#F59E0B]">held (auto-release on delivery)</span>
+              </div>
+            </div>
+          </div>
+
+          {error && (
+            <div className="flex items-center gap-2 rounded-lg border border-[#FCA5A5] bg-[#FEF2F2] px-3 py-2.5 text-sm text-[#DC2626]">
+              <AlertCircle className="h-4 w-4 shrink-0" />
+              {error}
+            </div>
+          )}
+
+          <div className="flex justify-end gap-2">
+            <Button type="button" variant="secondary" onClick={() => { setStep("form"); setError(null); }} disabled={isLoading}>
+              Kembali
+            </Button>
+            <Button type="button" onClick={handleConfirmPayment} disabled={isLoading}>
+              {isLoading ? (
+                <><Loader2 className="mr-1.5 h-4 w-4 animate-spin" />Memproses…</>
+              ) : (
+                "Konfirmasi & Bayar"
+              )}
+            </Button>
+          </div>
+        </div>
+      </Dialog>
+    );
   }
 
   return (

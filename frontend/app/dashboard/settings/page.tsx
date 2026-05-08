@@ -5,6 +5,7 @@ import {
   Bell,
   Building2,
   Check,
+  ExternalLink,
   Key,
   Loader2,
   Lock,
@@ -14,6 +15,8 @@ import {
   Shield,
   Smartphone,
   User,
+  Wallet,
+  Zap,
 } from "lucide-react";
 import { QRCodeSVG } from "qrcode.react";
 import { PageErrorState } from "@/components/dashboard/page-error-state";
@@ -36,9 +39,17 @@ import {
   useDisable2FA,
   useVerify2FA,
 } from "@/hooks/useSettings";
+import {
+  useMyWallet,
+  useRequestAirdrop,
+  useDisconnectBrowserWallet,
+  useConnectPhantom,
+  useConnectMetaMask,
+  useBrowserWalletDetection,
+} from "@/hooks/useWallet";
 import { useAuthStore } from "@/store/useAuthStore";
 
-type Tab = "profile" | "business" | "notifications" | "security" | "integrations";
+type Tab = "profile" | "business" | "notifications" | "security" | "integrations" | "wallet";
 
 const tabs: { id: Tab; label: string; icon: React.ElementType }[] = [
   { id: "profile", label: "Profil", icon: User },
@@ -46,6 +57,7 @@ const tabs: { id: Tab; label: string; icon: React.ElementType }[] = [
   { id: "notifications", label: "Notifikasi", icon: Bell },
   { id: "security", label: "Keamanan", icon: Shield },
   { id: "integrations", label: "Integrasi", icon: Plug },
+  { id: "wallet", label: "Wallet", icon: Wallet },
 ];
 
 function formatDate(iso: string) {
@@ -655,6 +667,160 @@ function SecurityTab() {
   );
 }
 
+// ─── Web3 Wallet Card (inside IntegrationsTab) ────────────────────────────────
+
+function Web3WalletCard() {
+  const { phantomAvailable, metamaskAvailable } = useBrowserWalletDetection();
+  const { data: backendWallet, isLoading: walletLoading } = useMyWallet();
+  const connectPhantom = useConnectPhantom();
+  const connectMM = useConnectMetaMask();
+  const disconnect = useDisconnectBrowserWallet();
+  const [copied, setCopied] = useState(false);
+
+  const isBrowser = backendWallet?.is_browser_wallet ?? false;
+  const wType = backendWallet?.wallet_type ?? "";
+  const wLabel = wType === "phantom" ? "Phantom" : wType === "metamask" ? "MetaMask" : wType || "Browser";
+
+  function copyPubkey() {
+    if (!backendWallet?.pubkey) return;
+    navigator.clipboard.writeText(backendWallet.pubkey);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  }
+
+  return (
+    <Card className="rounded-2xl">
+      <CardHeader>
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <Wallet className="h-4 w-4 text-[#7C3AED]" />
+            <CardTitle className="text-base">Web3 Wallet</CardTitle>
+          </div>
+          <Badge tone={isBrowser ? "success" : "neutral"}>
+            {isBrowser ? wLabel : "Auto-generated"}
+          </Badge>
+        </div>
+      </CardHeader>
+      <CardContent className="space-y-5">
+
+        {/* Active pubkey */}
+        {walletLoading ? (
+          <div className="space-y-2">
+            <div className="h-4 w-40 animate-pulse rounded bg-slate-200" />
+            <div className="h-4 w-28 animate-pulse rounded bg-slate-200" />
+          </div>
+        ) : backendWallet && (
+          <div className="rounded-xl border border-[#DDD6FE] bg-[#F5F3FF] px-4 py-3 space-y-1.5">
+            <p className="text-xs text-[#6D28D9] uppercase tracking-[0.12em]">
+              {isBrowser ? `${wLabel} — address` : "Backend wallet — public key"}
+            </p>
+            <div className="flex items-center gap-2">
+              <p className="flex-1 truncate font-mono text-xs text-[#0F172A]">{backendWallet.pubkey}</p>
+              <button
+                onClick={copyPubkey}
+                className="shrink-0 rounded border border-[#DDD6FE] bg-white px-2 py-0.5 text-xs font-medium text-[#7C3AED] hover:bg-[#EDE9FE]"
+              >
+                {copied ? <Check className="h-3 w-3" /> : "Copy"}
+              </button>
+              <a href={backendWallet.explorer_url} target="_blank" rel="noopener noreferrer"
+                className="text-[#7C3AED] hover:text-[#6D28D9]">
+                <ExternalLink className="h-3.5 w-3.5" />
+              </a>
+            </div>
+            <p className="text-xs text-[#64748B]">
+              {isBrowser
+                ? "Pubkey disimpan di backend — transaksi on-chain ditandatangani authority keypair backend."
+                : "Wallet di-generate otomatis. Hubungkan Phantom atau MetaMask untuk pakai wallet sendiri."}
+            </p>
+            {isBrowser && (
+              <Button
+                variant="outline"
+                size="sm"
+                className="mt-1 text-[#EF4444] border-[#FCA5A5] hover:bg-[#FEF2F2]"
+                disabled={disconnect.isPending}
+                onClick={() => disconnect.mutate(wType)}
+              >
+                {disconnect.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : `Lepas ${wLabel}`}
+              </Button>
+            )}
+          </div>
+        )}
+
+        {/* Phantom */}
+        <div className="space-y-2">
+          <p className="text-xs font-semibold text-[#0F172A]">Phantom (Solana)</p>
+          {isBrowser && wType === "phantom" ? (
+            <div className="flex items-center gap-2 rounded-xl border border-[#BBF7D0] bg-[#F0FDF4] px-4 py-2.5">
+              <span className="text-base">👻</span>
+              <span className="text-sm font-medium text-[#15803D]">Phantom terhubung</span>
+              <Badge tone="success" className="text-[10px] ml-1">Active</Badge>
+            </div>
+          ) : phantomAvailable ? (
+            <Button
+              variant="outline"
+              className="w-full gap-2 border-[#7C3AED] text-[#7C3AED] hover:bg-[#F5F3FF]"
+              disabled={connectPhantom.isPending}
+              onClick={() => connectPhantom.mutate()}
+            >
+              {connectPhantom.isPending
+                ? <Loader2 className="h-4 w-4 animate-spin" />
+                : <span className="text-lg leading-none">👻</span>}
+              Connect Phantom
+            </Button>
+          ) : (
+            <a href="https://phantom.app" target="_blank" rel="noopener noreferrer"
+              className="flex w-full items-center justify-center gap-2 rounded-lg border border-[#E2E8F0] px-4 py-2.5 text-sm text-[#64748B] hover:bg-slate-50">
+              <ExternalLink className="h-4 w-4" />
+              Install Phantom
+            </a>
+          )}
+          {connectPhantom.isError && (
+            <p className="text-xs text-[#DC2626]">
+              {(connectPhantom.error as Error)?.message}
+            </p>
+          )}
+        </div>
+
+        {/* MetaMask */}
+        <div className="space-y-2">
+          <p className="text-xs font-semibold text-[#0F172A]">MetaMask (EVM)</p>
+          {isBrowser && wType === "metamask" ? (
+            <div className="flex items-center gap-2 rounded-xl border border-[#BBF7D0] bg-[#F0FDF4] px-4 py-2.5">
+              <span className="text-base">🦊</span>
+              <span className="text-sm font-medium text-[#15803D]">MetaMask terhubung</span>
+              <Badge tone="success" className="text-[10px] ml-1">Active</Badge>
+            </div>
+          ) : metamaskAvailable ? (
+            <Button
+              variant="outline"
+              className="w-full gap-2"
+              disabled={connectMM.isPending}
+              onClick={() => connectMM.mutate()}
+            >
+              {connectMM.isPending
+                ? <Loader2 className="h-4 w-4 animate-spin" />
+                : <span className="text-lg leading-none">🦊</span>}
+              Connect MetaMask
+            </Button>
+          ) : (
+            <a href="https://metamask.io" target="_blank" rel="noopener noreferrer"
+              className="flex w-full items-center justify-center gap-2 rounded-lg border border-[#E2E8F0] px-4 py-2.5 text-sm text-[#64748B] hover:bg-slate-50">
+              <ExternalLink className="h-4 w-4" />
+              Install MetaMask
+            </a>
+          )}
+          {connectMM.isError && (
+            <p className="text-xs text-[#DC2626]">
+              {(connectMM.error as Error)?.message}
+            </p>
+          )}
+        </div>
+
+      </CardContent>
+    </Card>
+  );
+}
+
 // ─── Integrations Tab ─────────────────────────────────────────────────────────
 
 function IntegrationsTab() {
@@ -695,28 +861,7 @@ function IntegrationsTab() {
 
   return (
     <div className="space-y-6">
-      <Card className="rounded-2xl">
-        <CardHeader>
-          <CardTitle className="text-base">Web3 Wallet</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm font-medium text-[#0F172A]">Solana Wallet</p>
-              {data.wallet.connected ? (
-                <p className="text-xs text-[#64748B]">
-                  {data.wallet.address} · {data.wallet.network}
-                </p>
-              ) : (
-                <p className="text-xs text-[#64748B]">Belum terhubung</p>
-              )}
-            </div>
-            <Badge tone={data.wallet.connected ? "success" : "neutral"}>
-              {data.wallet.connected ? "Terhubung" : "Tidak Aktif"}
-            </Badge>
-          </div>
-        </CardContent>
-      </Card>
+      <Web3WalletCard />
 
       <Card className="rounded-2xl">
         <CardHeader>
@@ -793,6 +938,116 @@ function IntegrationsTab() {
   );
 }
 
+// ─── Wallet Tab ───────────────────────────────────────────────────────────────
+
+function WalletTab() {
+  const { data, isLoading, isError, refetch } = useMyWallet();
+  const airdrop = useRequestAirdrop();
+  const [copied, setCopied] = useState(false);
+
+  function copyPubkey() {
+    if (!data?.pubkey) return;
+    navigator.clipboard.writeText(data.pubkey);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  }
+
+  if (isError) {
+    return <PageErrorState message="Gagal memuat data wallet" onRetry={() => refetch()} />;
+  }
+
+  return (
+    <div className="space-y-4">
+      <Card className="rounded-2xl">
+        <CardHeader>
+          <div className="flex items-center gap-2">
+            <Wallet className="h-4 w-4 text-[#7C3AED]" />
+            <CardTitle className="text-base">Solana Wallet (Devnet)</CardTitle>
+          </div>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          {isLoading || !data ? (
+            <div className="space-y-3">
+              <div className="h-4 w-48 animate-pulse rounded bg-slate-200" />
+              <div className="h-4 w-32 animate-pulse rounded bg-slate-200" />
+            </div>
+          ) : (
+            <>
+              <div className="rounded-xl border border-[#DDD6FE] bg-[#F5F3FF] px-4 py-3 space-y-2">
+                <p className="text-xs text-[#6D28D9] uppercase tracking-[0.12em]">Public Key</p>
+                <div className="flex items-center gap-2">
+                  <p className="flex-1 break-all font-mono text-sm text-[#0F172A]">{data.pubkey}</p>
+                  <button
+                    onClick={copyPubkey}
+                    className="shrink-0 rounded-lg border border-[#DDD6FE] bg-white px-2.5 py-1 text-xs font-medium text-[#7C3AED] hover:bg-[#EDE9FE]"
+                  >
+                    {copied ? <Check className="h-3.5 w-3.5" /> : "Copy"}
+                  </button>
+                </div>
+              </div>
+
+              <div className="flex items-center justify-between rounded-xl border border-[#E2E8F0] px-4 py-3">
+                <div>
+                  <p className="text-sm font-medium text-[#0F172A]">SOL Balance</p>
+                  <p className="text-xs text-[#64748B]">Solana Devnet</p>
+                </div>
+                <span className="text-lg font-semibold text-[#7C3AED]">
+                  {data.sol_balance.toFixed(4)} SOL
+                </span>
+              </div>
+
+              <div className="flex items-center gap-3">
+                <a
+                  href={data.explorer_url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1.5 text-xs font-medium text-[#7C3AED] hover:underline"
+                >
+                  Lihat di Solana Explorer <ExternalLink className="h-3 w-3" />
+                </a>
+              </div>
+            </>
+          )}
+        </CardContent>
+      </Card>
+
+      <Card className="rounded-2xl">
+        <CardHeader>
+          <div className="flex items-center gap-2">
+            <Zap className="h-4 w-4 text-[#F59E0B]" />
+            <CardTitle className="text-base">Devnet Airdrop</CardTitle>
+          </div>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <p className="text-sm text-[#64748B]">
+            Minta 2 SOL gratis dari Solana Devnet faucet untuk testing blockchain features.
+          </p>
+          <Button
+            onClick={() => airdrop.mutate()}
+            disabled={airdrop.isPending || isLoading}
+            variant="outline"
+            className="gap-1.5"
+          >
+            {airdrop.isPending ? (
+              <><Loader2 className="h-4 w-4 animate-spin" />Requesting…</>
+            ) : (
+              <><Zap className="h-4 w-4" />Request 2 SOL Airdrop</>
+            )}
+          </Button>
+          {airdrop.isSuccess && (
+            <p className="text-xs text-[#16A34A]">
+              {airdrop.data?.success ? "Airdrop berhasil! Balance akan update sebentar." : "Airdrop gagal — coba lagi."}
+            </p>
+          )}
+          {airdrop.isError && (
+            <p className="text-xs text-[#DC2626]">Airdrop gagal. Pastikan koneksi ke Solana Devnet aktif.</p>
+          )}
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
 export default function SettingsPage() {
@@ -840,6 +1095,7 @@ export default function SettingsPage() {
           {activeTab === "notifications" && <NotificationsTab />}
           {activeTab === "security" && <SecurityTab />}
           {activeTab === "integrations" && <IntegrationsTab />}
+          {activeTab === "wallet" && <WalletTab />}
         </div>
       </div>
     </main>

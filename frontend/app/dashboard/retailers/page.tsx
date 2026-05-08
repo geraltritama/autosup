@@ -332,6 +332,11 @@ function RetailerDetailPanel({
           {data.credit_summary && (
             <div className="space-y-2">
               <h4 className="text-sm font-semibold text-[#0F172A]">Credit Line</h4>
+              {!data.credit_summary ? (
+                <div className="rounded-xl border border-[#E2E8F0] p-4 text-sm text-[#64748B]">
+                  Tidak ada data credit line.
+                </div>
+              ) : (
               <div className="rounded-xl border border-[#E2E8F0] p-4 space-y-2">
                 <div className="flex items-center justify-between">
                   <span className="text-sm text-[#64748B]">Status</span>
@@ -370,6 +375,7 @@ function RetailerDetailPanel({
                   </>
                 )}
               </div>
+              )}
             </div>
           )}
 
@@ -467,24 +473,24 @@ export default function RetailersPage() {
           <section className="grid gap-4 md:grid-cols-3">
             <KpiCard
               label="Total Aktif"
-              value={String(summary.total_active)}
+              value={String(summary.active)}
               meta="Retailer aktif saat ini"
               tone="success"
               icon={Users}
             />
             <KpiCard
-              label="Risiko Tinggi"
-              value={String(summary.high_risk_count)}
-              meta="Retailer perlu perhatian"
-              tone="danger"
-              icon={AlertTriangle}
-            />
-            <KpiCard
-              label="Retention Rate"
-              value={`${Math.round(summary.retention_rate * 100)}%`}
-              meta="Tingkat retensi retailer"
+              label="Total Retailer"
+              value={String(summary.total)}
+              meta="Seluruh retailer terdaftar"
               tone="info"
               icon={TrendingUp}
+            />
+            <KpiCard
+              label="Premium"
+              value={String(summary.premium_count)}
+              meta="Retailer segmen premium"
+              tone="warning"
+              icon={AlertTriangle}
             />
           </section>
         )}

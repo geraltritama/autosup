@@ -13,7 +13,7 @@ import { DistributorDetailDialog } from "@/components/distributors/distributor-d
 import { SuppliersTrustPanel } from "@/components/suppliers/suppliers-trust-panel";
 import { PageErrorState } from "@/components/dashboard/page-error-state";
 import { Badge } from "@/components/ui/badge";
-import { usePartnershipsSummary, usePartnershipNFT, useDistributorPartnershipNFT, useRetailerPartnershipNFT } from "@/hooks/usePartnerships";
+import { usePartnershipsSummary, usePartnershipNFT, useDistributorPartnershipNFT, useRetailerPartnershipNFT, type PartnershipSummary } from "@/hooks/usePartnerships";
 import { PartnershipRequestsPanel } from "@/components/suppliers/partnership-requests-panel";
 import { useSuppliers, type Supplier } from "@/hooks/useSuppliers";
 import { useDistributors, type Distributor } from "@/hooks/useDistributors";
@@ -87,31 +87,79 @@ function RetailerNFTBadge({ retailerId }: { retailerId: string }) {
   );
 }
 
-function RetailerTrustPanel() {
+function TrustPanelStats({ summary, isLoading, description }: { summary?: PartnershipSummary; isLoading: boolean; description: string }) {
   return (
     <div className="space-y-6">
       <div className="rounded-2xl border border-[#E2E8F0] bg-white p-5 space-y-4">
         <Badge tone="info" className="w-fit">Trust and partnership</Badge>
         <h3 className="text-lg font-semibold text-[#0F172A]">Partnership trust layer</h3>
-        <p className="text-sm leading-6 text-[#64748B]">
-          Kemitraan dengan distributor dilindungi trust layer on-chain. Partnership NFT diterbitkan saat kemitraan disetujui.
-        </p>
+        <p className="text-sm leading-6 text-[#64748B]">{description}</p>
+
+        {isLoading ? (
+          <div className="space-y-2">
+            <div className="h-4 w-32 animate-pulse rounded bg-slate-200" />
+            <div className="h-4 w-24 animate-pulse rounded bg-slate-200" />
+          </div>
+        ) : summary ? (
+          <div className="space-y-3">
+            {/* NFT count */}
+            <div className="flex items-center gap-3 rounded-xl border border-[#DDD6FE] bg-[#F5F3FF] px-4 py-3">
+              <Gem className="h-4 w-4 text-[#7C3AED]" />
+              <span className="text-sm text-[#6D28D9] font-medium">{summary.nft_issued} Partnership NFT on-chain</span>
+            </div>
+            {/* Stats row */}
+            <div className="grid grid-cols-2 gap-2">
+              <div className="rounded-lg bg-[#F0FDF4] px-3 py-2 text-center">
+                <p className="text-xs text-[#64748B]">Active</p>
+                <p className="text-xl font-bold text-[#16A34A]">{summary.active_partnerships}</p>
+              </div>
+              <div className="rounded-lg bg-[#FFF7ED] px-3 py-2 text-center">
+                <p className="text-xs text-[#64748B]">Pending</p>
+                <p className="text-xl font-bold text-[#EA580C]">{summary.pending_agreements}</p>
+              </div>
+              <div className="rounded-lg bg-[#EFF6FF] px-3 py-2 text-center">
+                <p className="text-xs text-[#64748B]">Trust score</p>
+                <p className="text-xl font-bold text-[#1D4ED8]">{summary.trust_score}</p>
+              </div>
+              <div className="rounded-lg bg-slate-50 px-3 py-2 text-center">
+                <p className="text-xs text-[#64748B]">Growth</p>
+                <p className="text-xl font-bold text-[#0F172A]">+{summary.network_growth}%</p>
+              </div>
+            </div>
+            <a
+              href="https://explorer.solana.com/?cluster=devnet"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-1 text-xs font-medium text-[#7C3AED] hover:underline"
+            >
+              Solana Devnet Explorer <ExternalLink className="h-3 w-3" />
+            </a>
+          </div>
+        ) : null}
       </div>
     </div>
   );
 }
 
-function DistributorTrustPanel() {
+function RetailerTrustPanel() {
+  const { data, isLoading } = usePartnershipsSummary();
   return (
-    <div className="space-y-6">
-      <div className="rounded-2xl border border-[#E2E8F0] bg-white p-5 space-y-4">
-        <Badge tone="info" className="w-fit">Trust and partnership</Badge>
-        <h3 className="text-lg font-semibold text-[#0F172A]">Partnership trust layer</h3>
-        <p className="text-sm leading-6 text-[#64748B]">
-          Kemitraan dengan supplier dan retailer dilindungi trust layer on-chain. Partnership NFT diterbitkan saat kemitraan disetujui di kedua arah.
-        </p>
-      </div>
-    </div>
+    <TrustPanelStats
+      summary={data?.summary}
+      isLoading={isLoading}
+      description="Kemitraan dengan distributor dilindungi trust layer on-chain. Partnership NFT diterbitkan saat kemitraan disetujui."
+    />
+  );
+}
+
+function DistributorTrustPanel() {
+  const { data, isLoading } = usePartnershipsSummary();
+  return (
+    <TrustPanelStats
+      summary={data?.summary}
+      isLoading={isLoading}
+      description="Kemitraan dengan supplier dan retailer dilindungi trust layer on-chain. Partnership NFT diterbitkan saat kemitraan disetujui di kedua arah."
+    />
   );
 }
 

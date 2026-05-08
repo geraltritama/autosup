@@ -146,6 +146,34 @@ export function useCreateOrder() {
   });
 }
 
+export type OrdersTrustSummary = {
+  escrow_held: number;
+  escrow_released: number;
+  escrow_refunded: number;
+  total_released_value: number;
+  reputation_score: number;
+};
+
+export function useOrdersTrustSummary() {
+  const user = useAuthStore((s) => s.user);
+  const userId = user?.user_id;
+  const role = user?.role;
+  return useQuery({
+    queryKey: ["orders", "trust-summary", userId],
+    queryFn: async (): Promise<OrdersTrustSummary> => {
+      const params = new URLSearchParams();
+      if (userId) params.set("user_id", userId);
+      if (role) params.set("role", role);
+      const { data } = await api.get<ApiResponse<OrdersTrustSummary>>(
+        `/orders/trust-summary?${params.toString()}`,
+      );
+      return data.data;
+    },
+    enabled: !!userId,
+    staleTime: 30 * 1000,
+  });
+}
+
 export function useUpdateOrderStatus() {
   const qc = useQueryClient();
   return useMutation({
@@ -166,6 +194,7 @@ export function useUpdateOrderStatus() {
     onSuccess: (_data, { orderId }) => {
       qc.invalidateQueries({ queryKey: ["orders"] });
       qc.invalidateQueries({ queryKey: ["orders", orderId] });
+      qc.invalidateQueries({ queryKey: ["orders", "trust-summary"] });
     },
   });
 }

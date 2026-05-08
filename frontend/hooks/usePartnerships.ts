@@ -10,6 +10,7 @@ export type PartnershipSummary = {
   contract_renewal_rate: number;
   trust_score: number;
   network_growth: number;
+  nft_issued: number;
 };
 
 export type PartnershipInsight = {
@@ -88,6 +89,40 @@ export function useRetailerPartnershipNFT(retailerId: string | null) {
       return data.data;
     },
     staleTime: 5 * 60 * 1000,
+  });
+}
+
+export type EscrowBlockchainEvent = {
+  event: string;
+  tx: string;
+  timestamp: string;
+  explorer_url?: string;
+};
+
+export type EscrowBlockchainDetails = {
+  order_id: string;
+  order_number: string;
+  escrow_status: "held" | "released" | "refunded";
+  order_status: string;
+  total_amount: number;
+  chain: string;
+  program: string;
+  creation_tx: string;
+  explorer_url: string;
+  events: EscrowBlockchainEvent[];
+};
+
+export function useBlockchainEscrow(orderId: string | null) {
+  return useQuery({
+    queryKey: ["blockchain", "escrow", orderId],
+    enabled: !!orderId,
+    queryFn: async (): Promise<EscrowBlockchainDetails> => {
+      const { data } = await api.get<ApiResponse<EscrowBlockchainDetails>>(
+        `/blockchain/escrow/${orderId}`,
+      );
+      return data.data;
+    },
+    staleTime: 30 * 1000,
   });
 }
 

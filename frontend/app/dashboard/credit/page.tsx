@@ -400,14 +400,14 @@ export default function CreditPage() {
           <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
             <KpiCard
               label="Total Issued"
-              value={formatCurrency(summary.total_issued)}
+              value={formatCurrency(summary.total_credit_issued)}
               meta="Total limit kredit diterbitkan"
               tone="info"
               icon={CreditCard}
             />
             <KpiCard
               label="Outstanding"
-              value={formatCurrency(summary.outstanding_balance)}
+              value={formatCurrency(summary.total_utilized)}
               meta="Total saldo terutang"
               tone="warning"
               icon={BadgeDollarSign}
@@ -420,9 +420,9 @@ export default function CreditPage() {
               icon={AlertTriangle}
             />
             <KpiCard
-              label="Repayment Rate"
-              value={`${Math.round(summary.repayment_success_rate * 100)}%`}
-              meta="Tingkat keberhasilan pembayaran"
+              label="Utilization"
+              value={`${Math.round(summary.avg_utilization_pct)}%`}
+              meta="Rata-rata utilisasi kredit"
               tone="success"
               icon={TrendingUp}
             />
