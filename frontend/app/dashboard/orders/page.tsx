@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { CheckCheck, Clock3, PackageOpen, Plus, Truck, Loader2, ShieldCheck, ExternalLink, CheckCircle, MapPin, Calendar } from "lucide-react";
 import { useOrders, useOrderDetail, useUpdateOrderStatus, type OrderStatus } from "@/hooks/useOrders";
+import { useBlockchainEscrow } from "@/hooks/usePartnerships";
 import { OrderStatusUpdateDialog } from "@/components/orders/order-status-update-dialog";
 import { LegacyDialog as Dialog } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
@@ -50,6 +51,7 @@ export default function OrdersPage() {
   const { mutate: updateStatus, isPending: isUpdating, variables: updatingVars } =
     useUpdateOrderStatus();
   const { data: orderDetail, isLoading: detailLoading } = useOrderDetail(detailOrderId);
+  const { data: escrowChain } = useBlockchainEscrow(detailOrderId);
 
   const orders = data?.orders ?? [];
   const summary = data?.summary;
@@ -319,8 +321,8 @@ export default function OrdersPage() {
             {/* Escrow Status */}
             <div className="flex items-center gap-3 rounded-xl border border-[#E2E8F0] p-4">
               <ShieldCheck className="h-5 w-5 shrink-0 text-[#3B82F6]" />
-              <div>
-                <p className="text-xs uppercase tracking-[0.15em] text-[#64748B]">Status Pembayaran</p>
+              <div className="flex-1">
+                <p className="text-xs uppercase tracking-[0.15em] text-[#64748B]">Status Pembayaran (Escrow)</p>
                 <Badge
                   className="mt-1"
                   tone={
@@ -333,6 +335,44 @@ export default function OrdersPage() {
                 >
                   {orderDetail.escrow_status === "held" ? "Ditahan" : orderDetail.escrow_status === "released" ? "Dibayar" : "Dikembalikan"}
                 </Badge>
+                {escrowChain && (
+                  <div className="mt-3 space-y-2 rounded-lg border border-[#DDD6FE] bg-[#F5F3FF] p-3">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-xs font-semibold text-[#7C3AED]">{escrowChain.chain}</span>
+                      <span className="text-xs text-[#6D28D9]">{escrowChain.program}</span>
+                    </div>
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-xs text-[#64748B]">TX Hash</span>
+                      <a
+                        href={escrowChain.explorer_url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="flex items-center gap-1 font-mono text-xs text-[#7C3AED] hover:underline"
+                      >
+                        {escrowChain.creation_tx.slice(0, 16)}… <ExternalLink className="h-3 w-3" />
+                      </a>
+                    </div>
+                    {escrowChain.events.length > 1 && (
+                      <div className="space-y-1 border-t border-[#DDD6FE] pt-2">
+                        {escrowChain.events.slice(1).map((ev, i) => (
+                          <div key={i} className="flex items-center justify-between gap-2">
+                            <span className="text-xs capitalize text-[#64748B]">{ev.event.replace(/_/g, " ")}</span>
+                            {ev.explorer_url && (
+                              <a
+                                href={ev.explorer_url}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="flex items-center gap-1 font-mono text-xs text-[#7C3AED] hover:underline"
+                              >
+                                {ev.tx.slice(0, 12)}… <ExternalLink className="h-3 w-3" />
+                              </a>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
             </div>
 

@@ -2,6 +2,7 @@
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, type ApiResponse } from "@/lib/api";
+import { useAuthStore } from "@/store/useAuthStore";
 
 const USE_MOCK = process.env.NEXT_PUBLIC_USE_MOCK === "true";
 
@@ -189,22 +190,26 @@ const mockSessions: Session[] = [
 // ─── Hooks ────────────────────────────────────────────────────────────────────
 
 export function useProfileSettings() {
+  const userId = useAuthStore((s) => s.user?.user_id);
   return useQuery({
-    queryKey: ["settings", "profile"],
+    queryKey: ["settings", "profile", userId],
     queryFn: async (): Promise<ProfileSettings> => {
       if (USE_MOCK) {
         await new Promise((r) => setTimeout(r, 400));
         return mockProfile;
       }
-      const { data } = await api.get<ApiResponse<ProfileSettings>>("/settings/profile");
+      const params = userId ? `?user_id=${userId}` : "";
+      const { data } = await api.get<ApiResponse<ProfileSettings>>(`/settings/profile${params}`);
       return data.data;
     },
     staleTime: 60 * 1000,
+    enabled: !!userId,
   });
 }
 
 export function useUpdateProfile() {
   const qc = useQueryClient();
+  const userId = useAuthStore((s) => s.user?.user_id);
   return useMutation({
     mutationFn: async (body: Partial<Pick<ProfileSettings, "full_name" | "phone" | "avatar_url">>) => {
       if (USE_MOCK) {
@@ -212,7 +217,8 @@ export function useUpdateProfile() {
         Object.assign(mockProfile, body);
         return mockProfile;
       }
-      const { data } = await api.put<ApiResponse<ProfileSettings>>("/settings/profile", body);
+      const params = userId ? `?user_id=${userId}` : "";
+      const { data } = await api.put<ApiResponse<ProfileSettings>>(`/settings/profile${params}`, body);
       return data.data;
     },
     onSuccess: () => {
@@ -222,8 +228,9 @@ export function useUpdateProfile() {
 }
 
 export function useBusinessSettings(role?: string) {
+  const userId = useAuthStore((s) => s.user?.user_id);
   return useQuery({
-    queryKey: ["settings", "business"],
+    queryKey: ["settings", "business", userId],
     queryFn: async (): Promise<BusinessSettings> => {
       if (USE_MOCK) {
         await new Promise((r) => setTimeout(r, 400));
@@ -231,23 +238,26 @@ export function useBusinessSettings(role?: string) {
         if (role === "retailer") return mockBusinessRetailer;
         return mockBusinessDistributor;
       }
-      const { data } = await api.get<ApiResponse<BusinessSettings>>("/settings/business");
+      const params = userId ? `?user_id=${userId}` : "";
+      const { data } = await api.get<ApiResponse<BusinessSettings>>(`/settings/business${params}`);
       return data.data;
     },
     staleTime: 60 * 1000,
-    enabled: !!role,
+    enabled: !!role && !!userId,
   });
 }
 
 export function useUpdateBusiness() {
   const qc = useQueryClient();
+  const userId = useAuthStore((s) => s.user?.user_id);
   return useMutation({
     mutationFn: async (body: Partial<BusinessSettings>) => {
       if (USE_MOCK) {
         await new Promise((r) => setTimeout(r, 600));
         return body;
       }
-      const { data } = await api.put<ApiResponse<BusinessSettings>>("/settings/business", body);
+      const params = userId ? `?user_id=${userId}` : "";
+      const { data } = await api.put<ApiResponse<BusinessSettings>>(`/settings/business${params}`, body);
       return data.data;
     },
     onSuccess: () => qc.invalidateQueries({ queryKey: ["settings", "business"] }),

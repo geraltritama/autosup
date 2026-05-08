@@ -49,9 +49,9 @@ export type RetailerDetail = Retailer & {
 export type RetailersResponse = {
   retailers: Retailer[];
   summary: {
-    total_active: number;
-    high_risk_count: number;
-    retention_rate: number;
+    total: number;
+    active: number;
+    premium_count: number;
   };
   pagination: { page: number; limit: number; total: number };
 };

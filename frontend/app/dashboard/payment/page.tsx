@@ -87,22 +87,20 @@ export default function PaymentPage() {
 
       {/* KPI cards — retailer */}
       {role === "retailer" && summary && (
-        <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
+        <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
           <KpiCard label="Total Outstanding" value={formatCurrency(summary.total_outstanding)} meta="Hutang berjalan" tone="warning" icon={Banknote} />
           <KpiCard label="Paid This Month" value={formatCurrency(summary.paid_this_month)} meta="Sudah dibayar bulan ini" tone="success" icon={CheckCircle2} />
-          <KpiCard label="Available Credit" value={formatCurrency(summary.available_credit)} meta="Kredit limit tersisa" tone="info" icon={CreditCard} />
-          <KpiCard label="Upcoming Due" value={String(summary.upcoming_due_payments)} meta="Tagihan segera jatuh tempo" tone="danger" icon={Clock3} />
-          <KpiCard label="Payment Success" value={`${summary.payment_success_rate}%`} meta="Tingkat keberhasilan" tone="success" icon={PieChart} />
+          <KpiCard label="Total Invoices" value={String(summary.total_invoices)} meta="Total tagihan" tone="info" icon={CreditCard} />
+          <KpiCard label="Overdue" value={String(summary.overdue_count)} meta="Tagihan jatuh tempo" tone="danger" icon={Clock3} />
         </section>
       )}
 
       {/* KPI cards — distributor */}
       {role === "distributor" && distSummary && (
-        <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-          <KpiCard label="Total Incoming" value={formatCurrency(distSummary.total_incoming)} meta="Pembayaran masuk" tone="success" icon={ArrowDownLeft} />
-          <KpiCard label="Total Outgoing" value={formatCurrency(distSummary.total_outgoing)} meta="Pembayaran keluar" tone="warning" icon={ArrowUpRight} />
-          <KpiCard label="Pending Settlements" value={String(distSummary.pending_settlements)} meta="Menunggu settlement" tone="danger" icon={Clock3} />
-          <KpiCard label="Net Cash Flow" value={formatCurrency(distSummary.net_flow)} meta="Saldo bersih periode ini" tone={distSummary.net_flow >= 0 ? "success" : "warning"} icon={Banknote} />
+        <section className="grid gap-4 md:grid-cols-3">
+          <KpiCard label="Total Payable" value={formatCurrency(distSummary.total_payable)} meta="Pembayaran keluar" tone="warning" icon={ArrowUpRight} />
+          <KpiCard label="Total Receivable" value={formatCurrency(distSummary.total_receivable)} meta="Pembayaran masuk" tone="success" icon={ArrowDownLeft} />
+          <KpiCard label="Pending" value={String(distSummary.pending_count)} meta="Menunggu settlement" tone="danger" icon={Clock3} />
         </section>
       )}
 
@@ -138,8 +136,8 @@ export default function PaymentPage() {
                     <CardContent className="flex items-center justify-between gap-4 p-5">
                       <div className="space-y-2">
                         <div className="flex items-center gap-3">
-                          <div className={`flex h-8 w-8 items-center justify-center rounded-full ${pmt.type === "incoming" ? "bg-green-50 text-[#22C55E]" : "bg-orange-50 text-[#F59E0B]"}`}>
-                            {pmt.type === "incoming" ? <ArrowDownLeft className="h-4 w-4" /> : <ArrowUpRight className="h-4 w-4" />}
+                          <div className={`flex h-8 w-8 items-center justify-center rounded-full ${pmt.type === "receivable" ? "bg-green-50 text-[#22C55E]" : "bg-orange-50 text-[#F59E0B]"}`}>
+                            {pmt.type === "receivable" ? <ArrowDownLeft className="h-4 w-4" /> : <ArrowUpRight className="h-4 w-4" />}
                           </div>
                           <p className="text-sm font-semibold text-[#0F172A]">{pmt.counterpart_name}</p>
                           <Badge tone={distStatusTone[pmt.status]}>{distStatusLabel[pmt.status]}</Badge>
@@ -234,16 +232,16 @@ export default function PaymentPage() {
               {role === "distributor" && distSummary && (
                 <>
                   <div className="rounded-xl border border-[#E2E8F0] p-4">
-                    <p className="text-xs uppercase tracking-[0.15em] text-[#64748B]">Total Incoming</p>
-                    <p className="mt-1 text-2xl font-semibold text-[#22C55E]">{formatCurrency(distSummary.total_incoming)}</p>
+                    <p className="text-xs uppercase tracking-[0.15em] text-[#64748B]">Total Receivable</p>
+                    <p className="mt-1 text-2xl font-semibold text-[#22C55E]">{formatCurrency(distSummary.total_receivable)}</p>
                   </div>
                   <div className="rounded-xl border border-[#E2E8F0] p-4">
-                    <p className="text-xs uppercase tracking-[0.15em] text-[#64748B]">Total Outgoing</p>
-                    <p className="mt-1 text-2xl font-semibold text-[#F59E0B]">{formatCurrency(distSummary.total_outgoing)}</p>
+                    <p className="text-xs uppercase tracking-[0.15em] text-[#64748B]">Total Payable</p>
+                    <p className="mt-1 text-2xl font-semibold text-[#F59E0B]">{formatCurrency(distSummary.total_payable)}</p>
                   </div>
                   <div className="rounded-xl bg-slate-50 p-4">
-                    <p className="text-xs uppercase tracking-[0.15em] text-[#64748B]">Pending Settlements</p>
-                    <p className="mt-1 text-2xl font-semibold text-[#EF4444]">{distSummary.pending_settlements}</p>
+                    <p className="text-xs uppercase tracking-[0.15em] text-[#64748B]">Pending</p>
+                    <p className="mt-1 text-2xl font-semibold text-[#EF4444]">{distSummary.pending_count}</p>
                   </div>
                 </>
               )}
@@ -252,19 +250,19 @@ export default function PaymentPage() {
                   <div className="space-y-2">
                     <div className="flex justify-between text-sm">
                       <span className="font-medium text-[#0F172A]">Credit Utilization</span>
-                      <span className="font-medium text-[#3B82F6]">{summary.credit_utilization_pct}%</span>
+                      <span className="font-medium text-[#3B82F6]">{summary.total_invoices > 0 ? Math.round((summary.total_outstanding / (summary.total_outstanding + summary.paid_this_month || 1)) * 100) : 0}%</span>
                     </div>
                     <div className="h-2 w-full overflow-hidden rounded-full bg-[#E2E8F0]">
                       <div 
                         className="h-full bg-[#3B82F6] transition-all" 
-                        style={{ width: `${summary.credit_utilization_pct}%` }} 
+                        style={{ width: `${summary.total_invoices > 0 ? Math.round((summary.total_outstanding / (summary.total_outstanding + summary.paid_this_month || 1)) * 100) : 0}%` }} 
                       />
                     </div>
                   </div>
                   
                   <div className="rounded-xl border border-[#E2E8F0] p-4">
-                    <p className="text-xs uppercase tracking-[0.15em] text-[#64748B]">Kredit Tersedia</p>
-                    <p className="mt-1 text-2xl font-semibold text-[#0F172A]">{formatCurrency(summary.available_credit)}</p>
+                    <p className="text-xs uppercase tracking-[0.15em] text-[#64748B]">Total Tagihan</p>
+                    <p className="mt-1 text-2xl font-semibold text-[#0F172A]">{formatCurrency(summary.total_outstanding)}</p>
                   </div>
                 </>
               )}

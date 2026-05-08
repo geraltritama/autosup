@@ -64,6 +64,7 @@ function getNavigation(role?: UserRole) {
     { href: "/dashboard/distributors", label: "Distributors", icon: Handshake },
     { href: "/dashboard/demand", label: "Demand Intel", icon: TrendingUp },
     { href: "/dashboard/geo", label: "Geo Mapping", icon: Map },
+    { href: "/dashboard/ai-agents", label: "AI Agents", icon: Bot },
     { href: "/dashboard/analytics", label: "Analytics", icon: LineChart },
     { href: "/dashboard/settings", label: "Settings", icon: Settings },
   ];

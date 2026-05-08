@@ -14,7 +14,7 @@ export type RepaymentStatus = "paid" | "overdue" | "partial" | "failed";
 
 export type CreditAccount = {
   credit_account_id: string;
-  retailer: { id: string; name: string };
+  retailer: { retailer_id: string; name: string };
   credit_limit: number;
   utilized_amount: number;
   available_amount: number;
@@ -29,10 +29,11 @@ export type CreditAccount = {
 export type CreditAccountsResponse = {
   accounts: CreditAccount[];
   summary: {
-    total_issued: number;
-    outstanding_balance: number;
+    total_credit_issued: number;
+    total_utilized: number;
+    total_available: number;
     overdue_count: number;
-    repayment_success_rate: number;
+    avg_utilization_pct: number;
   };
   pagination: { page: number; limit: number; total: number };
 };
@@ -73,7 +74,7 @@ type CreditFilters = {
 const mockAccounts: CreditAccount[] = [
   {
     credit_account_id: "credit-uuid-001",
-    retailer: { id: "retailer-uuid-001", name: "Toko Sumber Rejeki" },
+    retailer: { retailer_id: "retailer-uuid-001", name: "Toko Sumber Rejeki" },
     credit_limit: 10000000,
     utilized_amount: 3200000,
     available_amount: 6800000,
@@ -86,7 +87,7 @@ const mockAccounts: CreditAccount[] = [
   },
   {
     credit_account_id: "credit-uuid-002",
-    retailer: { id: "retailer-uuid-003", name: "Restoran Padang Jaya" },
+    retailer: { retailer_id: "retailer-uuid-003", name: "Restoran Padang Jaya" },
     credit_limit: 15000000,
     utilized_amount: 9800000,
     available_amount: 5200000,
@@ -99,7 +100,7 @@ const mockAccounts: CreditAccount[] = [
   },
   {
     credit_account_id: "credit-uuid-003",
-    retailer: { id: "retailer-uuid-005", name: "Kedai Kopi Nusantara" },
+    retailer: { retailer_id: "retailer-uuid-005", name: "Kedai Kopi Nusantara" },
     credit_limit: 5000000,
     utilized_amount: 4900000,
     available_amount: 100000,
@@ -123,14 +124,17 @@ export function useCreditAccounts(filters: CreditFilters = {}) {
         let list = [...mockAccounts];
         if (filters.status) list = list.filter((a) => a.status === filters.status);
         if (filters.retailer_id)
-          list = list.filter((a) => a.retailer.id === filters.retailer_id);
+          list = list.filter((a) => a.retailer.retailer_id === filters.retailer_id);
         return {
           accounts: list,
           summary: {
-            total_issued: mockAccounts.reduce((s, a) => s + a.credit_limit, 0),
-            outstanding_balance: mockAccounts.reduce((s, a) => s + a.utilized_amount, 0),
+            total_credit_issued: mockAccounts.reduce((s, a) => s + a.credit_limit, 0),
+            total_utilized: mockAccounts.reduce((s, a) => s + a.utilized_amount, 0),
+            total_available: mockAccounts.reduce((s, a) => s + a.available_amount, 0),
             overdue_count: mockAccounts.filter((a) => a.status === "overdue").length,
-            repayment_success_rate: 0.93,
+            avg_utilization_pct: Math.round(
+              mockAccounts.reduce((s, a) => s + a.utilization_pct, 0) / mockAccounts.length,
+            ),
           },
           pagination: { page: 1, limit: 20, total: list.length },
         };
@@ -237,7 +241,7 @@ export function useOpenCreditAccount() {
         const newAccount: CreditAccount = {
           credit_account_id: `credit-uuid-${Date.now()}`,
           retailer: {
-            id: payload.retailer_id,
+            retailer_id: payload.retailer_id,
             name: retailerNames[payload.retailer_id] ?? "Retailer",
           },
           credit_limit: payload.credit_limit,
