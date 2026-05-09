@@ -422,6 +422,32 @@ export default function OrdersPage() {
               </div>
             )}
 
+            {/* Approve/Reject Button - untuk seller saat status pending */}
+            {orderDetail.seller.role === role && orderDetail.status === "pending" && (
+              <div className="flex gap-3">
+                <Button
+                  variant="secondary"
+                  className="w-full gap-2 border-red-200 text-red-600 hover:bg-red-50"
+                  onClick={() => {
+                    updateStatus({ orderId: orderDetail.order_id, status: "cancelled" });
+                    setDetailOrderId(null);
+                  }}
+                >
+                  Tolak Order
+                </Button>
+                <Button
+                  className="w-full gap-2"
+                  onClick={() => {
+                    updateStatus({ orderId: orderDetail.order_id, status: "processing" });
+                    setDetailOrderId(null);
+                  }}
+                >
+                  <CheckCircle className="h-4 w-4" />
+                  Approve Order
+                </Button>
+              </div>
+            )}
+
             {/* Terima Barang Button - untuk buyer saat status shipped */}
             {orderDetail.buyer.role === role && orderDetail.status === "shipping" && orderDetail.escrow_status === "held" && (
               <Button
