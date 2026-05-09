@@ -685,6 +685,12 @@ class CreateOrderReqV2(BaseModel):
 
 @app.post("/orders")
 def create_order(data: CreateOrderReqV2):
+    # Enforce supply chain hierarchy: retailer cannot order from supplier
+    if data.buyer_role == "retailer" and data.seller_type == "supplier":
+        return error_response(
+            "Hierarchy violation: Retailer tidak dapat memesan langsung dari Supplier. "
+            "Pesan melalui Distributor."
+        )
     try:
         order_id = str(uuid.uuid4())
         order_number = f"ORD-{order_id[:8].upper()}"
@@ -1163,8 +1169,12 @@ def update_retailer(retailer_id: str, data: UpdateRetailerReq):
 def get_distributors(search: Optional[str] = None, status: Optional[str] = None,
                      type: Optional[str] = None,
                      user_id: Optional[str] = None, page: int = 1, limit: int = 20):
+    # type=partner means show only partnered, type=discover means show only non-partnered, no type = all
     if not status and type:
-        status = type  # alias: type=partner → status=partner
+        if type == "partner":
+            status = "partner"
+        elif type == "discover":
+            status = "none"
     try:
         # Always use auth users as source — their id matches partnership distributor_id
         distributors = [
