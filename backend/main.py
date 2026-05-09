@@ -1163,8 +1163,12 @@ def update_retailer(retailer_id: str, data: UpdateRetailerReq):
 def get_distributors(search: Optional[str] = None, status: Optional[str] = None,
                      type: Optional[str] = None,
                      user_id: Optional[str] = None, page: int = 1, limit: int = 20):
+    # type=partner means show only partnered, type=discover means show only non-partnered, no type = all
     if not status and type:
-        status = type  # alias: type=partner → status=partner
+        if type == "partner":
+            status = "partner"
+        elif type == "discover":
+            status = "none"
     try:
         # Always use auth users as source — their id matches partnership distributor_id
         distributors = [
