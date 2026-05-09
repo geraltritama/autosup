@@ -353,6 +353,7 @@ def home():
 @app.post("/auth/register")
 def register_user(req: RegisterReq):
     try:
+        # Step 1: Daftarkan ke auth.users
         res = supabase.auth.sign_up({
             "email": req.email,
             "password": req.password,
@@ -365,6 +366,7 @@ def register_user(req: RegisterReq):
                 }
             },
         })
+
         if not res.user:
             return error_response("Gagal mendaftarkan user.")
         # Also insert into public.users for queryable supplier/distributor/retailer lists
@@ -376,6 +378,7 @@ def register_user(req: RegisterReq):
             }).execute()
         except Exception:
             pass  # table might not exist yet — non-critical
+
         return success_response(
             data={
                 "user_id": res.user.id,
@@ -1241,19 +1244,22 @@ def get_distributor_requests(user_id: Optional[str] = None, page: int = 1, limit
     try:
         query = supabase.table("partnerships").select("*").eq("status", "pending")
         if user_id:
-            try:
-                query = query.or_(f"distributor_id.eq.{user_id},retailer_name.eq.{user_id}")
-            except Exception:
-                pass
+            # Filter request yang masuk KE distributor ini
+            query = query.eq("distributor_id", user_id)
         res = query.execute()
+
+        # Ambil nama retailer dari auth users
+        retailer_ids = [p.get("retailer_name") for p in (res.data or []) if p.get("retailer_name")]
+        retailer_names = {}
+        for u in auth_users_by_role("retailer"):
+            if u["id"] in retailer_ids:
+                retailer_names[u["id"]] = u.get("business_name") or u.get("full_name") or "Unknown"
+
         requests = [
             {
                 "request_id": p.get("id"),
                 "distributor_id": p.get("retailer_name", ""),
-                "distributor_name": p.get("retailer_name", ""),
-                "supplier_id": p.get("supplier_name", ""),
-                "city": p.get("city", ""),
-                "reliability_score": p.get("reliability_score", 0),
+                "distributor_name": retailer_names.get(p.get("retailer_name", ""), "Unknown"),
                 "status": p.get("status", "pending"),
                 "created_at": p.get("created_at", now_iso()),
             }
