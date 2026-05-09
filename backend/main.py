@@ -109,10 +109,10 @@ class UpdateProfileReq(BaseModel):
 
 class UpdateBusinessReq(BaseModel):
     business_name: Optional[str] = None
+    business_type: Optional[str] = None
     tax_id: Optional[str] = None
     warehouse_locations: Optional[list[str]] = None
     service_regions: Optional[list[str]] = None
-
 class UpdateNotificationReq(BaseModel):
     channels: Optional[dict] = None
     preferences: Optional[dict] = None
