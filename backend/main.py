@@ -685,6 +685,12 @@ class CreateOrderReqV2(BaseModel):
 
 @app.post("/orders")
 def create_order(data: CreateOrderReqV2):
+    # Enforce supply chain hierarchy: retailer cannot order from supplier
+    if data.buyer_role == "retailer" and data.seller_type == "supplier":
+        return error_response(
+            "Hierarchy violation: Retailer tidak dapat memesan langsung dari Supplier. "
+            "Pesan melalui Distributor."
+        )
     try:
         order_id = str(uuid.uuid4())
         order_number = f"ORD-{order_id[:8].upper()}"
