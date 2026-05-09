@@ -83,8 +83,9 @@ export function ItemFormDialog({ open, onClose, editItem, showPrice = false, pri
         await add.mutateAsync(payload);
       }
       onClose();
-    } catch {
-      setError("Gagal menyimpan item. Coba lagi.");
+    } catch (err) {
+    console.error("ADD ITEM ERROR:", err);
+    setError("Gagal menyimpan item. Coba lagi.");
     }
   }
 

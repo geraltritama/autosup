@@ -20,6 +20,7 @@ import { useDistributors, type Distributor } from "@/hooks/useDistributors";
 import { useRetailers, type Retailer } from "@/hooks/useRetailers";
 import { useAuthStore } from "@/store/useAuthStore";
 import { cn } from "@/lib/utils";
+import { DistributorRequestsPanel } from "@/components/distributors/distributor-requests-panel";
 
 function SupplierNFTBadge({ supplierId }: { supplierId: string }) {
   const { data: nft, isLoading } = usePartnershipNFT(supplierId);
@@ -466,6 +467,7 @@ export default function PartnershipsPage() {
         {/* Side panel */}
         <div className="space-y-6">
           {isSupplier && <PartnershipRequestsPanel />}
+          {isDistributor && <DistributorRequestsPanel />}
           {isRetailer ? (
             <RetailerTrustPanel />
           ) : isDistributor && partnerView === "retailers" ? (

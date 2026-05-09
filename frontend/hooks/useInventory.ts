@@ -105,27 +105,55 @@ export function useAddInventoryItem() {
   const userId = useAuthStore((s) => s.user?.user_id);
   return useMutation({
     mutationFn: async (payload: AddItemPayload): Promise<InventoryItem> => {
-      const { data } = await api.post<ApiResponse<InventoryItem>>("/inventory", {
-        product_name: payload.name,
-        current_stock: payload.stock,
-        min_threshold: payload.min_stock,
-        category: payload.category,
-        unit: payload.unit,
-        price: payload.price,
-        user_id: userId,
-      });
-      const item = data.data as unknown as { id: string; name: string; stock: number; min_stock: number; category: string; unit: string; price?: number };
-      return {
-        id: item.id,
-        name: item.name,
-        stock: item.stock,
-        min_stock: item.min_stock ?? payload.min_stock,
-        category: item.category ?? payload.category,
-        unit: item.unit ?? payload.unit,
-        price: item.price ?? payload.price,
-        status: item.stock === 0 ? "out_of_stock" : item.stock < (item.min_stock ?? payload.min_stock) ? "low_stock" : "in_stock",
-        last_updated: new Date().toISOString(),
-      };
+  const { data } = await api.post<ApiResponse<InventoryItem>>("/inventory", {
+    product_name: payload.name,
+    current_stock: payload.stock,
+    min_threshold: payload.min_stock,
+    category: payload.category,
+    unit: payload.unit,
+    price: payload.price,
+    user_id: userId,
+  });
+
+  // Kalau data.data null, fallback ke payload
+  if (!data.data) {
+    return {
+      id: crypto.randomUUID(),
+      name: payload.name,
+      stock: payload.stock,
+      min_stock: payload.min_stock,
+      category: payload.category,
+      unit: payload.unit,
+      price: payload.price,
+      status: "in_stock" as InventoryStatus,
+      last_updated: new Date().toISOString(),
+    };
+  }
+      
+    const item = data.data as unknown as { 
+    id: string; 
+    product_name?: string;
+    name?: string; 
+    current_stock?: number;
+    stock?: number;
+    min_threshold?: number;
+    min_stock?: number;
+    category?: string; 
+    unit?: string; 
+    price?: number 
+  };
+
+  return {
+    id: item.id,
+    name: item.name ?? item.product_name ?? payload.name,
+    stock: item.stock ?? item.current_stock ?? payload.stock,
+    min_stock: item.min_stock ?? item.min_threshold ?? payload.min_stock,
+    category: item.category ?? payload.category,
+    unit: item.unit ?? payload.unit,
+    price: item.price ?? payload.price,
+    status: "in_stock" as InventoryStatus,
+    last_updated: new Date().toISOString(),
+  };
     },
     onSuccess: () => qc.invalidateQueries({ queryKey: ["inventory"] }),
   });

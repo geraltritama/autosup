@@ -57,11 +57,11 @@ const [selectedDistributor, setSelectedDistributor] = useState<Distributor | nul
     setDistributorDetailOpen(true);
   }, []);
 
-  const { data, isLoading, isError, refetch } = useDistributors({
-    search,
-    status: statusFilter !== "all" ? statusFilter : undefined,
-    type: role === "retailer" ? "partner" : undefined,
-  });
+ const { data, isLoading, isError, refetch } = useDistributors({
+  search,
+  status: statusFilter !== "all" ? statusFilter : undefined,
+  type: undefined, 
+});
 
   const {
     data: requestsData,
