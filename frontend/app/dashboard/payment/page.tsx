@@ -262,7 +262,7 @@ export default function PaymentPage() {
                             payMutation.mutate(inv.invoice_id, {
                               onSuccess: (res) => {
                                 if (res?.invoice_url) {
-                                  window.open(res.invoice_url, "_blank", "noopener,noreferrer");
+                                  window.location.assign(res.invoice_url);
                                 } else {
                                   alert("Payment successful!");
                                 }
