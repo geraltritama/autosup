@@ -43,6 +43,7 @@ import {
   type RetailerStatus,
 } from "@/hooks/useRetailers";
 import { useAuthStore } from "@/store/useAuthStore";
+import { useDistributorRequests, useRespondDistributorRequest } from "@/hooks/useDistributors";
 import { ConfirmDialog } from "@/components/shared/confirm-dialog";
 
 function formatCurrency(amount: number) {
@@ -433,6 +434,10 @@ export default function RetailersPage() {
     status: status || undefined,
   });
 
+  const { data: requestsData } = useDistributorRequests("pending");
+  const respondRequest = useRespondDistributorRequest();
+  const pendingRequests = requestsData?.requests ?? [];
+
   const deletePartnership = useDeleteRetailerPartnership();
 
   if (role !== "distributor") {
@@ -541,6 +546,51 @@ export default function RetailersPage() {
             </SelectContent>
           </Select>
         </section>
+
+        {/* Pending Partnership Requests */}
+        {pendingRequests.length > 0 && (
+          <section>
+            <Card className="rounded-2xl border-amber-100">
+              <CardContent className="p-5">
+                <div className="flex items-center gap-2 mb-4">
+                  <Badge tone="warning">{pendingRequests.length} Pending</Badge>
+                  <p className="text-sm font-semibold text-[#0F172A]">Partnership Requests from Retailers</p>
+                </div>
+                <div className="space-y-3">
+                  {pendingRequests.map((req) => (
+                    <div key={req.request_id} className="flex items-center justify-between rounded-lg border border-[#E2E8F0] px-4 py-3">
+                      <div>
+                        <p className="text-sm font-semibold text-[#0F172A]">{req.distributor?.business_name || req.distributor?.name || "Retailer"}</p>
+                        {req.mou_terms && <p className="mt-0.5 text-xs text-[#64748B] line-clamp-1">{req.mou_terms}</p>}
+                        {req.mou_region && <p className="text-[10px] text-[#94A3B8]">Region: {req.mou_region}</p>}
+                        <p className="text-[10px] text-[#94A3B8]">{new Date(req.created_at).toLocaleDateString("en-US", { day: "numeric", month: "short", year: "numeric" })}</p>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <Button
+                          size="sm"
+                          variant="secondary"
+                          className="h-8 text-xs text-rose-600 border-rose-200 hover:bg-rose-50"
+                          disabled={respondRequest.isPending}
+                          onClick={() => respondRequest.mutate({ request_id: req.request_id, action: "reject" })}
+                        >
+                          Reject
+                        </Button>
+                        <Button
+                          size="sm"
+                          className="h-8 text-xs"
+                          disabled={respondRequest.isPending}
+                          onClick={() => respondRequest.mutate({ request_id: req.request_id, action: "accept" })}
+                        >
+                          Accept
+                        </Button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </CardContent>
+            </Card>
+          </section>
+        )}
 
         {/* List */}
         <section>
