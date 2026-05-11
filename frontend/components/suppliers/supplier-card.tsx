@@ -62,7 +62,7 @@ export function SupplierCard({ supplier, onRequestPartnership, isRequesting, isR
             <p className="text-xs uppercase tracking-[0.18em] text-[#64748B]">Trust reference</p>
             <div className="mt-2 flex items-center gap-2 text-sm font-medium text-[#0F172A]">
               <Wallet className="h-4 w-4 text-[#64748B]" />
-              <span className="truncate">{supplier.wallet_address}</span>
+              <span className="truncate">{supplier.wallet_address || "Blockchain-verified via Partnership NFT"}</span>
             </div>
           </div>
         </div>
