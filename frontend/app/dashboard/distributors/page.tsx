@@ -10,6 +10,7 @@ import {
   Network,
   Plus,
   Search,
+  Shield,
   Trash2,
   Truck,
   XCircle,
@@ -342,7 +343,38 @@ const [selectedDistributor, setSelectedDistributor] = useState<Distributor | nul
         {/* Side panel — role-aware */}
         <div className="space-y-4">
           {!isRetailer && role === "supplier" && (
+            <>
+            {/* Trust & Partnership NFT summary */}
+            <Card className="rounded-2xl border-[#DBEAFE] bg-[#EFF6FF]/50">
+              <CardContent className="p-5 space-y-3">
+                <div className="flex items-center gap-2">
+                  <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-[#2563EB] text-white">
+                    <Shield className="h-4 w-4" />
+                  </div>
+                  <div>
+                    <p className="text-sm font-semibold text-[#1E40AF]">Partnership Trust Layer</p>
+                    <p className="text-[10px] text-[#64748B]">Solana Devnet · Soulbound NFTs</p>
+                  </div>
+                </div>
+                <div className="grid grid-cols-3 gap-2">
+                  <div className="rounded-lg bg-white px-2 py-1.5 text-center">
+                    <p className="text-lg font-bold text-[#0F172A]">{summary?.partner_count ?? 0}</p>
+                    <p className="text-[9px] text-[#64748B]">Active</p>
+                  </div>
+                  <div className="rounded-lg bg-white px-2 py-1.5 text-center">
+                    <p className="text-lg font-bold text-[#F59E0B]">{summary?.pending_count ?? 0}</p>
+                    <p className="text-[9px] text-[#64748B]">Pending</p>
+                  </div>
+                  <div className="rounded-lg bg-white px-2 py-1.5 text-center">
+                    <p className="text-lg font-bold text-[#7C3AED]">{summary?.partner_count ?? 0}</p>
+                    <p className="text-[9px] text-[#64748B]">NFTs</p>
+                  </div>
+                </div>
+                <p className="text-[10px] text-[#64748B]">Each approved partnership mints a soulbound NFT on Solana as immutable proof of agreement.</p>
+              </CardContent>
+            </Card>
             <PartnershipRequestsPanel />
+            </>
           )}
           {isRetailer ? (
             <Card className="rounded-2xl">
