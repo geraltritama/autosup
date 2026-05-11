@@ -45,7 +45,7 @@ export function useRetailerPayments() {
       const { data } = await api.get<ApiResponse<RetailerPaymentResponse>>(`/payments/retailer${params}`);
       return data.data;
     },
-    staleTime: 60 * 1000,
+    staleTime: 10 * 1000,
   });
 }
 
@@ -103,10 +103,12 @@ export function usePayInvoice() {
   return useMutation({
     mutationFn: async (invoice_id: string) => {
       const { data } = await api.post<ApiResponse>(`/invoices/${invoice_id}/pay`);
+      if (!data.success) throw new Error(data.message || "Payment failed");
       return data.data;
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["retailer", "payments"] });
+      qc.invalidateQueries({ queryKey: ["orders"] });
     },
   });
 }

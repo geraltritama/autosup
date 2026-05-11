@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { CheckCheck, Clock3, PackageOpen, Plus, Truck, Loader2, ShieldCheck, ExternalLink, CheckCircle, MapPin, Calendar } from "lucide-react";
-import { useOrders, useOrderDetail, useUpdateOrderStatus, type OrderStatus } from "@/hooks/useOrders";
+import { useOrders, useOrderDetail, useUpdateOrderStatus, useCancelOrder, type OrderStatus } from "@/hooks/useOrders";
 import { useBlockchainEscrow } from "@/hooks/usePartnerships";
 import { OrderStatusUpdateDialog } from "@/components/orders/order-status-update-dialog";
 import { LegacyDialog as Dialog } from "@/components/ui/dialog";
@@ -49,6 +49,7 @@ export default function OrdersPage() {
   });
 
   const { mutate: updateStatus, isPending: isUpdating } = useUpdateOrderStatus();
+  const { mutate: cancelOrder } = useCancelOrder();
   const { data: orderDetail, isLoading: detailLoading } = useOrderDetail(detailOrderId);
   const { data: escrowChain } = useBlockchainEscrow(detailOrderId);
 
@@ -232,6 +233,9 @@ export default function OrdersPage() {
                 onShip={(orderId) => {
                   setSelectedOrderForShipping(orderId);
                   setTrackingDialogOpen(true);
+                }}
+                onCancel={(orderId) => {
+                  if (confirm("Cancel this order? Escrow will be refunded.")) cancelOrder(orderId);
                 }}
               />
             ))}
