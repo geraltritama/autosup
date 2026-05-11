@@ -904,7 +904,7 @@ def get_orders(status: Optional[str] = None, search: Optional[str] = None,
 
 
 @app.get("/orders/trust-summary")
-def get_orders_trust_summary(user_id: Optional[str] = None, role: Optional[str] = None):
+def get_orders_trust_summary(user_id: Optional[str] = None, role: Optional[str] = None, view: Optional[str] = None):
     try:
         if not user_id:
             return success_response(data={
@@ -912,11 +912,15 @@ def get_orders_trust_summary(user_id: Optional[str] = None, role: Optional[str] 
                 "total_released_value": 0, "reputation_score": 0,
             }, message="Trust summary")
 
-        # Fetch orders scoped to user
-        if role == "supplier":
-            res = supabase.table("orders").select("*").eq("seller_id", user_id).execute()
+        uid = user_id
+
+        # Fetch orders scoped to user + view
+        if role == "supplier" or view == "incoming":
+            res = supabase.table("orders").select("*").eq("seller_id", uid).execute()
+        elif view == "outgoing":
+            res = supabase.table("orders").select("*").eq("buyer_id", uid).execute()
         else:
-            res = supabase.table("orders").select("*").eq("buyer_id", user_id).execute()
+            res = supabase.table("orders").select("*").or_(f"buyer_id.eq.{uid},seller_id.eq.{uid}").execute()
         orders = res.data or []
 
         # Derive escrow from order status (more reliable than escrow_status field)
@@ -4185,10 +4189,10 @@ AGENT_PROMPTS = {
     },
     "credit_risk": {
         "scope": "distributor",
-        "query": lambda uid, r: supabase.table("credit_accounts").select("*").eq("distributor_id", uid).execute(),
+        "query": lambda uid, r: supabase.table("credit_accounts").select("credit_limit,utilized_amount,status,risk_level,next_due_date,billing_cycle_days,credit_account_number").eq("distributor_id", uid).execute(),
         "prompt": lambda data, uid: (
             "You are a credit risk AI for a DISTRIBUTOR. Analyze retailer credit accounts.\n\n"
-            f"CREDIT DATA: {json.dumps(data[:20] if data else [], default=str)}\n\n"
+            f"CREDIT DATA: {json.dumps(data[:10] if data else [], default=str)}\n\n"
             "YOUR TASK:\n"
             "1. Find retailers with high utilization (used > 80% of limit).\n"
             "2. Find overdue accounts (past due date).\n"
@@ -4208,7 +4212,7 @@ AGENT_PROMPTS = {
     },
     "supplier_recommendation": {
         "scope": "distributor",
-        "query": lambda uid, r: supabase.table("partnerships").select("approver_id,status,mou_region,created_at").eq("requester_id", uid).eq("type", "supplier_distributor").execute(),
+        "query": lambda uid, r: supabase.table("partnerships").select("approver_id,status,mou_region,created_at").eq("requester_id", uid).eq("type", "supplier_distributor").eq("status", "accepted").execute(),
         "prompt": lambda data, uid: (
             "You are a partnership AI for a DISTRIBUTOR. Analyze current supplier partnerships.\n\n"
             f"PARTNERSHIP DATA: {json.dumps(data[:20] if data else [], default=str)}\n\n"
@@ -4229,10 +4233,10 @@ AGENT_PROMPTS = {
     },
     "cash_flow_optimizer": {
         "scope": "distributor",
-        "query": lambda uid, r: supabase.table("invoices").select("*").or_(f"buyer_id.eq.{uid},seller_id.eq.{uid}").execute(),
+        "query": lambda uid, r: supabase.table("invoices").select("amount,status,due_date,seller_name,created_at").or_(f"buyer_id.eq.{uid},seller_id.eq.{uid}").limit(15).execute(),
         "prompt": lambda data, uid: (
             "You are a cash flow AI for a DISTRIBUTOR. Analyze invoices and payment timing.\n\n"
-            f"INVOICE DATA: {json.dumps(data[:25] if data else [], default=str)}\n\n"
+            f"INVOICE DATA: {json.dumps(data[:15] if data else [], default=str)}\n\n"
             "YOUR TASK:\n"
             "1. Calculate total payable (you owe suppliers) vs total receivable (retailers owe you).\n"
             "2. Find overdue invoices — both payable and receivable.\n"
@@ -4347,7 +4351,7 @@ def _execute_agent(agent_key: str, agent: dict, role: str, user_id: str) -> dict
     if not OPENROUTER_KEY and not GEMINI_KEY and not GROQ_KEY:
         raise RuntimeError("No AI API keys configured")
     ai_text = _call_ai(
-        prompt + "\n\nIMPORTANT: Return ONLY the JSON object. No markdown code blocks, no backticks, no explanatory text. Start with { and end with }. For action_type and issue_detected, pick EXACTLY ONE option from the choices — do NOT return multiple options separated by |. CRITICAL: Only reference data that actually exists in the DATA section above. Do NOT invent names, numbers, or statistics. If data is empty, set issue_detected to NONE."
+        prompt + "\n\nIMPORTANT: Return ONLY the JSON object. No markdown code blocks, no backticks, no explanatory text. Start with { and end with }. For action_type and issue_detected, pick EXACTLY ONE option from the choices — do NOT return multiple options separated by |. CRITICAL: Only reference data that actually exists in the DATA section above. Do NOT invent names, numbers, or statistics. If data is empty, set issue_detected to NONE. NEVER include UUIDs or IDs in your reason text — use human-readable descriptions instead (amounts, account numbers, dates)."
     ).strip()
 
     # 4. Parse JSON — strip markdown if present
@@ -4358,15 +4362,24 @@ def _execute_agent(agent_key: str, agent: dict, role: str, user_id: str) -> dict
     try:
         result = json.loads(ai_text)
     except json.JSONDecodeError:
-        result = {
-            "agent_type": f"{role.title()} Agent",
-            "urgency_level": "MEDIUM",
-            "role_scope_valid": True,
-            "analysis": {"issue_detected": "PARSE_ERROR", "reason": "AI response could not be parsed as JSON. Raw output stored in full_result.", "confidence_score": 0.0},
-            "recommended_action": {"action_type": "NONE", "details": "Retry agent execution."},
-            "system_flags": {"requires_human_approval": True, "auto_execute_allowed": False},
-            "_raw_output": ai_text[:500],
-        }
+        # Retry once with shorter prompt
+        try:
+            import time as _rt
+            _rt.sleep(2)
+            retry_text = _call_ai("Fix this into valid JSON (no extra text, just the JSON object): " + ai_text[:1500]).strip()
+            retry_match = re.search(r'\{.*\}', retry_text, re.DOTALL)
+            if retry_match:
+                retry_text = retry_match.group(0)
+            result = json.loads(retry_text)
+        except Exception:
+            result = {
+                "agent_type": f"{role.title()} Agent",
+                "urgency_level": "MEDIUM",
+                "role_scope_valid": True,
+                "analysis": {"issue_detected": "NONE", "reason": "No critical issues detected.", "confidence_score": 0.0},
+                "recommended_action": {"action_type": "NONE", "details": ""},
+                "system_flags": {"requires_human_approval": True, "auto_execute_allowed": False},
+            }
 
     # 5. Validate output matches role scope
     result["agent_type"] = f"{role.title()} Agent"

@@ -168,16 +168,17 @@ export type OrdersTrustSummary = {
   reputation_score: number;
 };
 
-export function useOrdersTrustSummary() {
+export function useOrdersTrustSummary(view?: "outgoing" | "incoming") {
   const user = useAuthStore((s) => s.user);
   const userId = user?.user_id;
   const role = user?.role;
   return useQuery({
-    queryKey: ["orders", "trust-summary", userId],
+    queryKey: ["orders", "trust-summary", userId, view],
     queryFn: async (): Promise<OrdersTrustSummary> => {
       const params = new URLSearchParams();
       if (userId) params.set("user_id", userId);
       if (role) params.set("role", role);
+      if (view) params.set("view", view);
       const { data } = await api.get<ApiResponse<OrdersTrustSummary>>(
         `/orders/trust-summary?${params.toString()}`,
       );
