@@ -1968,34 +1968,31 @@ def get_distributor_stock(distributor_id: str, page: int = 1, limit: int = 20):
 @app.get("/distributors/{distributor_id}/partnership-history")
 def get_distributor_partnership_history(distributor_id: str, user_id: Optional[str] = None, role: Optional[str] = None):
     try:
-        query = supabase.table("partnerships").select("*").eq("distributor_id", distributor_id)
+        # New table: find partnerships where distributor_id is requester or approver
+        query = supabase.table("partnerships").select("*").or_(
+            f"requester_id.eq.{distributor_id},approver_id.eq.{distributor_id}"
+        )
         rows = query.execute().data or []
 
-        if role == "supplier" and user_id:
-            rows = [
-                row for row in rows
-                if row.get("partnership_type") in ("supplier", "distributor_supplier")
-                and user_id in {row.get("supplier_id", ""), row.get("supplier_name", "")}
-            ]
-        elif role == "retailer" and user_id:
-            rows = [
-                row for row in rows
-                if row.get("partnership_type") == "retailer"
-                and row.get("retailer_name", "") == user_id
-            ]
+        # Filter by current user's perspective
+        if user_id:
+            rows = [r for r in rows if user_id in (r.get("requester_id", ""), r.get("approver_id", ""))]
 
         rows.sort(key=lambda row: row.get("created_at", ""), reverse=True)
         history = [
             {
                 "request_id": row.get("id", ""),
                 "status": row.get("status", "pending"),
-                "created_at": row.get("created_at", now_iso()),
-                "terms": row.get("terms", ""),
-                "distribution_region": row.get("distribution_region", ""),
-                "valid_until": row.get("valid_until", 0),
-                "legal_contract_hash": row.get("legal_contract_hash", ""),
-                "mou_document_name": row.get("mou_document_name", ""),
-                "mou_document_data": row.get("mou_document_data", ""),
+                "created_at": row.get("created_at", ""),
+                "terms": row.get("mou_terms", ""),
+                "distribution_region": row.get("mou_region", ""),
+                "valid_until": 0,
+                "legal_contract_hash": row.get("mou_hash", ""),
+                "mou_document_name": "",
+                "mou_document_data": "",
+                "nft_mint_address": row.get("nft_mint_address", ""),
+                "nft_explorer_url": row.get("nft_explorer_url", ""),
+                "nft_token_name": row.get("nft_token_name", ""),
             }
             for row in rows
         ]

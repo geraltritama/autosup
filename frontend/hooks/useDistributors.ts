@@ -51,6 +51,8 @@ export type DistributorPartnershipRequest = {
   status: "pending" | "accepted" | "rejected";
   created_at: string;
   terms?: string;
+  mou_terms?: string;
+  mou_region?: string;
   proposed_start_date?: string;
   proposed_end_date?: string;
 };
