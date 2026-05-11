@@ -4695,6 +4695,10 @@ def get_suppliers(search: str = "", type: str = "", user_id: Optional[str] = Non
     pending = [s for s in supplier_users if s.get("type") == "pending"]
     discover = [s for s in supplier_users if s.get("type") not in ("partner", "pending")]
 
+    # Sort: pending first, discover second, partner last
+    type_order = {"pending": 0, "discover": 1, "partner": 2}
+    supplier_users.sort(key=lambda s: (type_order.get(s.get("type", "discover"), 1), s["name"].lower()))
+
     return success_response(data={
         "suppliers": supplier_users,
         "summary": {
