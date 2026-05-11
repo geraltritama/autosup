@@ -121,8 +121,8 @@ const [selectedDistributor, setSelectedDistributor] = useState<Distributor | nul
         )}
       </section>
 
-      {/* KPI cards */}
-      {summary && (
+      {/* KPI cards — hide on pending tab */}
+      {summary && statusFilter !== "pending" && (
         <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
           <KpiCard
             label={isRetailer ? "Partner Distributors" : "Active Partners"}
