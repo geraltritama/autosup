@@ -1072,7 +1072,6 @@ def create_order(data: CreateOrderReqV2, background_tasks: BackgroundTasks):
                 "status": "pending",
                 "escrow_status": "held",
                 "created_at": o.get("created_at", now_iso()),
-                "payment_proof_sig": payment_proof_sig,
             },
             message="Order created successfully",
         )
@@ -1649,11 +1648,13 @@ def settle_payment(data: SettlePaymentReq):
 @app.post("/invoices/{invoice_id}/pay")
 def pay_invoice(invoice_id: str):
     try:
-        # Try invoices table first
-        inv_res = supabase.table("invoices").update({"status": "paid", "paid_at": now_iso()}).eq("id", invoice_id).execute()
-        # Fallback: if invoice_id is actually an order_id (from orders fallback)
-        if not inv_res.data:
-            supabase.table("orders").update({"status": "delivered", "escrow_status": "released", "updated_at": now_iso()}).eq("id", invoice_id).execute()
+        # Update order status to delivered (invoices are generated from orders)
+        supabase.table("orders").update({"status": "delivered", "escrow_status": "released", "updated_at": now_iso()}).eq("id", invoice_id).execute()
+        # Also try invoices table in case it exists
+        try:
+            supabase.table("invoices").update({"status": "paid", "paid_at": now_iso()}).eq("id", invoice_id).execute()
+        except Exception:
+            pass
         return success_response(data={"success": True}, message="Invoice paid successfully")
     except Exception as e:
         return error_response(str(e))
