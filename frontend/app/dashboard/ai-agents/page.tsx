@@ -7,7 +7,6 @@ import {
   Clock, 
   Loader2, 
   Play,
-  Sparkles, 
   TrendingUp, 
   Zap 
 } from "lucide-react";
@@ -230,7 +229,7 @@ export default function AiAgentsPage() {
       autoTick.mutate();
     }, 10 * 60 * 1000);
     return () => clearInterval(interval);
-  }, []);
+  }, [autoTick]);
 
   const agents = data?.agents ?? [];
   const performance = data?.performance;

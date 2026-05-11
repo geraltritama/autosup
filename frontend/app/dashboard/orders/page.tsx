@@ -150,16 +150,16 @@ export default function OrdersPage() {
           icon={Clock3}
         />
         <KpiCard
-          label="Completed Orders"
+          label="Completed (Delivered)"
           value={summary ? String(summary.completed_orders) : "—"}
           meta="Delivered successfully"
           tone="success"
           icon={CheckCheck}
         />
         <KpiCard
-          label="Cancelled Orders"
+          label="Cancelled (Refunded)"
           value={summary ? String(summary.cancelled_orders) : "—"}
-          meta="Cancelled"
+          meta="Order cancelled and escrow refunded"
           tone="danger"
           icon={Truck}
         />

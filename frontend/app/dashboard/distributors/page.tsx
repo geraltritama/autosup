@@ -12,7 +12,6 @@ import {
   Search,
   Trash2,
   Truck,
-  XCircle,
 } from "lucide-react";
 import { KpiCard } from "@/components/dashboard/kpi-card";
 import { PageErrorState } from "@/components/dashboard/page-error-state";
@@ -47,11 +46,6 @@ const [selectedDistributor, setSelectedDistributor] = useState<Distributor | nul
   const [selectedRequest, setSelectedRequest] = useState<DistributorPartnershipRequest | null>(null);
   const [requestDetailOpen, setRequestDetailOpen] = useState(false);
 
-  const handleViewStock = useCallback((distributor: Distributor) => {
-    setSelectedDistributor(distributor);
-    setStockDialogOpen(true);
-  }, []);
-
   const handleViewDetail = useCallback((distributor: Distributor) => {
     setSelectedDistributor(distributor);
     setDistributorDetailOpen(true);
@@ -73,6 +67,7 @@ const [selectedDistributor, setSelectedDistributor] = useState<Distributor | nul
   const requestPartnership = useRequestDistributorPartnership();
   const deletePartnership = useDeleteDistributorPartnership();
   const [deleteTarget, setDeleteTarget] = useState<Distributor | null>(null);
+  const [requestingId, setRequestingId] = useState<string | null>(null);
 
   if (role !== "supplier" && role !== "retailer") {
     return (
@@ -87,7 +82,6 @@ const [selectedDistributor, setSelectedDistributor] = useState<Distributor | nul
     );
   }
 
-  const [requestingId, setRequestingId] = useState<string | null>(null);
   const isRetailer = role === "retailer";
   const distributors = data?.distributors ?? [];
   const summary = data?.summary;
@@ -246,9 +240,17 @@ const [selectedDistributor, setSelectedDistributor] = useState<Distributor | nul
                     onRequestPartnership={
                     dist.partnership_status === "none"
                       ? (d) => {
+                          const autoTerms =
+                            `MOU Kemitraan Retailer-Distributor: ${isRetailer ? "Toko Rafi Jaya" : "Retailer"} bekerja sama dengan ${d.name} ` +
+                            `untuk pembelian rutin produk FMCG wilayah ${d.region || "Indonesia"}. ` +
+                            "Pembayaran dilakukan sesuai invoice/credit terms, pengiriman mengikuti SLA distributor, dan kedua pihak menjaga kualitas serta ketersediaan stok.";
                           setRequestingId(d.distributor_id);
                           requestPartnership.mutate(
-                            { distributor_id: d.distributor_id },
+                            {
+                              distributor_id: d.distributor_id,
+                              terms: autoTerms,
+                              distribution_region: d.region || "Indonesia",
+                            },
                             { onSettled: () => setRequestingId(null) }
                           );
                         }
