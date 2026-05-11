@@ -235,6 +235,28 @@ export function OrderFormDialog({ open, onClose, prefill }: Props) {
             <div className="flex justify-center py-6"><Loader2 className="h-5 w-5 animate-spin text-[#94A3B8]" /></div>
           ) : (
             <div className="space-y-4">
+              {/* Credit Line option */}
+              <div className="space-y-2">
+                <p className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-[0.1em] text-[#64748B]">
+                  <CreditCard className="h-3.5 w-3.5" /> Credit Line
+                </p>
+                <button
+                  type="button"
+                  onClick={() => setSelectedMethod("credit_line")}
+                  className={`flex w-full items-center gap-3 rounded-xl border px-4 py-3 text-left transition-all ${
+                    selectedMethod === "credit_line"
+                      ? "border-[#3B82F6] bg-[#EFF6FF] ring-2 ring-[#BFDBFE]"
+                      : "border-[#E2E8F0] bg-white hover:border-[#94A3B8]"
+                  }`}
+                >
+                  <CreditCard className="h-5 w-5 text-[#7C3AED]" />
+                  <div>
+                    <p className="text-sm font-medium text-[#0F172A]">Pay with Credit Line</p>
+                    <p className="text-[10px] text-[#64748B]">Deduct from your available credit balance</p>
+                  </div>
+                </button>
+              </div>
+
               {/* E-Wallet */}
               {ewallets.length > 0 && (
                 <div className="space-y-2">
