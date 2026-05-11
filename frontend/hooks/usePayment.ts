@@ -107,7 +107,7 @@ export function usePayInvoice() {
       return data.data;
     },
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["retailer", "payments"] });
+      qc.invalidateQueries({ queryKey: ["retailer"] });
       qc.invalidateQueries({ queryKey: ["orders"] });
     },
   });
