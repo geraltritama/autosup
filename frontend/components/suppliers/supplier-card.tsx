@@ -13,10 +13,11 @@ type Props = {
   isRequesting?: boolean;
   isRequested?: boolean;
   onViewStock?: (supplier: Supplier) => void;
+  onViewDetail?: (supplier: Supplier) => void;
   onDeletePartnership?: (supplier: Supplier) => void;
 };
 
-export function SupplierCard({ supplier, onRequestPartnership, isRequesting, isRequested, onViewStock, onDeletePartnership }: Props) {
+export function SupplierCard({ supplier, onRequestPartnership, isRequesting, isRequested, onViewStock, onViewDetail, onDeletePartnership }: Props) {
   const isPartner = supplier.type === "partner";
   const isPending = isRequested || supplier.type === "pending";
 
@@ -97,6 +98,11 @@ export function SupplierCard({ supplier, onRequestPartnership, isRequesting, isR
                 <Package className="h-4 w-4" />
                 View Stock
               </Button>
+              {onViewDetail && (
+                <Button variant="secondary" className="gap-2" onClick={() => onViewDetail(supplier)}>
+                  View Detail
+                </Button>
+              )}
               <Button variant="ghost" className="gap-2 text-[#22C55E]" disabled>
                 <Link2 className="h-4 w-4" />
                 Partnered

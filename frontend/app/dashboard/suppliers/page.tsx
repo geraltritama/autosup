@@ -10,6 +10,7 @@ import { SuppliersErrorState } from "@/components/suppliers/suppliers-error-stat
 import { SuppliersLoadingState } from "@/components/suppliers/suppliers-loading-state";
 import { SuppliersTrustPanel } from "@/components/suppliers/suppliers-trust-panel";
 import { PartnershipRequestsPanel } from "@/components/suppliers/partnership-requests-panel";
+import { PartnershipDetailDialog } from "@/components/shared/partnership-detail-dialog";
 import { RequestPartnershipDialog } from "@/components/suppliers/request-partnership-dialog";
 import { SupplierStockDialog } from "@/components/suppliers/supplier-stock-dialog";
 import { LegacyDialog as Dialog } from "@/components/ui/dialog";
@@ -29,6 +30,7 @@ export default function SuppliersPage() {
   const [stockDialogOpen, setStockDialogOpen] = useState(false);
   const [stockSupplier, setStockSupplier] = useState<Supplier | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<Supplier | null>(null);
+  const [detailSupplier, setDetailSupplier] = useState<Supplier | null>(null);
 
   const { data, isLoading, isError, refetch } = useSuppliers({ search, type });
   const { data: requestsData } = usePartnershipRequests("pending");
@@ -132,6 +134,7 @@ export default function SuppliersPage() {
                   isRequested={requestedIds.has(supplier.supplier_id)}
                   onRequestPartnership={role === "distributor" ? handleRequestPartnership : undefined}
                   onViewStock={(s) => { setStockSupplier(s); setStockDialogOpen(true); }}
+                  onViewDetail={(s) => setDetailSupplier(s)}
                   onDeletePartnership={(s) => setDeleteTarget(s)}
                 />
               ))}
@@ -186,6 +189,20 @@ export default function SuppliersPage() {
         }
         confirmLabel={deleteTarget?.type === "partner" ? "End Partnership" : "Cancel Request"}
         isLoading={deletePartnership.isPending}
+      />
+
+      <PartnershipDetailDialog
+        open={!!detailSupplier}
+        onClose={() => setDetailSupplier(null)}
+        partnerId={detailSupplier?.supplier_id ?? null}
+        partnerName={detailSupplier?.name ?? ""}
+        partnerRole="supplier"
+        partnerInfo={{
+          order_volume: detailSupplier?.total_transactions,
+          punctuality: detailSupplier?.on_time_delivery_rate,
+          reputation: detailSupplier?.reputation_score,
+          transactions: detailSupplier?.total_transactions,
+        }}
       />
     </main>
   );
