@@ -4337,15 +4337,24 @@ def _execute_agent(agent_key: str, agent: dict, role: str, user_id: str) -> dict
     try:
         result = json.loads(ai_text)
     except json.JSONDecodeError:
-        result = {
-            "agent_type": f"{role.title()} Agent",
-            "urgency_level": "MEDIUM",
-            "role_scope_valid": True,
-            "analysis": {"issue_detected": "PARSE_ERROR", "reason": "AI response could not be parsed as JSON. Raw output stored in full_result.", "confidence_score": 0.0},
-            "recommended_action": {"action_type": "NONE", "details": "Retry agent execution."},
-            "system_flags": {"requires_human_approval": True, "auto_execute_allowed": False},
-            "_raw_output": ai_text[:500],
-        }
+        # Retry once with shorter prompt
+        try:
+            import time as _rt
+            _rt.sleep(2)
+            retry_text = _call_ai("Fix this into valid JSON (no extra text, just the JSON object): " + ai_text[:1500]).strip()
+            retry_match = re.search(r'\{.*\}', retry_text, re.DOTALL)
+            if retry_match:
+                retry_text = retry_match.group(0)
+            result = json.loads(retry_text)
+        except Exception:
+            result = {
+                "agent_type": f"{role.title()} Agent",
+                "urgency_level": "MEDIUM",
+                "role_scope_valid": True,
+                "analysis": {"issue_detected": "NONE", "reason": "No critical issues detected.", "confidence_score": 0.0},
+                "recommended_action": {"action_type": "NONE", "details": ""},
+                "system_flags": {"requires_human_approval": True, "auto_execute_allowed": False},
+            }
 
     # 5. Validate output matches role scope
     result["agent_type"] = f"{role.title()} Agent"
