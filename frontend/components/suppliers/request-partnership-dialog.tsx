@@ -159,7 +159,7 @@ export function RequestPartnershipDialog({ open, onClose, supplier, onSuccess }:
           <div className="space-y-2 rounded-xl border border-dashed border-[#CBD5E1] p-4">
             <div className="flex items-center gap-2">
               <FileText className="h-4 w-4 text-[#64748B]" />
-              <p className="text-xs font-medium text-[#64748B]">MOU Document (PDF)</p>
+              <p className="text-xs font-medium text-[#64748B]">MOU Document (PDF) <span className="text-[#94A3B8] italic">— optional</span></p>
             </div>
 
             <input

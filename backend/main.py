@@ -10,7 +10,7 @@ from datetime import datetime, timedelta
 from contextlib import asynccontextmanager
 from dateutil.relativedelta import relativedelta
 from dotenv import load_dotenv
-from fastapi import FastAPI, Header, BackgroundTasks, Depends, HTTPException, Request
+from fastapi import FastAPI, Header, BackgroundTasks, Depends, HTTPException, Request, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from supabase import create_client, Client
@@ -2006,70 +2006,55 @@ def get_distributor_partnership_history(distributor_id: str, user_id: Optional[s
 
 @app.post("/distributors/partnership-request")
 def request_partnership(data: PartnershipRequestReq):
+    """Create partnership request using new table structure (requester_id/approver_id/type)."""
     try:
-        # Dedup: check existing pending/approved for this requester+distributor pair
-        if data.requester_id and data.distributor_id:
-            existing = supabase.table("partnerships").select("id,status").eq("distributor_id", data.distributor_id).or_(
-                f"retailer_name.eq.{data.requester_id}"
-            ).in_("status", ["pending", "approved", "accepted"]).execute().data or []
-            if existing:
-                row = existing[0]
-                return success_response(
-                    data={"request_id": row["id"], "distributor_id": data.distributor_id, "status": row["status"], "created_at": now_iso()},
-                    message="Partnership request already exists",
-                )
+        requester_id = data.requester_id or ""
+        approver_id = data.distributor_id  # distributor_id field = the party being requested
+
+        if not requester_id:
+            return error_response("requester_id is required")
+
+        # Determine type based on who is requesting
+        # If requester is retailer → distributor_retailer (retailer requests distributor)
+        # If requester is distributor → supplier_distributor (distributor requests supplier)
+        raw_user = _get_auth_user(requester_id)
+        requester_role = ""
+        if raw_user:
+            meta = raw_user.get("user_metadata", {}) or {}
+            requester_role = meta.get("role", "")
+
+        if requester_role == "distributor":
+            p_type = "supplier_distributor"
+        else:
+            p_type = "distributor_retailer"
+
+        # Dedup check
+        existing = supabase.table("partnerships").select("id,status").eq("requester_id", requester_id).eq("approver_id", approver_id).eq("type", p_type).in_("status", ["pending", "accepted"]).execute().data or []
+        if existing:
+            return success_response(
+                data={"request_id": existing[0]["id"], "status": existing[0]["status"]},
+                message="Partnership request already exists",
+            )
+
         request_id = str(uuid.uuid4())
+        mou_terms = data.terms or ""
+        mou_hash_val = hashlib.sha256(mou_terms.encode()).hexdigest() if mou_terms else ""
 
-        # Resolve requester display name
-        requester_display_name = ""
-        if data.requester_id:
-            # Try auth users first
-            try:
-                raw = _get_auth_user(data.requester_id)
-                if raw:
-                    meta = raw.get("user_metadata", {}) or {}
-                    requester_display_name = meta.get("business_name") or meta.get("full_name") or ""
-            except Exception:
-                pass
-            # Fallback: retailers table
-            if not requester_display_name:
-                try:
-                    rres = supabase.table("retailers").select("name").eq("id", data.requester_id).execute()
-                    if rres.data:
-                        requester_display_name = rres.data[0].get("name", "")
-                except Exception:
-                    pass
-            # Final fallback: use ID
-            if not requester_display_name:
-                requester_display_name = data.requester_id[:8] if len(data.requester_id) >= 8 else data.requester_id
-
-        row_data = {
+        row = {
             "id": request_id,
-            "distributor_id": data.distributor_id,
-            "partnership_type": "retailer",
+            "type": p_type,
+            "requester_id": requester_id,
+            "approver_id": approver_id,
             "status": "pending",
+            "mou_terms": mou_terms,
+            "mou_region": data.distribution_region or "",
+            "mou_hash": mou_hash_val,
             "created_at": now_iso(),
+            "updated_at": now_iso(),
         }
-        if data.requester_id:
-            row_data["retailer_name"] = data.requester_id
-            row_data["retailer_display_name"] = requester_display_name
-        if data.terms:
-            row_data["terms"] = data.terms[:256]
-        if data.legal_contract_hash:
-            row_data["legal_contract_hash"] = data.legal_contract_hash
-        if data.valid_until:
-            row_data["valid_until"] = data.valid_until
-        if data.distribution_region:
-            row_data["distribution_region"] = data.distribution_region[:64]
-        supabase.table("partnerships").insert(row_data).execute()
+        supabase.table("partnerships").insert(row).execute()
         return success_response(
-            data={
-                "request_id": request_id,
-                "distributor_id": data.distributor_id,
-                "distributor_name": requester_display_name,
-                "status": "pending",
-                "created_at": now_iso(),
-            },
+            data={"request_id": request_id, "status": "pending", "mou_hash": mou_hash_val},
             message="Partnership request sent successfully",
         )
     except Exception as e:
@@ -2556,6 +2541,47 @@ def terminate_partnership(partnership_id: str, current_user: AuthenticatedUser =
             return error_response("Only active partnerships can be terminated")
         supabase.table("partnerships").update({"status": "terminated", "updated_at": now_iso()}).eq("id", partnership_id).execute()
         return success_response(data={"partnership_id": partnership_id}, message="Partnership terminated")
+    except Exception as e:
+        return error_response(str(e))
+
+
+@app.post("/partnerships/{partnership_id}/upload-mou")
+async def upload_mou_document(partnership_id: str, file: UploadFile = File(...), current_user: AuthenticatedUser = Depends(get_current_user)):
+    """Upload optional MOU PDF document to Supabase Storage."""
+    try:
+        uid = current_user.user_id
+        # Verify user is part of this partnership
+        p_res = supabase.table("partnerships").select("requester_id,approver_id").eq("id", partnership_id).execute()
+        if not p_res.data:
+            return error_response("Partnership not found")
+        p = p_res.data[0]
+        if uid not in (p.get("requester_id"), p.get("approver_id")):
+            return error_response("Not authorized")
+
+        # Read file
+        content = await file.read()
+        if len(content) > 5 * 1024 * 1024:  # 5MB limit
+            return error_response("File too large (max 5MB)")
+
+        # Upload to Supabase Storage
+        file_path = f"mou/{partnership_id}/{file.filename}"
+        try:
+            supabase.storage.from_("mou-documents").upload(file_path, content, {"content-type": file.content_type or "application/pdf"})
+        except Exception:
+            # Bucket might not exist, try creating it
+            try:
+                supabase.storage.create_bucket("mou-documents", {"public": False})
+                supabase.storage.from_("mou-documents").upload(file_path, content, {"content-type": file.content_type or "application/pdf"})
+            except Exception as bucket_err:
+                return error_response(f"Upload failed: {str(bucket_err)[:100]}")
+
+        # Get public URL
+        file_url = f"{os.getenv('SUPABASE_URL')}/storage/v1/object/public/mou-documents/{file_path}"
+
+        # Update partnership record
+        supabase.table("partnerships").update({"mou_document_url": file_url, "updated_at": now_iso()}).eq("id", partnership_id).execute()
+
+        return success_response(data={"url": file_url, "filename": file.filename}, message="MOU document uploaded")
     except Exception as e:
         return error_response(str(e))
 
@@ -4591,63 +4617,43 @@ def get_partnership_requests(status: str = "", supplier_id: Optional[str] = None
 
 
 @app.post("/suppliers/partnership-request")
-def create_partnership_request(body: dict):
-    """Distributor sends partnership request to supplier."""
+def create_supplier_partnership_request(body: dict):
+    """Distributor sends partnership request to supplier. Uses new table structure."""
     supplier_id = body.get("supplier_id", "")
     distributor_id = body.get("distributor_id", "")
-    distributor_name = body.get("distributor_name", "")
     terms = body.get("terms", "")
-    legal_contract_hash = body.get("legal_contract_hash", "")
-    valid_until = body.get("valid_until", 0)
     distribution_region = body.get("distribution_region", "")
-    mou_document_name = body.get("mou_document_name", "")
-    mou_document_data = body.get("mou_document_data", "")
 
-    # Prevent duplicate requests — check if active/pending already exists
-    if supplier_id and distributor_id:
-        try:
-            existing = supabase.table("partnerships").select("id,status").eq("supplier_id", supplier_id).eq("distributor_id", distributor_id).in_("status", ["pending", "approved", "accepted"]).execute().data or []
-            if existing:
-                row = existing[0]
-                return success_response(data={"request_id": row["id"], "supplier_id": supplier_id, "status": row["status"], "created_at": now_iso()}, message="Partnership already exists")
-        except Exception:
-            pass
+    if not supplier_id or not distributor_id:
+        return error_response("supplier_id and distributor_id are required")
 
-    payload = {
-        "distributor_name": distributor_name or "",
-        "status": "pending",
-        "partnership_type": "supplier",
-    }
-    if distributor_id:
-        payload["distributor_id"] = distributor_id
-    if supplier_id:
-        payload["supplier_id"] = supplier_id
-    if terms:
-        payload["terms"] = terms[:256]
-    if legal_contract_hash:
-        payload["legal_contract_hash"] = legal_contract_hash
-    if valid_until:
-        payload["valid_until"] = valid_until
-    if distribution_region:
-        payload["distribution_region"] = distribution_region[:64]
-    if mou_document_name:
-        payload["mou_document_name"] = mou_document_name[:255]
-    if mou_document_data:
-        payload["mou_document_data"] = mou_document_data
+    # Dedup
     try:
-        res = supabase.table("partnerships").insert(payload).execute()
-        if res.data:
-            row = res.data[0]
-            return success_response(data={
-                "request_id": row.get("id", ""),
-                "supplier_id": supplier_id,
-                "supplier_name": "",
-                "status": "pending",
-                "created_at": now_iso(),
-            }, message="Partnership request sent")
+        existing = supabase.table("partnerships").select("id,status").eq("requester_id", distributor_id).eq("approver_id", supplier_id).eq("type", "supplier_distributor").in_("status", ["pending", "accepted"]).execute().data or []
+        if existing:
+            return success_response(data={"request_id": existing[0]["id"], "status": existing[0]["status"]}, message="Partnership already exists")
+    except Exception:
+        pass
+
+    mou_hash_val = hashlib.sha256(terms.encode()).hexdigest() if terms else ""
+    request_id = str(uuid.uuid4())
+    row = {
+        "id": request_id,
+        "type": "supplier_distributor",
+        "requester_id": distributor_id,
+        "approver_id": supplier_id,
+        "status": "pending",
+        "mou_terms": terms,
+        "mou_region": distribution_region,
+        "mou_hash": mou_hash_val,
+        "created_at": now_iso(),
+        "updated_at": now_iso(),
+    }
+    try:
+        supabase.table("partnerships").insert(row).execute()
+        return success_response(data={"request_id": request_id, "status": "pending", "mou_hash": mou_hash_val}, message="Partnership request sent")
     except Exception as e:
-        print(f"[partnership] insert error: {e}")
-    return error_response("Failed to create partnership request.")
+        return error_response(f"Failed: {str(e)}")
 
 
 @app.get("/suppliers/{supplier_id}/stock")
