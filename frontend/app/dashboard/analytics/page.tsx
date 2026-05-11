@@ -2,6 +2,16 @@
 
 import { useMemo, useState } from "react";
 import {
+  Bar,
+  BarChart,
+  CartesianGrid,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis,
+  Legend,
+} from "recharts";
+import {
   ArrowUpRight,
   BarChart3,
   Boxes,
@@ -442,34 +452,18 @@ function DistributorAnalytics() {
                     <Loader2 className="h-5 w-5 animate-spin text-[#94A3B8]" />
                   </div>
                 ) : (
-                  <div className="relative h-64 w-full">
-                    <div className="absolute inset-0 flex items-end justify-between px-2 pb-6 pt-4">
-                      <div className="absolute inset-x-0 bottom-6 top-4 flex flex-col justify-between border-l border-[#E2E8F0]">
-                        <div className="w-full border-b border-dashed border-[#E2E8F0] opacity-50" />
-                        <div className="w-full border-b border-dashed border-[#E2E8F0] opacity-50" />
-                        <div className="w-full border-b border-dashed border-[#E2E8F0] opacity-50" />
-                        <div className="w-full border-b border-dashed border-[#E2E8F0] opacity-50" />
-                        <div className="w-full border-b border-[#E2E8F0]" />
-                      </div>
-                      {trends.map((t) => {
-                        const maxVal = trendMax || 1;
-                        const revPct = Math.max(5, (t.revenue / maxVal) * 100);
-                        const spendPct = Math.max(5, (t.spending / maxVal) * 100);
-                        return (
-                          <div key={t.label} className="relative z-10 flex h-full flex-col justify-end">
-                            <div className="flex w-16 items-end justify-center gap-1">
-                              <div className="w-4 rounded-t-sm bg-[#3B82F6] transition-all hover:opacity-80" style={{ height: `${revPct}%` }} title={`Revenue: ${formatCurrency(t.revenue)}`} />
-                              <div className="w-4 rounded-t-sm bg-[#F59E0B] transition-all hover:opacity-80" style={{ height: `${spendPct}%` }} title={`Spending: ${formatCurrency(t.spending)}`} />
-                            </div>
-                            <p className="mt-2 text-center text-xs text-[#64748B]">{t.label}</p>
-                          </div>
-                        );
-                      })}
-                    </div>
-                    <div className="absolute -top-2 right-0 flex gap-4 text-xs font-medium text-[#64748B]">
-                      <div className="flex items-center gap-1.5"><div className="h-3 w-3 rounded-full bg-[#3B82F6]" /> Revenue</div>
-                      <div className="flex items-center gap-1.5"><div className="h-3 w-3 rounded-full bg-[#F59E0B]" /> Spending</div>
-                    </div>
+                  <div className="h-64 w-full">
+                    <ResponsiveContainer width="100%" height="100%" minWidth={100} minHeight={100}>
+                      <BarChart data={trends} margin={{ top: 10, right: 10, left: -10, bottom: 0 }}>
+                        <CartesianGrid strokeDasharray="3 3" stroke="#E2E8F0" />
+                        <XAxis dataKey="label" tick={{ fontSize: 11, fill: "#94A3B8" }} />
+                        <YAxis tick={{ fontSize: 10, fill: "#94A3B8" }} tickFormatter={(v) => v >= 1000000 ? `${(v/1000000).toFixed(1)}M` : v >= 1000 ? `${(v/1000).toFixed(0)}K` : String(v)} />
+                        <Tooltip formatter={(value: number) => `Rp ${value.toLocaleString("id-ID")}`} />
+                        <Legend wrapperStyle={{ fontSize: 11 }} />
+                        <Bar dataKey="revenue" name="Revenue" fill="#3B82F6" radius={[4, 4, 0, 0]} />
+                        <Bar dataKey="spending" name="Spending" fill="#F59E0B" radius={[4, 4, 0, 0]} />
+                      </BarChart>
+                    </ResponsiveContainer>
                   </div>
                 )}
               </CardContent>
