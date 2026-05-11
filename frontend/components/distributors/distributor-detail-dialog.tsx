@@ -204,9 +204,35 @@ export function DistributorDetailDialog({ open, onClose, distributor, role = "su
                   <div className="rounded-lg border border-[#DDD6FE] bg-[#F5F3FF] px-3 py-2">
                     <div className="flex items-center gap-2 text-xs text-[#64748B]">
                       <Hash className="h-3.5 w-3.5" />
-                      MOU Hash
+                      MOU Hash (On-Chain)
                     </div>
                     <p className="mt-1 font-mono text-xs text-[#7C3AED] break-all">{latestRecord.legal_contract_hash}</p>
+                  </div>
+                )}
+
+                {/* Partnership NFT */}
+                {latestRecord.nft_mint_address && (
+                  <div className="rounded-lg border border-[#DBEAFE] bg-[#EFF6FF] px-3 py-3 space-y-2">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-[#2563EB] text-white">
+                          <Star className="h-3.5 w-3.5" />
+                        </div>
+                        <div>
+                          <p className="text-xs font-semibold text-[#1E40AF]">{latestRecord.nft_token_name || "Partnership NFT"}</p>
+                          <p className="font-mono text-[10px] text-[#64748B]">{latestRecord.nft_mint_address}</p>
+                        </div>
+                      </div>
+                      {latestRecord.nft_explorer_url && (
+                        <a href={latestRecord.nft_explorer_url} target="_blank" rel="noopener noreferrer" className="text-xs font-medium text-[#2563EB] hover:underline">
+                          Explorer →
+                        </a>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-4 text-[10px] text-[#64748B]">
+                      <span>✅ Verified on Solana Devnet</span>
+                      <span>✅ Soulbound (non-transferable)</span>
+                    </div>
                   </div>
                 )}
 

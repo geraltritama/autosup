@@ -1719,8 +1719,11 @@ def update_retailer(retailer_id: str, data: UpdateRetailerReq):
 def get_distributors(search: Optional[str] = None, status: Optional[str] = None,
                      type: Optional[str] = None,
                      user_id: Optional[str] = None, role: Optional[str] = None,
-                     page: int = 1, limit: int = 20):
+                     page: int = 1, limit: int = 20,
+                     current_user: AuthenticatedUser = Depends(get_current_user)):
     # type=partner means show only partnered, type=discover means show only non-partnered, no type = all
+    user_id = current_user.user_id
+    role = current_user.role
     if not status and type:
         if type == "partner":
             status = "partner"
@@ -1944,7 +1947,7 @@ def get_distributor_requests(user_id: Optional[str] = None, page: int = 1, limit
 @app.get("/distributors/{distributor_id}/stock")
 def get_distributor_stock(distributor_id: str, page: int = 1, limit: int = 20):
     try:
-        res = supabase.table("inventories").select("*").eq("owner_id", distributor_id).execute()
+        res = supabase.table("inventories").select("*").eq("user_id", distributor_id).execute()
         products = [
             {
                 "item_id": i.get("id"), "name": i.get("product_name", ""), "category": i.get("category", "general"),
@@ -2145,31 +2148,24 @@ def get_partnerships_summary(user_id: Optional[str] = None, partner_type: Option
 
 
 @app.delete("/partnerships/between/{partner_id}")
-def delete_partnership(partner_id: str, user_id: Optional[str] = None):
+def delete_partnership(partner_id: str, user_id: Optional[str] = None, current_user: AuthenticatedUser = Depends(get_current_user)):
     """Terminate or cancel partnership between current user and partner_id."""
-    if not user_id:
-        return error_response("user_id required")
     try:
-        # Fetch all partnerships involving user_id on any side
-        res = supabase.table("partnerships").select("id,distributor_id,supplier_id,supplier_name,retailer_name").or_(
-            f"distributor_id.eq.{user_id},supplier_id.eq.{user_id},supplier_name.eq.{user_id},retailer_name.eq.{user_id}"
+        uid = current_user.user_id
+        # Find partnerships where current user and partner_id are involved
+        res = supabase.table("partnerships").select("id,requester_id,approver_id,status").or_(
+            f"requester_id.eq.{uid},approver_id.eq.{uid}"
         ).execute()
         rows = res.data or []
-        # Keep only rows where partner_id appears on any other column
         matching_ids = []
         for r in rows:
-            all_vals = {
-                r.get("distributor_id", ""),
-                r.get("supplier_id", ""),
-                r.get("supplier_name", ""),
-                r.get("retailer_name", ""),
-            }
-            if partner_id in all_vals:
+            other = r["approver_id"] if r["requester_id"] == uid else r["requester_id"]
+            if other == partner_id and r["status"] in ("pending", "accepted"):
                 matching_ids.append(r["id"])
         if not matching_ids:
             return error_response("Partnership not found")
         for pid in matching_ids:
-            supabase.table("partnerships").update({"status": "terminated"}).eq("id", pid).execute()
+            supabase.table("partnerships").update({"status": "terminated", "updated_at": now_iso()}).eq("id", pid).execute()
         return success_response(data={"terminated": len(matching_ids)}, message="Partnership deleted successfully")
     except Exception as e:
         return error_response(str(e))
