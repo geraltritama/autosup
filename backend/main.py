@@ -1652,14 +1652,19 @@ def settle_payment(data: SettlePaymentReq):
 @app.post("/invoices/{invoice_id}/pay")
 def pay_invoice(invoice_id: str):
     try:
-        # Update order status to delivered (invoices are generated from orders)
-        supabase.table("orders").update({"status": "delivered", "escrow_status": "released", "updated_at": now_iso()}).eq("id", invoice_id).execute()
-        # Also try invoices table in case it exists
+        # Update order status to delivered and release escrow
+        res = supabase.table("orders").update({"status": "delivered", "escrow_status": "released", "updated_at": now_iso()}).eq("id", invoice_id).execute()
+        if not res.data:
+            # Try with different filter in case id doesn't match
+            res2 = supabase.table("orders").update({"status": "delivered", "escrow_status": "released", "updated_at": now_iso()}).eq("order_number", invoice_id).execute()
+            if not res2.data:
+                return error_response(f"Order {invoice_id} not found or update failed.")
+        # Also try invoices table
         try:
             supabase.table("invoices").update({"status": "paid", "paid_at": now_iso()}).eq("id", invoice_id).execute()
         except Exception:
             pass
-        return success_response(data={"success": True}, message="Invoice paid successfully")
+        return success_response(data={"paid": True, "order_id": invoice_id}, message="Invoice paid successfully")
     except Exception as e:
         return error_response(str(e))
 

@@ -196,7 +196,10 @@ export default function PaymentPage() {
                     <div>
                       {inv.status !== "paid" ? (
                         <Button
-                          onClick={() => payMutation.mutate(inv.invoice_id)}
+                          onClick={() => payMutation.mutate(inv.invoice_id, {
+                            onSuccess: () => alert("Payment successful!"),
+                            onError: (e) => alert("Payment failed: " + (e instanceof Error ? e.message : "Unknown error")),
+                          })}
                           disabled={payMutation.isPending}
                         >
                           {payMutation.isPending && payMutation.variables === inv.invoice_id && (
