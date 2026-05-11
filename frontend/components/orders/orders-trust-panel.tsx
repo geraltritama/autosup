@@ -94,16 +94,10 @@ export function OrdersTrustPanel() {
           </div>
         </div>
 
-        {/* No browser-side action needed */}
-        <div className="flex items-start gap-3 rounded-xl border border-[#E2E8F0] p-4">
-          <CheckCircle2 className="mt-0.5 h-5 w-5 text-[#F59E0B]" />
-          <div>
-            <p className="text-sm font-medium text-[#0F172A]">No browser-side blockchain action</p>
-            <p className="mt-1 text-sm text-[#64748B]">
-              All settlement and reputation updates are managed by the backend — no wallet action required from the browser.
-            </p>
-          </div>
-        </div>
+        {/* Blockchain footnote */}
+        <p className="text-[10px] text-[#94A3B8] text-center pt-2">
+          🔒 Semua verifikasi blockchain berjalan otomatis. Tidak perlu install aplikasi tambahan.
+        </p>
       </CardContent>
     </Card>
   );
