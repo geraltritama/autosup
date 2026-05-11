@@ -4164,10 +4164,10 @@ AGENT_PROMPTS = {
     },
     "credit_risk": {
         "scope": "distributor",
-        "query": lambda uid, r: supabase.table("credit_accounts").select("*").eq("distributor_id", uid).execute(),
+        "query": lambda uid, r: supabase.table("credit_accounts").select("credit_limit,utilized_amount,status,risk_level,next_due_date,billing_cycle_days,credit_account_number").eq("distributor_id", uid).execute(),
         "prompt": lambda data, uid: (
             "You are a credit risk AI for a DISTRIBUTOR. Analyze retailer credit accounts.\n\n"
-            f"CREDIT DATA: {json.dumps(data[:20] if data else [], default=str)}\n\n"
+            f"CREDIT DATA: {json.dumps(data[:10] if data else [], default=str)}\n\n"
             "YOUR TASK:\n"
             "1. Find retailers with high utilization (used > 80% of limit).\n"
             "2. Find overdue accounts (past due date).\n"
@@ -4187,7 +4187,7 @@ AGENT_PROMPTS = {
     },
     "supplier_recommendation": {
         "scope": "distributor",
-        "query": lambda uid, r: supabase.table("partnerships").select("approver_id,status,mou_region,created_at").eq("requester_id", uid).eq("type", "supplier_distributor").execute(),
+        "query": lambda uid, r: supabase.table("partnerships").select("approver_id,status,mou_region,created_at").eq("requester_id", uid).eq("type", "supplier_distributor").eq("status", "accepted").execute(),
         "prompt": lambda data, uid: (
             "You are a partnership AI for a DISTRIBUTOR. Analyze current supplier partnerships.\n\n"
             f"PARTNERSHIP DATA: {json.dumps(data[:20] if data else [], default=str)}\n\n"
@@ -4208,10 +4208,10 @@ AGENT_PROMPTS = {
     },
     "cash_flow_optimizer": {
         "scope": "distributor",
-        "query": lambda uid, r: supabase.table("invoices").select("*").or_(f"buyer_id.eq.{uid},seller_id.eq.{uid}").execute(),
+        "query": lambda uid, r: supabase.table("invoices").select("amount,status,due_date,seller_name,created_at").or_(f"buyer_id.eq.{uid},seller_id.eq.{uid}").limit(15).execute(),
         "prompt": lambda data, uid: (
             "You are a cash flow AI for a DISTRIBUTOR. Analyze invoices and payment timing.\n\n"
-            f"INVOICE DATA: {json.dumps(data[:25] if data else [], default=str)}\n\n"
+            f"INVOICE DATA: {json.dumps(data[:15] if data else [], default=str)}\n\n"
             "YOUR TASK:\n"
             "1. Calculate total payable (you owe suppliers) vs total receivable (retailers owe you).\n"
             "2. Find overdue invoices — both payable and receivable.\n"
@@ -4326,7 +4326,7 @@ def _execute_agent(agent_key: str, agent: dict, role: str, user_id: str) -> dict
     if not OPENROUTER_KEY and not GEMINI_KEY and not GROQ_KEY:
         raise RuntimeError("No AI API keys configured")
     ai_text = _call_ai(
-        prompt + "\n\nIMPORTANT: Return ONLY the JSON object. No markdown code blocks, no backticks, no explanatory text. Start with { and end with }. For action_type and issue_detected, pick EXACTLY ONE option from the choices — do NOT return multiple options separated by |. CRITICAL: Only reference data that actually exists in the DATA section above. Do NOT invent names, numbers, or statistics. If data is empty, set issue_detected to NONE."
+        prompt + "\n\nIMPORTANT: Return ONLY the JSON object. No markdown code blocks, no backticks, no explanatory text. Start with { and end with }. For action_type and issue_detected, pick EXACTLY ONE option from the choices — do NOT return multiple options separated by |. CRITICAL: Only reference data that actually exists in the DATA section above. Do NOT invent names, numbers, or statistics. If data is empty, set issue_detected to NONE. NEVER include UUIDs or IDs in your reason text — use human-readable descriptions instead (amounts, account numbers, dates)."
     ).strip()
 
     # 4. Parse JSON — strip markdown if present
