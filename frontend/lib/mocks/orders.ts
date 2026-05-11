@@ -350,8 +350,8 @@ export function getMockOrders(params: {
       ["pending", "processing", "shipping"].includes(o.status)
     ).length,
     pending_orders: summarySource.filter((o) => o.status === "pending").length,
-    shipped_orders: summarySource.filter((o) => o.status === "shipping").length,
-    delivered_this_month: summarySource.filter((o) => o.status === "delivered").length,
+    completed_orders: summarySource.filter((o) => o.status === "delivered").length,
+    cancelled_orders: summarySource.filter((o) => o.status === "cancelled").length,
   };
 
   return { orders, summary, pagination: { page, limit, total } };
