@@ -996,6 +996,22 @@ def create_order(data: CreateOrderReqV2, background_tasks: BackgroundTasks):
     except Exception:
         pass  # Allow order if partnership check fails (table might not exist yet)
 
+    # Validate stock availability
+    if data.seller_id and data.items:
+        try:
+            inv_res = supabase.table("inventories").select("product_name, current_stock").eq("user_id", data.seller_id).execute()
+            stock_map = {r["product_name"]: r.get("current_stock", 0) for r in (inv_res.data or [])}
+            for item in data.items:
+                name = item.get("item_name") or item.get("product_name", "")
+                qty = item.get("qty", 0)
+                available = stock_map.get(name)
+                if name and available is not None and qty > available:
+                    return error_response(
+                        f"Insufficient stock for '{name}'. Available: {available}, requested: {qty}."
+                    )
+        except Exception:
+            pass
+
     try:
         order_id = str(uuid.uuid4())
         order_number = f"ORD-{order_id[:8].upper()}"
@@ -1165,17 +1181,17 @@ def update_order_status(order_id: str, data: UpdateOrderStatusReq):
         if data.status == "delivered":
             update_payload["escrow_status"] = "released"
 
+            # Deduct seller stock if not already deducted (checkout may bypass update_order_status)
+            if seller_id and order_items and previous_status in ["processing", "shipping"]:
+                try:
+                    _adjust_seller_inventory(seller_id, order_items, "deduct")
+                except Exception:
+                    pass
+
             # Auto-add delivered items to buyer inventory (distributor / retailer)
             if buyer_id and order_items:
                 try:
                     _sync_delivered_to_inventory(buyer_id, order_items)
-                except Exception:
-                    pass  # Non-critical — don't fail order update
-
-            # Fallback for legacy flows where delivered can happen without prior processing.
-            if previous_status == "pending" and seller_id and order_items:
-                try:
-                    _adjust_seller_inventory(seller_id, order_items, "deduct")
                 except Exception:
                     pass  # Non-critical — don't fail order update
 
@@ -1509,10 +1525,29 @@ def get_retailer_payments(user_id: Optional[str] = None, current_user: Authentic
         uid = current_user.user_id
         raw = safe_query("invoices")
         raw = [i for i in raw if i.get("buyer_id") == uid]
+
+        # Fallback: generate invoices from orders if invoices table is empty
+        if not raw and uid:
+            orders_res = supabase.table("orders").select("*").eq("buyer_id", uid).execute()
+            raw = [
+                {
+                    "id": o.get("id"),
+                    "order_id": o.get("id"),
+                    "seller_name": o.get("seller_name", ""),
+                    "amount": o.get("total_price", 0),
+                    "status": "paid" if o.get("status") in ["delivered", "completed"] else ("pending" if o.get("status") in ["pending", "processing", "shipping"] else "cancelled"),
+                    "due_date": o.get("created_at", now_iso()),
+                    "created_at": o.get("created_at", now_iso()),
+                    "buyer_id": uid,
+                }
+                for o in (orders_res.data or [])
+                if o.get("status") != "cancelled"
+            ]
+
         invoices = [
             {
                 "invoice_id": i.get("id"),
-                "order_id": i.get("order_id"),
+                "order_id": i.get("order_id") or i.get("id"),
                 "seller_name": i.get("seller_name", ""),
                 "amount": i.get("amount", 0),
                 "status": i.get("status", "pending"),
@@ -1521,16 +1556,18 @@ def get_retailer_payments(user_id: Optional[str] = None, current_user: Authentic
             }
             for i in raw
         ]
-        if user_id:
-            invoices = [inv for inv in invoices if inv.get("buyer_id") == user_id or True]
         total_outstanding = sum(i["amount"] for i in invoices if i["status"] in ["pending", "overdue"])
+        paid_this_month = sum(i["amount"] for i in invoices if i["status"] == "paid")
+        insights = []
+        if total_outstanding > 0:
+            insights.append({"type": "cash_flow", "message": f"You have Rp {total_outstanding:,.0f} in outstanding payments. Consider settling before due dates.", "urgency": "medium"})
         return success_response(
             data={
                 "summary": {"total_outstanding": total_outstanding, "total_invoices": len(invoices),
                             "overdue_count": sum(1 for i in invoices if i["status"] == "overdue"),
-                            "paid_this_month": sum(i["amount"] for i in invoices if i["status"] == "paid")},
+                            "paid_this_month": paid_this_month},
                 "invoices": invoices,
-                "insights": [],
+                "insights": insights,
             },
             message="Retailer payment data retrieved successfully",
         )
@@ -1548,6 +1585,33 @@ def get_distributor_payments(user_id: Optional[str] = None, current_user: Authen
         except Exception:
             pass
         res = query.execute()
+        payments_raw = res.data or []
+
+        # Fallback: generate from orders if payments table is empty
+        if not payments_raw and uid:
+            recv_res = supabase.table("orders").select("*").eq("seller_id", uid).execute()
+            pay_res = supabase.table("orders").select("*").eq("buyer_id", uid).execute()
+            for o in (recv_res.data or []):
+                if o.get("status") == "cancelled":
+                    continue
+                payments_raw.append({
+                    "id": o.get("id"), "counterpart_name": o.get("buyer_name", ""),
+                    "amount": o.get("total_price", 0), "type": "receivable",
+                    "status": "settled" if o.get("status") in ["delivered", "completed"] else "pending",
+                    "order_id": o.get("order_number", o.get("id", "")[:8]),
+                    "created_at": o.get("created_at", now_iso()),
+                })
+            for o in (pay_res.data or []):
+                if o.get("status") == "cancelled":
+                    continue
+                payments_raw.append({
+                    "id": o.get("id"), "counterpart_name": o.get("seller_name", ""),
+                    "amount": o.get("total_price", 0), "type": "payable",
+                    "status": "settled" if o.get("status") in ["delivered", "completed"] else "pending",
+                    "order_id": o.get("order_number", o.get("id", "")[:8]),
+                    "created_at": o.get("created_at", now_iso()),
+                })
+
         payments = [
             {
                 "payment_id": p.get("id"),
@@ -1555,10 +1619,10 @@ def get_distributor_payments(user_id: Optional[str] = None, current_user: Authen
                 "amount": p.get("amount", 0),
                 "type": p.get("type", "payable"),
                 "status": p.get("status", "pending"),
-                "order_id": p.get("order_id"),
+                "order_id": p.get("order_id", ""),
                 "created_at": p.get("created_at", now_iso()),
             }
-            for p in (res.data or [])
+            for p in payments_raw
         ]
         return success_response(
             data={
@@ -1585,7 +1649,11 @@ def settle_payment(data: SettlePaymentReq):
 @app.post("/invoices/{invoice_id}/pay")
 def pay_invoice(invoice_id: str):
     try:
-        supabase.table("invoices").update({"status": "paid", "paid_at": now_iso()}).eq("id", invoice_id).execute()
+        # Try invoices table first
+        inv_res = supabase.table("invoices").update({"status": "paid", "paid_at": now_iso()}).eq("id", invoice_id).execute()
+        # Fallback: if invoice_id is actually an order_id (from orders fallback)
+        if not inv_res.data:
+            supabase.table("orders").update({"status": "delivered", "escrow_status": "released", "updated_at": now_iso()}).eq("id", invoice_id).execute()
         return success_response(data={"success": True}, message="Invoice paid successfully")
     except Exception as e:
         return error_response(str(e))
@@ -4911,16 +4979,53 @@ def mark_notification_read(notif_id: str):
 # 22. PAYMENTS (checkout + webhook)
 # ==========================================
 
+PAYMENT_METHODS = [
+    {"id": "gopay", "name": "GoPay", "type": "e-wallet", "icon": "gopay"},
+    {"id": "ovo", "name": "OVO", "type": "e-wallet", "icon": "ovo"},
+    {"id": "dana", "name": "DANA", "type": "e-wallet", "icon": "dana"},
+    {"id": "shopeepay", "name": "ShopeePay", "type": "e-wallet", "icon": "shopeepay"},
+    {"id": "qris", "name": "QRIS", "type": "qris", "icon": "qris"},
+    {"id": "bca", "name": "BCA Virtual Account", "type": "bank_transfer", "icon": "bca"},
+    {"id": "mandiri", "name": "Mandiri Virtual Account", "type": "bank_transfer", "icon": "mandiri"},
+    {"id": "bri", "name": "BRI Virtual Account", "type": "bank_transfer", "icon": "bri"},
+    {"id": "bni", "name": "BNI Virtual Account", "type": "bank_transfer", "icon": "bni"},
+]
+
+
+@app.get("/payments/methods")
+def get_payment_methods():
+    return success_response(data={"methods": PAYMENT_METHODS}, message="Payment methods retrieved")
+
+
 @app.post("/payments/checkout/{order_id}")
-def checkout_order(order_id: str):
+def checkout_order(order_id: str, body: dict = {}):
     try:
         res = supabase.table("orders").select("*").eq("id", order_id).execute()
         if not res.data:
             return error_response("Order not found.")
-        va_number = f"8077{random.randint(1000000, 9999999)}"
+        order = res.data[0]
+        method_id = body.get("payment_method", "bca")
+        method = next((m for m in PAYMENT_METHODS if m["id"] == method_id), PAYMENT_METHODS[5])
+
+        if method["type"] == "e-wallet":
+            payment_detail = {"deeplink": f"https://{method_id}.mock/pay/{order_id}", "qr_url": f"https://api.mock/qr/{order_id}"}
+        elif method["type"] == "qris":
+            payment_detail = {"qr_string": f"00020101021226610014ID.CO.AUTOSUP.WWW0215{order_id[:15]}5303360540{int(order.get('total_price', 0))}5802ID5913AUTOSUP STORE6007JAKARTA63041234"}
+        else:
+            payment_detail = {"va_number": f"8077{random.randint(1000000, 9999999)}"}
+
+        supabase.table("orders").update({"status": "processing"}).eq("id", order_id).execute()
+
         return success_response(
-            data={"order_id": order_id, "total_bill": res.data[0].get("total_price"), "method": "BCA Virtual Account", "va_number": va_number},
-            message="Checkout successful",
+            data={
+                "order_id": order_id,
+                "total_bill": order.get("total_price"),
+                "method": method["name"],
+                "method_type": method["type"],
+                "payment_detail": payment_detail,
+                "payment_status": "paid",
+            },
+            message="Payment successful",
         )
     except Exception as e:
         return error_response(str(e))
