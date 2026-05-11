@@ -112,40 +112,26 @@ export function PartnershipRequestDetailDialog({
         </div>
 
         {/* Contract Details */}
-        {(request.proposed_start_date || request.proposed_end_date || request.terms) && (
+        {(request.mou_terms || request.terms || request.mou_region) && (
           <div className="rounded-xl border border-[#E2E8F0] p-4 space-y-3">
             <div className="flex items-center gap-2">
               <FileText className="h-4 w-4 text-[#64748B]" />
               <p className="text-xs uppercase tracking-[0.15em] text-[#64748B]">
-                Contract Details
+                MOU Document
               </p>
             </div>
 
-            {(request.proposed_start_date || request.proposed_end_date) && (
-              <div className="grid grid-cols-2 gap-3">
-                {request.proposed_start_date && (
-                  <div className="rounded-lg bg-slate-50 p-3">
-                    <p className="text-xs text-[#64748B]">Start</p>
-                    <p className="text-sm font-medium text-[#0F172A]">
-                      {formatDate(request.proposed_start_date)}
-                    </p>
-                  </div>
-                )}
-                {request.proposed_end_date && (
-                  <div className="rounded-lg bg-slate-50 p-3">
-                    <p className="text-xs text-[#64748B]">End</p>
-                    <p className="text-sm font-medium text-[#0F172A]">
-                      {formatDate(request.proposed_end_date)}
-                    </p>
-                  </div>
-                )}
+            {request.mou_region && (
+              <div className="rounded-lg bg-slate-50 p-3">
+                <p className="text-xs text-[#64748B] mb-1">Distribution Region</p>
+                <p className="text-sm font-medium text-[#0F172A]">{request.mou_region}</p>
               </div>
             )}
 
-            {request.terms && (
+            {(request.mou_terms || request.terms) && (
               <div className="rounded-lg bg-slate-50 p-3">
-                <p className="text-xs text-[#64748B] mb-1">Terms</p>
-                <p className="text-sm text-[#0F172A] leading-relaxed">{request.terms}</p>
+                <p className="text-xs text-[#64748B] mb-1">Terms & Conditions</p>
+                <p className="text-sm text-[#0F172A] leading-relaxed">{request.mou_terms || request.terms}</p>
               </div>
             )}
           </div>
