@@ -4708,77 +4708,35 @@ def get_supplier_stock(supplier_id: str):
 
 @app.put("/suppliers/partnership-request/{request_id}")
 def respond_partnership_request(request_id: str, body: dict):
-    """Accept or reject a partnership request. On accept, mint Partnership NFT record."""
+    """Accept or reject a partnership request. On accept, mint Partnership NFT."""
     action = body.get("action", "reject")
     new_status = "accepted" if action == "accept" else "rejected"
+    update_payload = {"status": new_status, "updated_at": now_iso()}
     nft_data = None
     try:
-        supabase.table("partnerships").update({"status": new_status}).eq("id", request_id).execute()
-
         if action == "accept":
-            # Fetch partnership record
             p_res = supabase.table("partnerships").select("*").eq("id", request_id).execute()
-            if p_res.data:
+            if p_res.data and bc:
                 p = p_res.data[0]
-                distributor_id = p.get("distributor_id", "")
-                supplier_id = p.get("supplier_id", "")
-                supplier_name = p.get("supplier_name", "")
-                distributor_name = p.get("distributor_name", "") or p.get("retailer_name", "")
-
-                # Mint partnership NFT via blockchain service (falls back to deterministic if offline)
-                token_name = f"AUTOSUP Partnership: {supplier_name or supplier_id[:8]} × {distributor_name or distributor_id[:8]}"
-                # Read MOU fields from partnership record
-                terms = p.get("terms", "") or token_name
-                legal_hash = p.get("legal_contract_hash", "") or ("0" * 64)
-                valid_until = p.get("valid_until", 0) or 0
-                distribution_region = p.get("distribution_region", "") or ""
-
                 try:
-                    if bc:
-                        d_wallet = bc.get_or_create_wallet(supabase, distributor_id)
-                        s_wallet = bc.get_or_create_wallet(supabase, supplier_id)
-                        nft_result = bc.mint_partnership_nft(
-                            d_wallet["pubkey"], s_wallet["pubkey"],
-                            terms=terms[:256],
-                            role=1,
-                            legal_contract_hash=legal_hash[:64],
-                            valid_until=valid_until,
-                            distribution_region=distribution_region[:64],
-                        )
-                        mint_address = nft_result["mint_address"]
-                        explorer_url = nft_result.get("mint_explorer_url", nft_result["explorer_url"])
-                    else:
-                        raise RuntimeError("bc not available")
-                except Exception:
-                    seed = f"{distributor_id}:{supplier_id}:{request_id}"
-                    h = hashlib.sha256(seed.encode()).digest()
-                    _B58 = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz"
-                    n = int.from_bytes(h, "big")
-                    addr_chars = []
-                    while n:
-                        addr_chars.append(_B58[n % 58])
-                        n //= 58
-                    mint_address = "".join(reversed(addr_chars))[:44].ljust(44, "1")
-                    explorer_url = f"https://explorer.solana.com/address/{mint_address}?cluster=devnet"
-
-                try:
-                    existing = supabase.table("partnership_nfts").select("id").eq("distributor_id", distributor_id).eq("supplier_id", supplier_id).execute()
-                    if not existing.data:
-                        nft_insert = {
-                            "id": str(uuid.uuid4()),
-                            "distributor_id": distributor_id,
-                            "supplier_id": supplier_id,
-                            "mint_address": mint_address,
-                            "explorer_url": explorer_url,
-                            "token_name": token_name,
-                            "issued_at": now_iso(),
-                        }
-                        nft_res = supabase.table("partnership_nfts").insert(nft_insert).execute()
-                        nft_data = nft_res.data[0] if nft_res.data else nft_insert
-                    else:
-                        nft_data = existing.data[0]
+                    wallet_approver = bc.get_or_create_wallet(supabase, p.get("approver_id", ""))
+                    wallet_requester = bc.get_or_create_wallet(supabase, p.get("requester_id", ""))
+                    result = bc.mint_partnership_nft(
+                        distributor_pubkey_str=wallet_requester["pubkey"],
+                        supplier_pubkey_str=wallet_approver["pubkey"],
+                        terms=f"Partnership {request_id[:8]}",
+                        legal_contract_hash=p.get("mou_hash", "0" * 64),
+                        distribution_region=p.get("mou_region", ""),
+                    )
+                    mint_addr = result.get("mint") or result.get("mint_address", "")
+                    update_payload["nft_mint_address"] = mint_addr
+                    update_payload["nft_token_name"] = f"Partnership #{request_id[:8].upper()}"
+                    update_payload["nft_explorer_url"] = f"https://explorer.solana.com/address/{mint_addr}?cluster=devnet"
+                    nft_data = {"mint_address": mint_addr, "explorer_url": update_payload["nft_explorer_url"]}
                 except Exception:
                     pass
+
+        supabase.table("partnerships").update(update_payload).eq("id", request_id).execute()
     except Exception as e:
         return error_response(str(e))
     return success_response(
