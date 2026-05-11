@@ -884,12 +884,8 @@ def get_orders_trust_summary(user_id: Optional[str] = None, role: Optional[str] 
             o.get("total_price", 0) for o in orders if o.get("status") == "delivered"
         )
 
-        # Reputation score from auth metadata
-        reputation_score = 0
-        raw_user = _get_auth_user(user_id)
-        if raw_user:
-            meta = raw_user.get("user_metadata", {}) or {}
-            reputation_score = meta.get("reputation_score", 0)
+        # Reputation score = number of successfully delivered orders
+        reputation_score = released
 
         return success_response(data={
             "escrow_held": held,
