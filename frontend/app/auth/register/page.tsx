@@ -21,10 +21,10 @@ const highlights = [
 
 export default function RegisterPage() {
   return (
-    <main className="h-screen overflow-hidden bg-gradient-to-br from-[#F8FAFC] via-white to-[#EFF6FF]">
-      <div className="mx-auto grid h-screen max-w-7xl items-center gap-16 px-6 lg:grid-cols-[1fr_448px] lg:px-10">
+    <main className="min-h-screen bg-gradient-to-br from-[#F8FAFC] via-white to-[#EFF6FF]">
+      <div className="mx-auto flex min-h-screen max-w-7xl flex-col items-center justify-center gap-10 px-4 py-8 sm:px-6 lg:grid lg:grid-cols-[1fr_448px] lg:gap-16 lg:px-10 lg:py-0">
         {/* ── Left: Hero + Features ────────────────────────────────────── */}
-        <section className="space-y-10">
+        <section className="hidden space-y-10 lg:block">
           {/* Headline */}
           <div className="space-y-6">
             <span className="inline-flex items-center gap-2 rounded-full border border-[#BFDBFE] bg-[#EFF6FF] px-4 py-1.5 text-xs font-semibold uppercase tracking-[0.22em] text-[#2563EB]">
@@ -65,7 +65,7 @@ export default function RegisterPage() {
         </section>
 
         {/* ── Right: Register Form ─────────────────────────────────────── */}
-        <div className="flex justify-center lg:justify-end">
+        <div className="w-full max-w-md lg:max-w-none">
           <RegisterForm />
         </div>
       </div>
