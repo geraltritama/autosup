@@ -282,19 +282,26 @@ def auth_users_by_role(role: str) -> list[dict]:
     """Fetch users from Supabase Auth by role, return as dict list."""
     results = []
 
-    # Primary: Supabase Auth REST API (most reliable)
+    # Primary: Supabase Auth REST API with pagination
     try:
         headers = {
             "apikey": os.getenv("SUPABASE_KEY"),
             "Authorization": f"Bearer {os.getenv('SUPABASE_KEY')}",
         }
-        resp = requests.get(
-            f"{os.getenv('SUPABASE_URL')}/auth/v1/admin/users",
-            headers=headers,
-            timeout=10,
-        )
-        if resp.status_code == 200:
-            for u in resp.json().get("users", []):
+        page = 1
+        per_page = 100
+        while True:
+            resp = requests.get(
+                f"{os.getenv('SUPABASE_URL')}/auth/v1/admin/users?page={page}&per_page={per_page}",
+                headers=headers,
+                timeout=10,
+            )
+            if resp.status_code != 200:
+                break
+            users = resp.json().get("users", [])
+            if not users:
+                break
+            for u in users:
                 meta = u.get("user_metadata", {}) or {}
                 if meta.get("role") == role:
                     results.append({
@@ -309,6 +316,9 @@ def auth_users_by_role(role: str) -> list[dict]:
                         "city": meta.get("city", ""),
                         "is_active": True,
                     })
+            if len(users) < per_page:
+                break
+            page += 1
             return results
     except Exception:
         pass
