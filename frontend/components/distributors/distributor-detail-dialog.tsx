@@ -220,18 +220,36 @@ export function DistributorDetailDialog({ open, onClose, distributor, role = "su
                         </div>
                         <div>
                           <p className="text-xs font-semibold text-[#1E40AF]">{latestRecord.nft_token_name || "Partnership NFT"}</p>
-                          <p className="font-mono text-[10px] text-[#64748B]">{latestRecord.nft_mint_address}</p>
+                          <p className="text-[10px] text-[#64748B]">Minted {latestRecord.created_at ? new Date(latestRecord.created_at).toLocaleDateString("en-US", { day: "numeric", month: "short", year: "numeric" }) : ""}</p>
                         </div>
                       </div>
+                    </div>
+                    <div className="rounded-md bg-white px-2.5 py-2 space-y-1">
+                      <div className="flex items-center justify-between text-[10px]">
+                        <span className="text-[#64748B]">Mint Address</span>
+                        <span className="font-mono text-[#0F172A]">{latestRecord.nft_mint_address.slice(0, 16)}...</span>
+                      </div>
+                      {latestRecord.legal_contract_hash && (
+                        <div className="flex items-center justify-between text-[10px]">
+                          <span className="text-[#64748B]">MOU Hash</span>
+                          <span className="font-mono text-[#7C3AED]">{latestRecord.legal_contract_hash.slice(0, 16)}...</span>
+                        </div>
+                      )}
+                      <div className="flex items-center justify-between text-[10px]">
+                        <span className="text-[#64748B]">Network</span>
+                        <span className="text-[#0F172A]">Solana Devnet</span>
+                      </div>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2 text-[10px] text-emerald-600">
+                        <span>✅ Verified</span>
+                        <span>✅ Soulbound</span>
+                      </div>
                       {latestRecord.nft_explorer_url && (
-                        <a href={latestRecord.nft_explorer_url} target="_blank" rel="noopener noreferrer" className="text-xs font-medium text-[#2563EB] hover:underline">
-                          Explorer →
+                        <a href={latestRecord.nft_explorer_url} target="_blank" rel="noopener noreferrer" className="text-[10px] text-[#2563EB] hover:underline">
+                          View on-chain →
                         </a>
                       )}
-                    </div>
-                    <div className="flex items-center gap-4 text-[10px] text-[#64748B]">
-                      <span>✅ Verified on Solana Devnet</span>
-                      <span>✅ Soulbound (non-transferable)</span>
                     </div>
                   </div>
                 )}
