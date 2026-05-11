@@ -217,8 +217,10 @@ export function useUpdateProfile() {
         Object.assign(mockProfile, body);
         return mockProfile;
       }
-      const params = userId ? `?user_id=${userId}` : "";
-      const { data } = await api.put<ApiResponse<ProfileSettings>>(`/settings/profile${params}`, body);
+      const uid = userId || useAuthStore.getState().user?.user_id;
+      if (!uid) throw new Error("User belum login");
+      const { data } = await api.put<ApiResponse<ProfileSettings>>(`/settings/profile?user_id=${uid}`, body);
+      if (!data.success) throw new Error(data.message || "Gagal menyimpan profil");
       return data.data;
     },
     onSuccess: () => {
@@ -256,8 +258,10 @@ export function useUpdateBusiness() {
         await new Promise((r) => setTimeout(r, 600));
         return body;
       }
-      const params = userId ? `?user_id=${userId}` : "";
-      const { data } = await api.put<ApiResponse<BusinessSettings>>(`/settings/business${params}`, body);
+      const uid = userId || useAuthStore.getState().user?.user_id;
+      if (!uid) throw new Error("User belum login");
+      const { data } = await api.put<ApiResponse<BusinessSettings>>(`/settings/business?user_id=${uid}`, body);
+      if (!data.success) throw new Error(data.message || "Gagal menyimpan data bisnis");
       return data.data;
     },
     onSuccess: () => qc.invalidateQueries({ queryKey: ["settings", "business"] }),
@@ -277,12 +281,21 @@ export function useNotificationSettings() {
 
 export function useUpdateNotifications() {
   const qc = useQueryClient();
+  const userId = useAuthStore((s) => s.user?.user_id);
   return useMutation({
     mutationFn: async (body: Partial<NotificationSettings>) => {
+      if (USE_MOCK) {
+        await new Promise((r) => setTimeout(r, 500));
+        Object.assign(mockNotifications, body);
+        return mockNotifications;
+      }
+      const uid = userId || useAuthStore.getState().user?.user_id;
+      const params = uid ? `?user_id=${uid}` : "";
       const { data } = await api.put<ApiResponse<NotificationSettings>>(
-        "/settings/notifications",
+        `/settings/notifications${params}`,
         body,
       );
+      if (!data.success) throw new Error(data.message || "Gagal menyimpan notifikasi");
       return data.data;
     },
     onMutate: async (body) => {

@@ -191,6 +191,8 @@ export function useRespondDistributorRequest() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["distributors"], exact: false });
       qc.invalidateQueries({ queryKey: ["distributor-requests"], exact: false });
+      qc.invalidateQueries({ queryKey: ["retailers"], exact: false });
+      qc.invalidateQueries({ queryKey: ["partnerships"], exact: false });
     },
   });
 }
@@ -291,6 +293,9 @@ export function useRequestDistributorPartnership() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["distributors"] });
       qc.invalidateQueries({ queryKey: ["distributor-requests"] });
+    },
+    onError: () => {
+      qc.invalidateQueries({ queryKey: ["distributors"] });
     },
   });
 }
