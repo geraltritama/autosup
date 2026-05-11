@@ -4573,12 +4573,85 @@ def ai_demand(req: AIDemandReq):
 def ai_credit_risk(req: AICreditRiskReq):
     try:
         res = supabase.table("credit_accounts").select("*").eq("retailer_id", req.retailer_id).execute()
-        prompt = f"Credit risk analysis for retailer {req.retailer_id}. Credit account data: {res.data}."
-        ai_text = _call_ai(prompt)
+        accounts = res.data or []
+
+        # Calculate real risk metrics
+        total_limit = sum(a.get("credit_limit", 0) for a in accounts)
+        total_utilized = sum(a.get("utilized_amount", 0) for a in accounts)
+        utilization_pct = round(total_utilized / max(total_limit, 1) * 100)
+
+        # Check overdue
+        overdue_count = sum(1 for a in accounts if a.get("status") == "overdue")
+        frozen_count = sum(1 for a in accounts if a.get("status") == "frozen")
+
+        # Get order history for this retailer
+        orders_res = supabase.table("orders").select("status").eq("buyer_id", req.retailer_id).execute()
+        total_orders = len(orders_res.data or [])
+        delivered = sum(1 for o in (orders_res.data or []) if o.get("status") == "delivered")
+        payment_rate = round(delivered / max(total_orders, 1) * 100)
+
+        # Calculate risk score (0-100, lower = riskier)
+        risk_score = 100
+        risk_score -= min(30, utilization_pct * 0.3)  # High utilization = risky
+        risk_score -= overdue_count * 20  # Each overdue = -20
+        risk_score -= frozen_count * 30  # Frozen = very risky
+        risk_score -= max(0, (100 - payment_rate) * 0.2)  # Low payment rate = risky
+        risk_score = max(0, min(100, round(risk_score)))
+
+        # Determine risk level
+        risk_level = "low" if risk_score >= 70 else "medium" if risk_score >= 40 else "high"
+
+        # Max credit suggestion based on risk
+        if risk_level == "low":
+            max_suggestion = 20_000_000
+        elif risk_level == "medium":
+            max_suggestion = 5_000_000
+        else:
+            max_suggestion = 0
+
+        # Build recommendation text
+        findings = []
+        if utilization_pct > 80:
+            findings.append(f"Credit utilization is high at {utilization_pct}%.")
+        if overdue_count > 0:
+            findings.append(f"{overdue_count} account(s) are overdue.")
+        if frozen_count > 0:
+            findings.append(f"{frozen_count} account(s) are frozen due to non-payment.")
+        if payment_rate < 80:
+            findings.append(f"Order completion rate is {payment_rate}% (below 80% threshold).")
+        if not findings:
+            findings.append("No risk indicators found. Retailer has good payment history.")
+
+        recommendation = " ".join(findings)
+
+        # Get retailer name
+        retailer_name = ""
+        try:
+            user = _get_auth_user(req.retailer_id)
+            if user:
+                meta = user.get("user_metadata", {}) or {}
+                retailer_name = meta.get("business_name", meta.get("full_name", ""))
+        except Exception:
+            pass
+
         return success_response(
-            data={"retailer_id": req.retailer_id, "retailer_name": "", "risk_score": 75, "risk_level": "medium",
-                  "recommendation": ai_text, "max_credit_suggestion": 5000000, "generated_at": now_iso()},
-            message="Credit risk scoring completed",
+            data={
+                "retailer_id": req.retailer_id,
+                "retailer_name": retailer_name,
+                "risk_score": risk_score,
+                "risk_level": risk_level,
+                "recommendation": recommendation,
+                "max_credit_suggestion": max_suggestion,
+                "metrics": {
+                    "utilization_pct": utilization_pct,
+                    "overdue_accounts": overdue_count,
+                    "frozen_accounts": frozen_count,
+                    "payment_rate": payment_rate,
+                    "total_orders": total_orders,
+                },
+                "generated_at": now_iso(),
+            },
+            message="Credit risk analysis completed",
         )
     except Exception as e:
         return error_response(str(e))
