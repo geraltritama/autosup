@@ -51,7 +51,7 @@ import {
 import { useAuthStore } from "@/store/useAuthStore";
 import { api, type ApiResponse } from "@/lib/api";
 
-type Tab = "profile" | "business" | "notifications" | "security" | "integrations" | "wallet" | "operations";
+type Tab = "profile" | "business" | "notifications" | "security" | "integrations" | "operations";
 
 const tabs: { id: Tab; label: string; icon: React.ElementType }[] = [
   { id: "profile", label: "Profile", icon: User },
@@ -60,7 +60,6 @@ const tabs: { id: Tab; label: string; icon: React.ElementType }[] = [
   { id: "notifications", label: "Notifications", icon: Bell },
   { id: "security", label: "Security", icon: Shield },
   { id: "integrations", label: "Integrations", icon: Plug },
-  { id: "wallet", label: "Wallet", icon: Wallet },
 ];
 
 function formatDate(iso: string) {
@@ -986,7 +985,6 @@ export default function SettingsPage() {
           {activeTab === "notifications" && <NotificationsTab />}
           {activeTab === "security" && <SecurityTab />}
           {activeTab === "integrations" && <IntegrationsTab />}
-          {activeTab === "wallet" && <WalletTab />}
         </div>
       </div>
     </main>

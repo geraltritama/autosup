@@ -16,7 +16,7 @@ function formatCurrency(amount: number) {
 
 export function OrdersTrustPanel({ view }: { view?: "outgoing" | "incoming" }) {
   const role = useAuthStore((s) => s.user?.role);
-  const { data, isLoading } = useOrdersTrustSummary();
+  const { data, isLoading } = useOrdersTrustSummary(view);
 
   const escrowReleased = data?.escrow_released ?? 0;
   const escrowHeld = data?.escrow_held ?? 0;
@@ -40,18 +40,22 @@ export function OrdersTrustPanel({ view }: { view?: "outgoing" | "incoming" }) {
     <Card className="rounded-2xl">
       <CardHeader className="space-y-3">
         <Badge tone="info" className="w-fit">
-          Backend outcome
+          Transaction Summary
         </Badge>
-        <CardTitle className="text-lg">Escrow and reputation outcome</CardTitle>
+        <CardTitle className="text-lg">Payment & Trust</CardTitle>
       </CardHeader>
       <CardContent className="space-y-4">
         {/* Escrow status */}
         <div className="flex items-start gap-3 rounded-xl border border-[#E2E8F0] p-4">
           <WalletCards className="mt-0.5 h-5 w-5 text-[#3B82F6]" />
           <div className="flex-1 min-w-0">
-            <p className="text-sm font-medium text-[#0F172A]">Escrow (backend-managed)</p>
+            <p className="text-sm font-medium text-[#0F172A]">Payment Protection</p>
             <p className="mt-1 text-sm text-[#64748B]">
-              Escrow is released automatically when an order reaches <span className="font-medium text-[#0F172A]">delivered</span>. Cancelled orders are refunded automatically to the buyer.
+              {view === "outgoing"
+                ? "Your payments are held securely until the order is delivered. If cancelled, your money is returned automatically."
+                : view === "incoming"
+                  ? "Buyer payments are held until you deliver the order. Once confirmed delivered, funds are released to you."
+                  : "Payments are protected with automatic escrow. Released on delivery, refunded on cancellation."}
             </p>
             {isLoading ? (
               <div className="mt-2 h-4 w-32 animate-pulse rounded bg-slate-200" />
@@ -79,7 +83,7 @@ export function OrdersTrustPanel({ view }: { view?: "outgoing" | "incoming" }) {
             )}
             {!isLoading && escrowRefunded > 0 && (
               <div className="mt-3 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">
-                Cancelled orders are not counted as held funds. Refunded escrow means the buyer funds have been returned.
+                Cancelled orders are refunded. Held means payment is waiting for delivery confirmation.
               </div>
             )}
           </div>
@@ -93,7 +97,9 @@ export function OrdersTrustPanel({ view }: { view?: "outgoing" | "incoming" }) {
               {reputationLabel}
             </p>
             <p className="mt-1 text-sm text-[#64748B]">
-              Reputation updates happen automatically when an order is completed — recorded by the backend on every successful delivery.
+              {view === "outgoing"
+                ? "Shows how reliably you complete payments. Higher score means suppliers trust you more."
+                : "Your score based on delivery speed, completion rate, and partner satisfaction. Updated after every completed order."}
             </p>
             {isLoading ? (
               <div className="mt-2 h-4 w-24 animate-pulse rounded bg-slate-200" />
