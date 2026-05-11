@@ -14,7 +14,7 @@ function formatCurrency(amount: number) {
   }).format(amount);
 }
 
-export function OrdersTrustPanel() {
+export function OrdersTrustPanel({ view }: { view?: "outgoing" | "incoming" }) {
   const role = useAuthStore((s) => s.user?.role);
   const { data, isLoading } = useOrdersTrustSummary();
 
@@ -23,6 +23,12 @@ export function OrdersTrustPanel() {
   const escrowRefunded = data?.escrow_refunded ?? 0;
   const totalReleasedValue = data?.total_released_value ?? 0;
   const reputationScore = data?.reputation_score ?? 0;
+
+  const reputationLabel = role === "supplier"
+    ? "Supplier reputation"
+    : view === "outgoing"
+      ? "Your reliability score (as buyer)"
+      : "Your reputation (as seller)";
 
   return (
     <Card className="rounded-2xl">
@@ -78,7 +84,7 @@ export function OrdersTrustPanel() {
           <ShieldCheck className="mt-0.5 h-5 w-5 text-[#22C55E]" />
           <div className="flex-1 min-w-0">
             <p className="text-sm font-medium text-[#0F172A]">
-              {role === "supplier" ? "Supplier reputation" : "Reputation sistem"}
+              {reputationLabel}
             </p>
             <p className="mt-1 text-sm text-[#64748B]">
               Reputation updates happen automatically when an order is completed — recorded by the backend on every successful delivery.

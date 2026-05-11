@@ -239,7 +239,7 @@ export default function OrdersPage() {
 
         {/* Trust panel — selalu tampil di sidebar */}
         <div className="space-y-6">
-          <OrdersTrustPanel />
+          <OrdersTrustPanel view={isDistributor ? orderView : undefined} />
         </div>
       </section>
 
