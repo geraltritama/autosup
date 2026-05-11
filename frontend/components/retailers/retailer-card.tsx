@@ -92,7 +92,7 @@ export function RetailerCard({ retailer, onViewDetail, onDeletePartnership }: Pr
           <div className="rounded-xl bg-slate-50 p-4">
             <p className="text-xs uppercase tracking-[0.18em] text-[#64748B]">Last order</p>
             <p className="mt-2 text-sm font-semibold text-[#0F172A]">
-              {new Date(retailer.last_order_at).toLocaleDateString("en-US", { day: "numeric", month: "short", year: "numeric" })}
+              {retailer.last_order_at ? new Date(retailer.last_order_at).toLocaleDateString("en-US", { day: "numeric", month: "short", year: "numeric" }) : "—"}
             </p>
           </div>
         </div>

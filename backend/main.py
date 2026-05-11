@@ -1639,14 +1639,14 @@ def get_retailers(search: Optional[str] = None, segment: Optional[str] = None,
         # Calculate real order volume per retailer from orders table
         try:
             from collections import Counter
-            orders_res = supabase.table("orders").select("buyer_id, status, total_amount, created_at").eq("seller_id", uid).execute()
+            orders_res = supabase.table("orders").select("buyer_id, status, total_price, created_at").eq("seller_id", uid).execute()
             buyer_order_count = Counter()
             buyer_total_amount = Counter()
             buyer_last_order: dict = {}
             for o in (orders_res.data or []):
                 bid = o.get("buyer_id", "")
                 buyer_order_count[bid] += 1
-                buyer_total_amount[bid] += int(o.get("total_amount", 0) or 0)
+                buyer_total_amount[bid] += int(o.get("total_price", 0) or 0)
                 ts = o.get("created_at", "")
                 if ts > buyer_last_order.get(bid, ""):
                     buyer_last_order[bid] = ts
