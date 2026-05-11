@@ -19,6 +19,7 @@ import { KpiCard } from "@/components/dashboard/kpi-card";
 import { PageErrorState } from "@/components/dashboard/page-error-state";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { LegacyDialog as Dialog } from "@/components/ui/dialog";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { DistributorCard } from "@/components/distributors/distributor-card";
@@ -47,6 +48,9 @@ const [selectedDistributor, setSelectedDistributor] = useState<Distributor | nul
   const [distributorDetailOpen, setDistributorDetailOpen] = useState(false);
   const [selectedRequest, setSelectedRequest] = useState<DistributorPartnershipRequest | null>(null);
   const [requestDetailOpen, setRequestDetailOpen] = useState(false);
+  const [mouTarget, setMouTarget] = useState<Distributor | null>(null);
+  const [mouTerms, setMouTerms] = useState("");
+  const [mouRegion, setMouRegion] = useState("");
 
   const handleViewStock = useCallback((distributor: Distributor) => {
     setSelectedDistributor(distributor);
@@ -245,7 +249,7 @@ const [selectedDistributor, setSelectedDistributor] = useState<Distributor | nul
                     role="retailer"
                     onRequestPartnership={
                       dist.partnership_status === "none"
-                        ? (d) => requestPartnership.mutate({ distributor_id: d.distributor_id })
+                        ? (d) => { setMouTarget(d); setMouTerms(""); setMouRegion(""); }
                         : undefined
                     }
                     isRequesting={requestPartnership.isPending}
@@ -516,6 +520,47 @@ const [selectedDistributor, setSelectedDistributor] = useState<Distributor | nul
         confirmLabel={deleteTarget?.partnership_status === "partner" ? "End Partnership" : "Cancel Request"}
         isLoading={deletePartnership.isPending}
       />
+
+      {/* MOU Dialog for retailer requesting partnership */}
+      {mouTarget && (
+        <Dialog open={!!mouTarget} onClose={() => setMouTarget(null)} title="Request Partnership" description={`Send partnership request to ${mouTarget.name} with MOU details.`}>
+          <div className="space-y-4">
+            <div className="space-y-1">
+              <label className="text-xs font-medium text-[#64748B]">MOU Terms *</label>
+              <textarea
+                className="w-full rounded-lg border border-[#E2E8F0] px-3 py-2 text-sm focus:border-[#3B82F6] focus:outline-none"
+                rows={3}
+                placeholder="e.g. Retailer berhak membeli produk dari distributor dengan harga grosir. Minimum order Rp 200.000."
+                value={mouTerms}
+                onChange={(e) => setMouTerms(e.target.value)}
+              />
+            </div>
+            <div className="space-y-1">
+              <label className="text-xs font-medium text-[#64748B]">Area Coverage</label>
+              <input
+                className="w-full rounded-lg border border-[#E2E8F0] px-3 py-2 text-sm focus:border-[#3B82F6] focus:outline-none"
+                placeholder="e.g. Jakarta Timur, Bekasi"
+                value={mouRegion}
+                onChange={(e) => setMouRegion(e.target.value)}
+              />
+            </div>
+            <div className="flex justify-end gap-2">
+              <Button variant="secondary" onClick={() => setMouTarget(null)}>Cancel</Button>
+              <Button
+                disabled={!mouTerms.trim() || requestPartnership.isPending}
+                onClick={() => {
+                  requestPartnership.mutate(
+                    { distributor_id: mouTarget.distributor_id, terms: mouTerms, distribution_region: mouRegion },
+                    { onSuccess: () => setMouTarget(null) },
+                  );
+                }}
+              >
+                {requestPartnership.isPending ? "Sending..." : "Send Request"}
+              </Button>
+            </div>
+          </div>
+        </Dialog>
+      )}
     </main>
   );
 }
