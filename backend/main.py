@@ -20,6 +20,8 @@ from pydantic import BaseModel
 from typing import Any, Optional
 
 load_dotenv()
+# Optional dedicated Xendit env file (keep secrets isolated from shared .env)
+load_dotenv(dotenv_path=os.path.join(os.path.dirname(__file__), ".env.xendit"), override=False)
 
 # ==========================================
 # 0. AUTH DEPENDENCY
