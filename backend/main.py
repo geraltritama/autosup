@@ -10,7 +10,7 @@ from datetime import datetime, timedelta
 from contextlib import asynccontextmanager
 from dateutil.relativedelta import relativedelta
 from dotenv import load_dotenv
-from fastapi import FastAPI, Header, BackgroundTasks
+from fastapi import FastAPI, Header, BackgroundTasks, Depends, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from supabase import create_client, Client
@@ -19,6 +19,50 @@ from pydantic import BaseModel
 from typing import Any, Optional
 
 load_dotenv()
+
+# ==========================================
+# 0. AUTH DEPENDENCY
+# ==========================================
+
+class AuthenticatedUser:
+    """Represents a verified user from JWT token."""
+    def __init__(self, user_id: str, role: str, email: str = ""):
+        self.user_id = user_id
+        self.role = role
+        self.email = email
+
+
+async def get_current_user(request: Request) -> AuthenticatedUser:
+    """Verify Supabase JWT and extract user_id + role. Raises 401 if invalid."""
+    auth_header = request.headers.get("authorization", "")
+    if not auth_header.startswith("Bearer "):
+        raise HTTPException(status_code=401, detail="Missing or invalid Authorization header")
+    token = auth_header[7:]
+    try:
+        # Verify token via Supabase Auth API
+        headers = {
+            "apikey": os.getenv("SUPABASE_KEY", ""),
+            "Authorization": f"Bearer {token}",
+        }
+        resp = requests.get(
+            f"{os.getenv('SUPABASE_URL')}/auth/v1/user",
+            headers=headers,
+            timeout=5,
+        )
+        if resp.status_code != 200:
+            raise HTTPException(status_code=401, detail="Invalid or expired token")
+        user_data = resp.json()
+        user_id = user_data.get("id", "")
+        meta = user_data.get("user_metadata", {}) or {}
+        role = meta.get("role", "distributor")
+        email = user_data.get("email", "")
+        if not user_id:
+            raise HTTPException(status_code=401, detail="Could not resolve user from token")
+        return AuthenticatedUser(user_id=user_id, role=role, email=email)
+    except HTTPException:
+        raise
+    except Exception:
+        raise HTTPException(status_code=401, detail="Token verification failed")
 
 # Blockchain service (graceful degradation if solders/solana not installed)
 try:
@@ -167,6 +211,8 @@ class TeamMemberInvite(BaseModel):
 
 supabase: Client | None = None
 OPENROUTER_KEY = os.getenv("OPENROUTER_API_KEY", "")
+GEMINI_KEY = os.getenv("GEMINI_API_KEY", "")
+GROQ_KEY = os.getenv("GROQ_API_KEY", "")
 AI_MODEL = os.getenv("AI_MODEL", "google/gemma-2-9b-it:free")
 AI_URL = "https://openrouter.ai/api/v1/chat/completions"
 
@@ -299,6 +345,8 @@ supabase: Client = create_client(os.getenv("SUPABASE_URL"), os.getenv("SUPABASE_
 OPENROUTER_KEY = os.getenv("OPENROUTER_API_KEY", "")
 AI_MODEL = os.getenv("AI_MODEL", "google/gemma-2-9b-it:free")
 AI_URL = "https://openrouter.ai/api/v1/chat/completions"
+GEMINI_KEY = os.getenv("GEMINI_API_KEY", "")
+GROQ_KEY = os.getenv("GROQ_API_KEY", "")
 
 # ─── Rate-limit cooldown ─────────────────────────────────────────────────────
 import threading
@@ -306,17 +354,42 @@ _rate_limit_until = 0.0
 _last_call_time = 0.0
 _rate_lock = threading.Lock()
 
+
 def _call_ai(prompt: str) -> str:
-    """Call OpenRouter AI with burst prevention and rate-limit cooldown."""
+    """Call AI with automatic fallback: OpenRouter -> Gemini -> Groq."""
     global _rate_limit_until, _last_call_time
-    import time as _time, re as _re
+    import time as _time
 
-    if not OPENROUTER_KEY:
-        raise RuntimeError("OPENROUTER_API_KEY not configured. Sign up at https://openrouter.ai/keys")
+    providers = []
+    if OPENROUTER_KEY and OPENROUTER_KEY.startswith("sk-or-"):
+        providers.append("openrouter")
+    if GEMINI_KEY:
+        providers.append("gemini")
+    if GROQ_KEY:
+        providers.append("groq")
 
-    if not OPENROUTER_KEY.startswith("sk-or-"):
-        raise RuntimeError("Invalid OPENROUTER_API_KEY format. Must start with 'sk-or-v1-'. Get key at https://openrouter.ai/keys")
+    if not providers:
+        raise RuntimeError("No AI API keys configured. Set OPENROUTER_API_KEY, GEMINI_API_KEY, or GROQ_API_KEY in .env")
 
+    errors = []
+    for provider in providers:
+        try:
+            if provider == "openrouter":
+                result = _call_openrouter(prompt, _time)
+            elif provider == "gemini":
+                result = _call_gemini(prompt)
+            else:
+                result = _call_groq(prompt)
+            return result
+        except Exception as e:
+            errors.append(f"{provider}: {str(e)[:100]}")
+            continue
+
+    raise RuntimeError(f"All AI providers failed: {'; '.join(errors)}")
+
+
+def _call_openrouter(prompt: str, _time) -> str:
+    global _rate_limit_until, _last_call_time
     now_t = _time.time()
     with _rate_lock:
         gap = now_t - _last_call_time
@@ -324,46 +397,69 @@ def _call_ai(prompt: str) -> str:
             _time.sleep(2 - gap + 0.1)
         _last_call_time = _time.time()
         if _time.time() < _rate_limit_until:
-            wait = _rate_limit_until - _time.time()
-            raise RuntimeError(f"AI rate-limited. Cooldown: {wait:.0f}s remaining.")
+            raise RuntimeError("Rate-limited, skipping.")
 
-    try:
+    resp = requests.post(
+        AI_URL,
+        headers={
+            "Authorization": f"Bearer {OPENROUTER_KEY}",
+            "Content-Type": "application/json",
+            "HTTP-Referer": "http://localhost:3000",
+            "X-Title": "AUTOSUP",
+        },
+        json={
+            "model": AI_MODEL,
+            "messages": [{"role": "user", "content": prompt}],
+            "temperature": 0.3,
+        },
+        timeout=30,
+    )
+    if resp.status_code == 429:
+        delay = int(resp.headers.get("Retry-After", "60"))
+        with _rate_lock:
+            _rate_limit_until = _time.time() + delay + 10
+        raise RuntimeError(f"Rate limited ({delay}s)")
+    if resp.status_code != 200:
+        raise RuntimeError(f"HTTP {resp.status_code}")
+    return resp.json()["choices"][0]["message"]["content"]
+
+
+def _call_gemini(prompt: str) -> str:
+    resp = requests.post(
+        f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key={GEMINI_KEY}",
+        headers={"Content-Type": "application/json"},
+        json={"contents": [{"parts": [{"text": prompt}]}]},
+        timeout=30,
+    )
+    if resp.status_code != 200:
+        raise RuntimeError(f"Gemini HTTP {resp.status_code}")
+    return resp.json()["candidates"][0]["content"]["parts"][0]["text"]
+
+
+def _call_groq(prompt: str) -> str:
+    import time as _gt
+    for attempt in range(2):
         resp = requests.post(
-            AI_URL,
+            "https://api.groq.com/openai/v1/chat/completions",
             headers={
-                "Authorization": f"Bearer {OPENROUTER_KEY}",
+                "Authorization": f"Bearer {GROQ_KEY}",
                 "Content-Type": "application/json",
-                "HTTP-Referer": "http://localhost:3000",
-                "X-Title": "AUTOSUP",
             },
             json={
-                "model": AI_MODEL,
+                "model": "llama-3.1-8b-instant",
                 "messages": [{"role": "user", "content": prompt}],
                 "temperature": 0.3,
             },
             timeout=30,
         )
-        if resp.status_code != 200:
-            detail = resp.text[:300]
-            if resp.status_code == 429:
-                delay = 60
-                retry = resp.headers.get("Retry-After", "")
-                if retry and retry.isdigit():
-                    delay = int(retry)
-                with _rate_lock:
-                    _rate_limit_until = _time.time() + delay + 10
-                raise RuntimeError(f"OpenRouter rate limited. Retry in {delay}s.")
-            if resp.status_code == 401:
-                raise RuntimeError(f"Invalid API key. Check OPENROUTER_API_KEY in .env — should start with 'sk-or-v1-'")
-            if resp.status_code == 404:
-                raise RuntimeError(f"Model '{AI_MODEL}' not found. Try another model in .env: AI_MODEL=meta-llama/llama-3.1-8b-instruct:free")
-            raise RuntimeError(f"OpenRouter error {resp.status_code}: {detail}")
-        body = resp.json()
-        return body["choices"][0]["message"]["content"]
-    except RuntimeError:
-        raise
-    except Exception as e:
-        raise RuntimeError(f"AI call failed: {str(e)[:200]}")
+        if resp.status_code == 200:
+            return resp.json()["choices"][0]["message"]["content"]
+        if resp.status_code == 429 and attempt == 0:
+            retry_after = int(resp.headers.get("Retry-After", "10"))
+            _gt.sleep(min(retry_after, 30))
+            continue
+        raise RuntimeError(f"Groq HTTP {resp.status_code}")
+    raise RuntimeError("Groq retry exhausted")
 
 # ==========================================
 # 4. ROOT
@@ -509,14 +605,49 @@ def _map_inventory_item(i: dict) -> dict:
     }
 
 @app.get("/inventory")
-def get_inventory(user_id: Optional[str] = None):
+def get_inventory(user_id: Optional[str] = None, demand_level: Optional[str] = None,
+                  current_user: AuthenticatedUser = Depends(get_current_user)):
     try:
-        query = supabase.table("inventories").select("*").order("product_name")
-        if user_id:
-            query = query.eq("user_id", user_id)
+        uid = current_user.user_id
+        role = current_user.role
+        query = supabase.table("inventories").select("*").eq("user_id", uid).order("product_name")
         res = query.execute()
         items = [_map_inventory_item(i) for i in (res.data or [])]
-        return success_response(data=items, message="Inventory data retrieved successfully")
+
+        # Calculate demand_level for supplier based on order frequency (last 30 days)
+        if role == "supplier" and items:
+            from collections import Counter
+            try:
+                orders_res = supabase.table("orders").select("items, created_at").eq("seller_id", uid).execute()
+                now = datetime.utcnow()
+                cutoff = now - timedelta(days=30)
+                product_order_count = Counter()
+                for o in (orders_res.data or []):
+                    ts = _parse_ts(o.get("created_at", ""))
+                    if ts and ts >= cutoff:
+                        for it in (o.get("items") or []):
+                            name = (it.get("product_name") or it.get("name") or "").lower()
+                            product_order_count[name] += 1
+
+                for item in items:
+                    name_lower = item["name"].lower()
+                    count = product_order_count.get(name_lower, 0)
+                    item["demand_level"] = "high" if count >= 10 else "normal" if count >= 3 else "low"
+                    item["demand_order_count"] = count
+            except Exception:
+                for item in items:
+                    item["demand_level"] = "normal"
+                    item["demand_order_count"] = 0
+
+        # Filter by demand_level if requested
+        if demand_level and demand_level in ("high", "normal", "low"):
+            items = [i for i in items if i.get("demand_level") == demand_level]
+
+        # Build insight
+        high_demand_count = sum(1 for i in items if i.get("demand_level") == "high")
+        insight = f"{high_demand_count} products experiencing high demand from distributors" if high_demand_count > 0 else ""
+
+        return success_response(data={"items": items, "insight": insight}, message="Inventory data retrieved successfully")
     except Exception as e:
         return error_response(str(e))
 
@@ -639,15 +770,27 @@ def _map_order(o: dict) -> dict:
 @app.get("/orders")
 def get_orders(status: Optional[str] = None, search: Optional[str] = None,
                role: Optional[str] = None, user_id: Optional[str] = None,
-               page: int = 1, limit: int = 20):
+               page: int = 1, limit: int = 20, current_user: AuthenticatedUser = Depends(get_current_user)):
     try:
+        # Use authenticated user — role from token determines filter
+        uid = current_user.user_id
+        u_role = current_user.role
         query = supabase.table("orders").select("*").order("created_at", desc=True)
         if status:
             query = query.eq("status", status)
-        if user_id and role == "buyer":
-            query = query.eq("buyer_id", user_id)
-        elif user_id and role == "seller":
-            query = query.eq("seller_id", user_id)
+        # Supplier sees orders where they are seller, retailer sees where they are buyer
+        # Distributor sees BOTH directions (buyer from supplier, seller to retailer)
+        if u_role == "supplier":
+            query = query.eq("seller_id", uid)
+        elif u_role == "distributor":
+            if role == "seller":
+                query = query.eq("seller_id", uid)
+            elif role == "buyer":
+                query = query.eq("buyer_id", uid)
+            else:
+                query = query.or_(f"buyer_id.eq.{uid},seller_id.eq.{uid}")
+        else:
+            query = query.eq("buyer_id", uid)
         res = query.execute()
         orders = [_map_order(o) for o in (res.data or [])]
 
@@ -656,13 +799,44 @@ def get_orders(status: Optional[str] = None, search: Optional[str] = None,
             orders = [o for o in orders if sl in o["order_number"].lower()
                       or sl in o["buyer"]["name"].lower() or sl in o["seller"]["name"].lower()]
 
-        # Bucket cancelled orders to bottom, active orders stay newest-first
-        active_orders = [o for o in orders if o["status"] != "cancelled"]
-        cancelled_orders = [o for o in orders if o["status"] == "cancelled"]
-        orders = active_orders + cancelled_orders
+        # Sort by status priority: pending→processing→shipping→delivered→cancelled
+        status_priority = {"pending": 0, "processing": 1, "shipping": 2, "delivered": 3, "cancelled": 4}
+        orders.sort(key=lambda o: (status_priority.get(o["status"], 99), o.get("created_at", "")), reverse=False)
+        # Within same status, newest first
+        orders.sort(key=lambda o: o.get("created_at", ""), reverse=True)
+        orders.sort(key=lambda o: status_priority.get(o["status"], 99))
 
         total = len(orders)
         start = (page - 1) * limit
+
+        # Fulfillment metrics for supplier
+        fulfillment_metrics = None
+        if u_role == "supplier" and orders:
+            delivered = [o for o in orders if o["status"] == "delivered"]
+            completion_rate = round(len(delivered) / max(total, 1) * 100)
+            # Avg processing time (pending→processing) from status_history
+            processing_hours = []
+            for o in orders:
+                history = o.get("status_history") or []
+                pending_ts = next((h.get("changed_at") for h in history if h.get("status") == "pending"), None)
+                proc_ts = next((h.get("changed_at") for h in history if h.get("status") == "processing"), None)
+                if pending_ts and proc_ts:
+                    try:
+                        diff = (_parse_ts(proc_ts) - _parse_ts(pending_ts)).total_seconds() / 3600
+                        if 0 < diff < 720:
+                            processing_hours.append(diff)
+                    except Exception:
+                        pass
+            avg_processing = round(sum(processing_hours) / max(len(processing_hours), 1), 1) if processing_hours else 0
+            delayed = sum(1 for o in orders if o["status"] == "processing" and
+                         (_parse_ts(o.get("updated_at", "") or o.get("created_at", "")) or datetime.utcnow()) < datetime.utcnow() - timedelta(hours=72))
+            fulfillment_metrics = {
+                "avg_processing_hours": avg_processing,
+                "completion_rate": completion_rate,
+                "delayed_count": delayed,
+                "on_time_rate": min(100, completion_rate + 5) if completion_rate > 0 else 0,
+            }
+
         return success_response(
             data={
                 "orders": orders[start: start + limit],
@@ -673,6 +847,7 @@ def get_orders(status: Optional[str] = None, search: Optional[str] = None,
                     "completed_orders": sum(1 for o in orders if o["status"] == "delivered"),
                     "cancelled_orders": sum(1 for o in orders if o["status"] == "cancelled"),
                 },
+                "fulfillment_metrics": fulfillment_metrics,
                 "pagination": {"page": page, "limit": limit, "total": total},
             },
             message="Order data retrieved successfully",
@@ -961,6 +1136,25 @@ def update_order_status(order_id: str, data: UpdateOrderStatusReq):
                         except Exception:
                             pass
 
+        # Auto-create shipment record when order moves to shipping
+        if data.status == "shipping" and full_order:
+            try:
+                ship_info = data.shipping_info or full_order.get("shipping_info") or {}
+                supabase.table("shipments").insert({
+                    "id": str(uuid.uuid4()),
+                    "order_id": order_id,
+                    "sender_id": seller_id,
+                    "receiver_id": buyer_id,
+                    "retailer_name": full_order.get("buyer_name", ""),
+                    "destination": full_order.get("delivery_address", ""),
+                    "carrier": ship_info.get("courier", "JNE") if isinstance(ship_info, dict) else "JNE",
+                    "status": "in_transit",
+                    "eta": full_order.get("estimated_delivery", future_iso(days=3)),
+                    "created_at": changed_at,
+                }).execute()
+            except Exception:
+                pass  # Non-critical
+
         try:
             supabase.table("orders").update(update_payload).eq("id", order_id).execute()
         except Exception as update_error:
@@ -995,28 +1189,28 @@ def delete_order(order_id: str):
 
 @app.get("/dashboard/summary")
 def get_dashboard_summary(x_user_role: Optional[str] = Header(default=None),
-                          user_id: Optional[str] = None):
+                          user_id: Optional[str] = None,
+                          current_user: AuthenticatedUser = Depends(get_current_user)):
     try:
-        role = x_user_role or "distributor"
+        role = current_user.role
+        uid = current_user.user_id
         now = datetime.utcnow()
         month_start = _month_start(now)
         next_due_cutoff = now + timedelta(days=7)
 
         # Orders filtered by user
         orders_query = supabase.table("orders").select("*")
-        if user_id:
-            if role == "supplier":
-                orders_query = orders_query.eq("seller_id", user_id)
-            elif role == "retailer":
-                orders_query = orders_query.eq("buyer_id", user_id)
-            else:
-                orders_query = orders_query.or_(f"buyer_id.eq.{user_id},seller_id.eq.{user_id}")
+        if role == "supplier":
+            orders_query = orders_query.eq("seller_id", uid)
+        elif role == "retailer":
+            orders_query = orders_query.eq("buyer_id", uid)
+        else:
+            orders_query = orders_query.or_(f"buyer_id.eq.{uid},seller_id.eq.{uid}")
         orders = orders_query.execute().data or []
 
         # Inventory filtered by user
         inv_query = supabase.table("inventories").select("current_stock, min_threshold")
-        if user_id:
-            inv_query = inv_query.eq("user_id", user_id)
+        inv_query = inv_query.eq("user_id", uid)
         inventory = inv_query.execute().data or []
 
         pending = sum(1 for o in orders if o.get("status") == "pending")
@@ -1057,20 +1251,22 @@ def get_dashboard_summary(x_user_role: Optional[str] = Header(default=None),
         pending_retailer_requests = 0
         try:
             p_query = supabase.table("partnerships").select("*")
-            if user_id and role == "supplier":
+            if role == "supplier":
                 try:
-                    p_query = p_query.or_(f"supplier_id.eq.{user_id},supplier_name.eq.{user_id}")
+                    p_query = p_query.or_(f"supplier_id.eq.{uid},supplier_name.eq.{uid}")
                 except Exception:
-                    p_query = p_query.eq("supplier_name", user_id)
-            elif user_id and role == "distributor":
-                p_query = p_query.eq("distributor_id", user_id)
-            elif user_id and role == "retailer":
-                p_query = p_query.eq("retailer_name", user_id)
+                    p_query = p_query.eq("supplier_name", uid)
+            elif role == "distributor":
+                p_query = p_query.eq("distributor_id", uid)
+            elif role == "retailer":
+                p_query = p_query.eq("retailer_name", uid)
             partnerships = p_query.execute().data or []
             active_partnerships = [p for p in partnerships if p.get("status") in ["accepted", "approved", "partner"]]
             pending_partnerships = [p for p in partnerships if p.get("status") == "pending"]
-            # Split by direction using partnership_type discriminator
-            supplier_partner_count = len([p for p in active_partnerships if p.get("partnership_type") in ("supplier", "distributor_supplier")])
+            # Only count partners that are actual active distributor users
+            active_dist_ids = {u["id"] for u in auth_users_by_role("distributor") if u.get("is_active", True)}
+            supplier_partnerships = [p for p in active_partnerships if p.get("partnership_type") in ("supplier", "distributor_supplier")]
+            supplier_partner_count = len(set(p.get("distributor_id", "") for p in supplier_partnerships if p.get("distributor_id") in active_dist_ids))
             retailer_partner_count = len([p for p in active_partnerships if p.get("partnership_type") == "retailer"])
             pending_supplier_requests = len([p for p in pending_partnerships if p.get("partnership_type") in ("supplier", "distributor_supplier")])
             pending_retailer_requests = len([p for p in pending_partnerships if p.get("partnership_type") == "retailer"])
@@ -1079,25 +1275,89 @@ def get_dashboard_summary(x_user_role: Optional[str] = Header(default=None),
 
         retailer_invoice_rows = []
         retailer_credit_rows = []
-        if role == "retailer" and user_id:
+        if role == "retailer":
             try:
-                retailer_invoice_rows = [row for row in safe_query("invoices") if row.get("buyer_id") == user_id]
+                retailer_invoice_rows = [row for row in safe_query("invoices") if row.get("buyer_id") == uid]
             except Exception:
                 retailer_invoice_rows = []
             try:
                 retailer_credit_rows = [
                     row for row in safe_query("credit_accounts")
-                    if row.get("retailer_id") == user_id and row.get("status") != "closed"
+                    if row.get("retailer_id") == uid and row.get("status") != "closed"
                 ]
             except Exception:
                 retailer_credit_rows = []
 
         if role == "supplier":
+            # Demand growth: compare this week's order count vs last week
+            week_ago = now - timedelta(days=7)
+            two_weeks_ago = now - timedelta(days=14)
+            this_week_orders = [o for o in orders if (_parse_ts(o.get("created_at", "")) or now) >= week_ago]
+            last_week_orders = [o for o in orders if two_weeks_ago <= (_parse_ts(o.get("created_at", "")) or now) < week_ago]
+            demand_growth = _period_growth_pct(len(this_week_orders), len(last_week_orders))
+
+            # Top products: aggregate item quantities from all orders
+            from collections import Counter
+            product_counter = Counter()
+            for o in orders:
+                for it in (o.get("items") or []):
+                    name = it.get("product_name") or it.get("name") or it.get("item_name") or ""
+                    if not name:
+                        continue
+                    qty = it.get("quantity") or it.get("qty") or 1
+                    product_counter[name] += qty
+            top_products = [{"name": name, "volume": vol} for name, vol in product_counter.most_common(5)]
+
+            # Recent incoming orders (pending only — awaiting supplier action)
+            recent_orders = []
+            for o in orders:
+                if o.get("status") == "pending":
+                    recent_orders.append({
+                        "order_id": o.get("id") or o.get("order_id", ""),
+                        "buyer_name": o.get("buyer_name", ""),
+                        "status": o.get("status", ""),
+                        "total": _order_total(o),
+                        "created_at": o.get("created_at", ""),
+                    })
+                    if len(recent_orders) >= 8:
+                        break
+
+            # Demand trend chart: weekly order volume for last 8 weeks
+            demand_trend = []
+            for i in range(7, -1, -1):
+                week_start = now - timedelta(weeks=i+1)
+                week_end = now - timedelta(weeks=i)
+                vol = sum(1 for o in orders if week_start <= (_parse_ts(o.get("created_at", "")) or now) < week_end)
+                demand_trend.append({"period": week_end.strftime("%d %b"), "value": vol})
+
+            # Distributor activity feed: recent events from orders
+            distributor_activity = []
+            for o in orders[:15]:
+                ts = o.get("created_at", "")
+                buyer = o.get("buyer_name", "Distributor")
+                st = o.get("status", "")
+                if st == "pending":
+                    event = f"{buyer} placed a new order"
+                elif st == "delivered":
+                    event = f"Order to {buyer} delivered"
+                elif st == "processing":
+                    event = f"Order from {buyer} being processed"
+                else:
+                    continue
+                distributor_activity.append({"event": event, "timestamp": ts})
+                if len(distributor_activity) >= 8:
+                    break
+
             data = {
                 "role": "supplier",
                 "products": {"total_active": total_inv, "low_stock_count": low_stock, "out_of_stock_count": out_of_stock},
                 "orders": {"incoming_orders": pending, "processing": processing, "completed_this_month": completed},
                 "partners": {"distributor_count": supplier_partner_count, "pending_requests": pending_supplier_requests},
+                "demand_growth": demand_growth,
+                "top_products": top_products,
+                "recent_orders": recent_orders,
+                "demand_trend_chart": demand_trend,
+                "distributor_activity": distributor_activity,
                 "ai_insights": ai_alerts,
             }
         elif role == "retailer":
@@ -1144,12 +1404,33 @@ def get_dashboard_summary(x_user_role: Optional[str] = Header(default=None),
                 "ai_insights": ai_alerts,
             }
         else:
+            # Distributor revenue (selling to retailers) and spending (buying from suppliers)
+            delivered = [o for o in orders if o.get("status") == "delivered"]
+            revenue = sum(_order_total(o) for o in delivered if o.get("seller_id") == uid)
+            spending = sum(_order_total(o) for o in delivered if o.get("buyer_id") == uid)
+            monthly_revenue = sum(_order_total(o) for o in delivered if o.get("seller_id") == uid and (_parse_ts(o.get("created_at", "")) or now) >= month_start)
+
+            # Pending incoming orders from retailers (awaiting distributor action)
+            pending_incoming = []
+            for o in orders:
+                if o.get("status") == "pending" and o.get("seller_id") == uid:
+                    pending_incoming.append({
+                        "order_id": o.get("id") or o.get("order_id", ""),
+                        "buyer_name": o.get("buyer_name", ""),
+                        "total": _order_total(o),
+                        "created_at": o.get("created_at", ""),
+                    })
+                    if len(pending_incoming) >= 8:
+                        break
+
             data = {
                 "role": "distributor",
                 "inventory": {"total_items": total_inv, "low_stock_count": low_stock, "out_of_stock_count": out_of_stock},
                 "orders": {"active_orders": processing, "pending_orders": pending, "completed_this_month": completed},
                 "suppliers": {"partner_count": supplier_partner_count, "pending_requests": pending_supplier_requests},
                 "retailers": {"partner_count": retailer_partner_count, "pending_requests": pending_retailer_requests},
+                "financials": {"revenue": revenue, "spending": spending, "net_margin": revenue - spending, "monthly_revenue": monthly_revenue},
+                "pending_incoming": pending_incoming,
                 "ai_insights": ai_alerts,
             }
 
@@ -1162,9 +1443,11 @@ def get_dashboard_summary(x_user_role: Optional[str] = Header(default=None),
 # ==========================================
 
 @app.get("/payments/retailer")
-def get_retailer_payments(user_id: Optional[str] = None):
+def get_retailer_payments(user_id: Optional[str] = None, current_user: AuthenticatedUser = Depends(get_current_user)):
     try:
+        uid = current_user.user_id
         raw = safe_query("invoices")
+        raw = [i for i in raw if i.get("buyer_id") == uid]
         invoices = [
             {
                 "invoice_id": i.get("id"),
@@ -1195,14 +1478,14 @@ def get_retailer_payments(user_id: Optional[str] = None):
 
 
 @app.get("/payments/distributor")
-def get_distributor_payments(user_id: Optional[str] = None):
+def get_distributor_payments(user_id: Optional[str] = None, current_user: AuthenticatedUser = Depends(get_current_user)):
     try:
+        uid = current_user.user_id
         query = supabase.table("payments").select("*")
-        if user_id:
-            try:
-                query = query.or_(f"payer_id.eq.{user_id},payee_id.eq.{user_id}")
-            except Exception:
-                pass
+        try:
+            query = query.or_(f"payer_id.eq.{uid},payee_id.eq.{uid}")
+        except Exception:
+            pass
         res = query.execute()
         payments = [
             {
@@ -1254,106 +1537,87 @@ def pay_invoice(invoice_id: str):
 def get_retailers(search: Optional[str] = None, segment: Optional[str] = None,
                   status: Optional[str] = None, type: Optional[str] = None,
                   user_id: Optional[str] = None,
-                  page: int = 1, limit: int = 20):
-    # type=partner means show only partnered retailers for this distributor
+                  page: int = 1, limit: int = 20,
+                  current_user: AuthenticatedUser = Depends(get_current_user)):
     try:
-        query = supabase.table("retailers").select("*")
-        if status:
-            query = query.eq("status", status)
-        if user_id:
-            try:
-                query = query.eq("distributor_id", user_id)
-            except Exception:
-                pass
-        res = query.execute()
+        uid = current_user.user_id
+
+        # Primary source: auth users with role=retailer
+        retailer_users = auth_users_by_role("retailer")
         retailers = [
             {
-                "retailer_id": r.get("id"),
-                "name": r.get("name", ""),
-                "contact_person": r.get("contact_person", ""),
-                "phone": r.get("phone", ""),
-                "city": r.get("city", ""),
-                "segment": r.get("segment", "regular"),
-                "status": r.get("status", "active"),
-                "monthly_order_volume": r.get("monthly_order_volume", 0),
-                "total_purchase_amount": r.get("total_purchase_amount", 0),
-                "last_order_at": r.get("last_order_at", past_iso(days=3)),
+                "retailer_id": u["id"],
+                "name": u.get("business_name", u.get("full_name", "")),
+                "contact_person": u.get("full_name", ""),
+                "phone": u.get("phone", ""),
+                "city": u.get("city", ""),
+                "segment": u.get("business_type", "regular") or "regular",
+                "status": "active",
+                "monthly_order_volume": 0,
+                "total_purchase_amount": 0,
+                "last_order_at": None,
                 "partnership_status": "none",
             }
-            for r in (res.data or [])
+            for u in retailer_users if u.get("id")
         ]
 
-        # Mark partnership status for current distributor
-        if user_id and retailers:
-            try:
-                p_rows = supabase.table("partnerships").select("distributor_id,retailer_name,status,partnership_type").eq("distributor_id", user_id).execute().data or []
-                partner_ids = {
-                    p.get("retailer_name", "") for p in p_rows
-                    if p.get("status") in ["approved", "accepted"] and p.get("partnership_type") == "retailer"
-                }
-                pending_ids = {
-                    p.get("retailer_name", "") for p in p_rows
-                    if p.get("status") == "pending" and p.get("partnership_type") == "retailer"
-                }
-                for r in retailers:
-                    rid = r["retailer_id"] or ""
-                    if rid in partner_ids:
-                        r["partnership_status"] = "partner"
-                    elif rid in pending_ids:
-                        r["partnership_status"] = "pending"
-            except Exception:
-                pass
+        # Mark partnership status
+        try:
+            p_rows = supabase.table("partnerships").select("retailer_name,status,partnership_type").eq("distributor_id", uid).execute().data or []
+            partner_ids = {p.get("retailer_name", "") for p in p_rows if p.get("status") in ["approved", "accepted"] and p.get("partnership_type") == "retailer"}
+            pending_ids = {p.get("retailer_name", "") for p in p_rows if p.get("status") == "pending" and p.get("partnership_type") == "retailer"}
+            for r in retailers:
+                rid = r["retailer_id"]
+                if rid in partner_ids:
+                    r["partnership_status"] = "partner"
+                elif rid in pending_ids:
+                    r["partnership_status"] = "pending"
+        except Exception:
+            pass
 
-        # Fallback: auth admin — also mark partnership status
-        if not retailers:
-            for u in auth_users_by_role("retailer"):
-                retailers.append({
-                    "retailer_id": u["id"],
-                    "name": u.get("business_name", u.get("full_name", "")),
-                    "contact_person": u.get("full_name", ""),
-                    "phone": u.get("phone", ""),
-                    "city": u.get("city", ""),
-                    "segment": "regular",
-                    "status": "active",
-                    "monthly_order_volume": 0,
-                    "total_purchase_amount": 0,
-                    "last_order_at": past_iso(days=3),
-                    "partnership_status": "none",
-                })
-            # Mark fallback partnership status
-            if user_id:
-                try:
-                    p_rows = supabase.table("partnerships").select("distributor_id,retailer_name,status,partnership_type").eq("distributor_id", user_id).execute().data or []
-                    partner_ids = {p.get("retailer_name", "") for p in p_rows if p.get("status") in ["approved", "accepted"] and p.get("partnership_type") == "retailer"}
-                    pending_ids = {p.get("retailer_name", "") for p in p_rows if p.get("status") == "pending" and p.get("partnership_type") == "retailer"}
-                    for r in retailers:
-                        rid = r["retailer_id"] or ""
-                        if rid in partner_ids:
-                            r["partnership_status"] = "partner"
-                        elif rid in pending_ids:
-                            r["partnership_status"] = "pending"
-                except Exception:
-                    pass
+        # Calculate real order volume per retailer from orders table
+        try:
+            from collections import Counter
+            orders_res = supabase.table("orders").select("buyer_id, status, total_amount, created_at").eq("seller_id", uid).execute()
+            buyer_order_count = Counter()
+            buyer_total_amount = Counter()
+            buyer_last_order: dict = {}
+            for o in (orders_res.data or []):
+                bid = o.get("buyer_id", "")
+                buyer_order_count[bid] += 1
+                buyer_total_amount[bid] += int(o.get("total_amount", 0) or 0)
+                ts = o.get("created_at", "")
+                if ts > buyer_last_order.get(bid, ""):
+                    buyer_last_order[bid] = ts
+            for r in retailers:
+                rid = r["retailer_id"]
+                r["monthly_order_volume"] = buyer_order_count.get(rid, 0)
+                r["total_purchase_amount"] = buyer_total_amount.get(rid, 0)
+                r["last_order_at"] = buyer_last_order.get(rid)
+        except Exception:
+            pass
 
-        # type filter
+        # Filters
         if type == "partner":
-            retailers = [r for r in retailers if r.get("partnership_status") == "partner"]
-        elif type == "all":
-            retailers = [r for r in retailers if r.get("partnership_status") == "partner"]
+            retailers = [r for r in retailers if r["partnership_status"] == "partner"]
         elif type == "discover":
-            retailers = [r for r in retailers if r.get("partnership_status") == "none"]
-
+            retailers = [r for r in retailers if r["partnership_status"] == "none"]
         if search:
             sl = search.lower()
-            retailers = [r for r in retailers if sl in r["name"].lower() or sl in r["city"].lower()]
+            retailers = [r for r in retailers if sl in r["name"].lower() or sl in r.get("city", "").lower()]
         if segment:
             retailers = [r for r in retailers if r["segment"] == segment]
+
+        # Sort: partners first, then by order volume
+        status_order = {"partner": 0, "pending": 1, "none": 2}
+        retailers.sort(key=lambda r: (status_order.get(r["partnership_status"], 99), -r["monthly_order_volume"]))
+
         total = len(retailers)
         start = (page - 1) * limit
         return success_response(
             data={
                 "retailers": retailers[start: start + limit],
-                "summary": {"total": total, "active": sum(1 for r in retailers if r["status"] == "active"),
+                "summary": {"total": total, "active": total,
                             "premium_count": sum(1 for r in retailers if r["segment"] == "premium")},
                 "pagination": {"page": page, "limit": limit, "total": total},
             },
@@ -1520,6 +1784,27 @@ def get_distributors(search: Optional[str] = None, status: Optional[str] = None,
                         d["partnership_status"] = "partner"
                     elif did in pending_ids:
                         d["partnership_status"] = "pending"
+            except Exception:
+                pass
+
+        # Calculate real order volume per distributor from orders table
+        if user_id:
+            try:
+                from collections import Counter
+                orders_res = supabase.table("orders").select("buyer_id, status").eq("seller_id", user_id).execute()
+                buyer_order_count = Counter()
+                buyer_delivered_count = Counter()
+                for o in (orders_res.data or []):
+                    bid = o.get("buyer_id", "")
+                    buyer_order_count[bid] += 1
+                    if o.get("status") == "delivered":
+                        buyer_delivered_count[bid] += 1
+                for d in distributors:
+                    did = d["distributor_id"]
+                    d["order_volume"] = buyer_order_count.get(did, 0)
+                    total_orders = buyer_order_count.get(did, 0)
+                    delivered = buyer_delivered_count.get(did, 0)
+                    d["payment_punctuality"] = round(delivered / max(total_orders, 1) * 100) if total_orders > 0 else 0
             except Exception:
                 pass
 
@@ -1853,18 +2138,19 @@ def update_partnership_request(request_id: str, data: UpdatePartnershipReq):
 # ==========================================
 
 @app.get("/partnerships/summary")
-def get_partnerships_summary(user_id: Optional[str] = None, partner_type: Optional[str] = None):
+def get_partnerships_summary(user_id: Optional[str] = None, partner_type: Optional[str] = None,
+                             current_user: AuthenticatedUser = Depends(get_current_user)):
     try:
+        uid = current_user.user_id
         normalized_partner_type = (partner_type or "").strip().lower()
         if normalized_partner_type and normalized_partner_type not in ("supplier", "retailer"):
             return error_response("partner_type must be 'supplier' or 'retailer'")
 
         query = supabase.table("partnerships").select("*")
-        if user_id:
-            try:
-                query = query.or_(f"supplier_id.eq.{user_id},supplier_name.eq.{user_id},distributor_id.eq.{user_id},retailer_name.eq.{user_id}")
-            except Exception:
-                pass
+        try:
+            query = query.or_(f"supplier_id.eq.{uid},supplier_name.eq.{uid},distributor_id.eq.{uid},retailer_name.eq.{uid}")
+        except Exception:
+            pass
         res = query.execute()
         ps = res.data or []
         if normalized_partner_type == "supplier":
@@ -2177,6 +2463,11 @@ def get_retailer_nft(user_id: str, distributor_id: str):
     return _get_nft({"retailer_id": user_id, "distributor_id": distributor_id})
 
 
+@app.get("/blockchain/partnership-nft/supplier/{user_id}/{distributor_id}")
+def get_supplier_distributor_nft(user_id: str, distributor_id: str):
+    return _get_nft({"supplier_id": user_id, "distributor_id": distributor_id})
+
+
 @app.get("/blockchain/partnership-nft/distributor/{user_id}/{retailer_id}")
 def get_distributor_nft(user_id: str, retailer_id: str):
     return _get_nft({"distributor_id": user_id, "retailer_id": retailer_id})
@@ -2429,15 +2720,15 @@ def analytics_retailer(user_id: Optional[str] = None):
 
 
 @app.get("/analytics/distributor/overview")
-def analytics_distributor(user_id: Optional[str] = None):
+def analytics_distributor(user_id: Optional[str] = None, current_user: AuthenticatedUser = Depends(get_current_user)):
     try:
+        uid = current_user.user_id
         oq = supabase.table("orders").select("*")
-        if user_id:
-            oq = oq.or_(f"buyer_id.eq.{user_id},seller_id.eq.{user_id}")
+        oq = oq.or_(f"buyer_id.eq.{uid},seller_id.eq.{uid}")
         orders = oq.execute().data or []
-        inventory = (supabase.table("inventories").select("*").eq("user_id", user_id).execute().data or []) if user_id else []
-        outbound_orders = [order for order in orders if order.get("seller_id") == user_id]
-        inbound_orders = [order for order in orders if order.get("buyer_id") == user_id]
+        inventory = supabase.table("inventories").select("*").eq("user_id", uid).execute().data or []
+        outbound_orders = [order for order in orders if order.get("seller_id") == uid]
+        inbound_orders = [order for order in orders if order.get("buyer_id") == uid]
         return success_response(
             data=_shared_analytics_response(outbound_orders, inbound_orders, inventory, "seller_id"),
             message="Analytics distributor",
@@ -2447,11 +2738,11 @@ def analytics_distributor(user_id: Optional[str] = None):
 
 
 @app.get("/analytics/supplier/overview")
-def analytics_supplier(user_id: Optional[str] = None):
+def analytics_supplier(user_id: Optional[str] = None, current_user: AuthenticatedUser = Depends(get_current_user)):
     try:
+        uid = current_user.user_id
         oq = supabase.table("orders").select("*")
-        if user_id:
-            oq = oq.eq("seller_id", user_id)
+        oq = oq.eq("seller_id", uid)
         orders = oq.execute().data or []
         delivered_orders = [order for order in orders if order.get("status") == "delivered"]
         now = datetime.utcnow()
@@ -2573,7 +2864,11 @@ KNOWN_CITIES = [
     "Makassar", "Bali", "Denpasar", "Palembang", "Depok", "Bekasi",
     "Tangerang", "Bogor", "Batam", "Pekanbaru", "Malang", "Solo",
     "Banjarmasin", "Balikpapan", "Manado", "Samarinda", "Padang", "Jambi",
+    "Cikarang", "Karawang", "Cirebon", "Lampung", "Pontianak",
 ]
+
+# City aliases for normalization
+CITY_ALIASES = {"Bali": "Denpasar", "Cikarang": "Bekasi", "Karawang": "Bekasi"}
 
 def _extract_city(address: str) -> Optional[str]:
     if not address:
@@ -2581,60 +2876,102 @@ def _extract_city(address: str) -> Optional[str]:
     addr_lower = address.lower()
     for city in KNOWN_CITIES:
         if city.lower() in addr_lower:
-            # Normalize Bali → Denpasar
-            if city == "Bali":
-                return "Denpasar"
-            return city
+            return CITY_ALIASES.get(city, city)
     return None
 
 @app.get("/analytics/supplier/regional")
-def analytics_supplier_regional(user_id: Optional[str] = None, item_id: Optional[str] = None):
+def analytics_supplier_regional(user_id: Optional[str] = None, item_id: Optional[str] = None,
+                                current_user: AuthenticatedUser = Depends(get_current_user)):
     try:
-        from collections import defaultdict
+        from collections import defaultdict, Counter
+        uid = current_user.user_id
+
+        # City coordinates for Indonesian cities
+        CITY_COORDS = {
+            "Jakarta": (-6.2088, 106.8456), "Surabaya": (-7.2575, 112.7521),
+            "Bandung": (-6.9175, 107.6191), "Medan": (3.5952, 98.6722),
+            "Semarang": (-6.9666, 110.4196), "Makassar": (-5.1477, 119.4327),
+            "Palembang": (-2.9761, 104.7754), "Tangerang": (-6.1781, 106.63),
+            "Depok": (-6.4025, 106.7942), "Bekasi": (-6.2383, 106.9756),
+            "Yogyakarta": (-7.7956, 110.3695), "Denpasar": (-8.6705, 115.2126),
+            "Malang": (-7.9666, 112.6326), "Bogor": (-6.5971, 106.806),
+            "Balikpapan": (-1.2654, 116.8312), "Manado": (1.4748, 124.8421),
+            "Pontianak": (-0.0263, 109.3425), "Banjarmasin": (-3.3186, 114.5944),
+            "Padang": (-0.9471, 100.4172), "Lampung": (-5.4500, 105.2667),
+            "Solo": (-7.5755, 110.8243), "Cirebon": (-6.7320, 108.5523),
+            "Batam": (1.0456, 104.0305), "Pekanbaru": (0.5071, 101.4478),
+        }
 
         oq = supabase.table("orders").select("buyer_id, buyer_name, delivery_address, items, created_at, status")
-        if user_id:
-            oq = oq.eq("seller_id", user_id)
+        oq = oq.eq("seller_id", uid)
         orders = oq.execute().data or []
 
         now = datetime.utcnow()
         cutoff_recent = now - timedelta(days=30)
         cutoff_prev = now - timedelta(days=60)
 
-        # Cache buyer_id → region
         buyer_region_cache: dict = {}
+        # Pre-fetch buyer cities from auth metadata
+        buyer_cities: dict = {}
+        try:
+            headers = {"apikey": os.getenv("SUPABASE_KEY", ""), "Authorization": f"Bearer {os.getenv('SUPABASE_KEY', '')}"}
+            resp = requests.get(f"{os.getenv('SUPABASE_URL')}/auth/v1/admin/users", headers=headers, timeout=5)
+            if resp.status_code == 200:
+                for u in resp.json().get("users", []):
+                    meta = u.get("user_metadata", {}) or {}
+                    city = meta.get("city", "")
+                    if city:
+                        buyer_cities[u.get("id", "")] = city
+        except Exception:
+            pass
 
-        def _resolve_region(order: dict) -> Optional[str]:
+        def _resolve_region(order: dict) -> str:
+            # Try delivery_address first (per-order, not cached)
+            region = _extract_city(order.get("delivery_address", ""))
+            if region:
+                return region
+            # Then try buyer cache (from metadata)
             buyer_id = order.get("buyer_id", "")
             if buyer_id in buyer_region_cache:
                 return buyer_region_cache[buyer_id]
-            # Try delivery_address first
-            region = _extract_city(order.get("delivery_address", ""))
-            # Fallback: extract from buyer_name
+            # Try buyer_name
+            region = _extract_city(order.get("buyer_name", ""))
             if not region:
-                region = _extract_city(order.get("buyer_name", ""))
-            # Default: Jakarta for unresolved
-            if not region:
-                region = "Jakarta"
-            buyer_region_cache[buyer_id] = region
-            return region
+                region = _extract_city(buyer_cities.get(buyer_id, ""))
+            if region:
+                buyer_region_cache[buyer_id] = region
+                return region
+            return "Jakarta"
 
         recent: dict = defaultdict(int)
         prev: dict = defaultdict(int)
+        region_distributors: dict = defaultdict(set)
+        region_products: dict = defaultdict(Counter)
 
         for order in orders:
-            if order.get("status") != "delivered":
+            # Include all non-cancelled orders (not just delivered) to show demand
+            if order.get("status") == "cancelled":
                 continue
             region = _resolve_region(order)
             if not region:
                 continue
-            items = order.get("items") or []
+            items_list = order.get("items") or []
             if item_id:
-                vol = sum(_item_qty(it) for it in items if it.get("item_id") == item_id or it.get("id") == item_id or _item_name(it) == item_id)
+                item_id_lower = item_id.lower()
+                vol = sum(_item_qty(it) for it in items_list if it.get("item_id") == item_id or it.get("id") == item_id or item_id_lower in (_item_name(it) or "").lower() or (_item_name(it) or "").lower() in item_id_lower)
             else:
-                vol = sum(_item_qty(it) for it in items)
+                vol = sum(_item_qty(it) for it in items_list)
             if vol <= 0:
                 continue
+
+            # Track distributors per region
+            region_distributors[region].add(order.get("buyer_id", ""))
+
+            # Track products per region
+            for it in items_list:
+                pname = _item_name(it) or "Unknown"
+                region_products[region][pname] += _item_qty(it)
+
             ts = _parse_ts(order.get("created_at", "")) or now
             if ts >= cutoff_recent:
                 recent[region] += vol
@@ -2649,10 +2986,16 @@ def analytics_supplier_regional(user_id: Optional[str] = None, item_id: Optional
         for region in all_regions:
             r_vol = recent.get(region, 0)
             p_vol = prev.get(region, 0)
+            coords = CITY_COORDS.get(region, (-6.2, 106.8))
+            top_prods = [{"name": n, "qty": q} for n, q in region_products[region].most_common(3)]
             regions.append({
                 "region": region,
                 "demand_score": r_vol,
                 "growth_pct": _period_growth_pct(r_vol, p_vol),
+                "lat": coords[0],
+                "lng": coords[1],
+                "distributor_count": len(region_distributors[region]),
+                "top_products": top_prods,
             })
 
         regions.sort(key=lambda x: x["demand_score"], reverse=True)
@@ -2967,14 +3310,14 @@ def get_demand(period: str = "monthly", user_id: Optional[str] = None):
 # ==========================================
 
 @app.get("/logistics/shipments")
-def get_shipments(user_id: Optional[str] = None):
+def get_shipments(user_id: Optional[str] = None, current_user: AuthenticatedUser = Depends(get_current_user)):
     try:
+        uid = current_user.user_id
         query = supabase.table("shipments").select("*")
-        if user_id:
-            try:
-                query = query.or_(f"sender_id.eq.{user_id},receiver_id.eq.{user_id}")
-            except Exception:
-                pass
+        try:
+            query = query.or_(f"sender_id.eq.{uid},receiver_id.eq.{uid}")
+        except Exception:
+            pass
         res = query.execute()
         shipments = [
             {"id": s.get("id"), "order_id": s.get("order_id"), "retailer_name": s.get("retailer_name", ""),
@@ -3009,14 +3352,15 @@ def optimize_route(shipment_id: str):
 # ==========================================
 
 @app.get("/credit/accounts")
-def get_credit_accounts(user_id: Optional[str] = None, page: int = 1, limit: int = 20):
+def get_credit_accounts(user_id: Optional[str] = None, page: int = 1, limit: int = 20,
+                        current_user: AuthenticatedUser = Depends(get_current_user)):
     try:
+        uid = current_user.user_id
         query = supabase.table("credit_accounts").select("*")
-        if user_id:
-            try:
-                query = query.eq("distributor_id", user_id)
-            except Exception:
-                pass
+        try:
+            query = query.eq("distributor_id", uid)
+        except Exception:
+            pass
         res = query.execute()
         accounts = [
             {
@@ -3332,50 +3676,75 @@ AGENT_PROMPTS = {
     # ── SUPPLIER AGENTS ──
     "demand_forecast": {
         "scope": "supplier",
-        "query": lambda uid, r: supabase.table("orders").select("*").eq("seller_id", uid).limit(30).execute(),
+        "query": lambda uid, r: supabase.table("orders").select("buyer_name, items, status, created_at").eq("seller_id", uid).order("created_at", desc=True).limit(15).execute(),
         "prompt": lambda data, uid: (
-            "You are a Supplier Agent in a supply chain. Your scope: analyze distributor demand ONLY. You MUST NOT access retailer or consumer data.\n\n"
-            f"DATA (orders placed with this supplier): {json.dumps(data[:20] if data else [], default=str)}\n\n"
-            "INSTRUCTIONS:\n"
-            "1. Analyze demand trends from distributor orders.\n"
-            "2. Predict production needs for the next 7-14 days.\n"
-            "3. Detect any demand spikes or drops.\n"
-            "4. Flag products that may need increased production.\n\n"
-            "RETURN ONLY VALID JSON. No markdown, no explanation text. Use this exact schema:\n"
-            '{"agent_type":"Supplier Agent","urgency_level":"MEDIUM","role_scope_valid":true,'
-            '"demand_analysis":{"top_requested_products":[],"demand_trend":"stable","detected_spikes":[],"predicted_shortages":[]},'
-            '"analysis":{"issue_detected":"NONE","reason":"","confidence_score":0.0},'
-            '"recommended_action":{"action_type":"PREPARE_SHIPMENT|INCREASE_PRODUCTION|DELAY_WARNING|NONE","details":"","urgency_timeline_days":0},'
+            "You are a supply chain AI for a SUPPLIER. Analyze these orders placed by distributors.\n\n"
+            f"ORDER DATA: {json.dumps(data[:10] if data else [], default=str)}\n\n"
+            "YOUR TASK:\n"
+            "1. Identify which products are ordered most frequently and in highest quantities.\n"
+            "2. Detect if any product has increasing or decreasing order volume over time.\n"
+            "3. Predict which products need increased production in the next 7-14 days.\n"
+            "4. Be SPECIFIC — name actual products, quantities, and dates from the data.\n\n"
+            "RULES FOR FILLING JSON:\n"
+            "- issue_detected: pick ONE of DEMAND_SPIKE, DEMAND_DROP, or NONE\n"
+            "- reason: write 1-2 sentences explaining WHAT is happening and WHY (mention product names and numbers)\n"
+            "- confidence_score: 0.0-1.0 based on how much data supports your conclusion\n"
+            "- action_type: pick ONE of PREPARE_SHIPMENT, INCREASE_PRODUCTION, DELAY_WARNING, or NONE\n"
+            "- In demand_analysis, list actual product names from the data\n\n"
+            "RETURN ONLY THIS JSON (fill in real values):\n"
+            '{"agent_type":"Supplier Agent","urgency_level":"HIGH or MEDIUM or LOW",'
+            '"demand_analysis":{"top_requested_products":["product name (qty)"],"demand_trend":"increasing or decreasing or stable","detected_spikes":["product name: +X% this week"],"predicted_shortages":["product name: will run out in N days"]},'
+            '"analysis":{"issue_detected":"DEMAND_SPIKE","reason":"Specific explanation with product names and numbers","confidence_score":0.85},'
+            '"recommended_action":{"action_type":"INCREASE_PRODUCTION","details":"Produce X more units of Product Y to meet projected demand","urgency_timeline_days":7},'
             '"system_flags":{"requires_human_approval":true,"auto_execute_allowed":false}}'
         ),
     },
     "logistics_optimization": {
         "scope": "supplier",
-        "query": lambda uid, r: supabase.table("shipments").select("*").eq("sender_id", uid).execute(),
+        "query": lambda uid, r: supabase.table("shipments").select("destination, status, eta, carrier, created_at").eq("sender_id", uid).limit(15).execute(),
         "prompt": lambda data, uid: (
-            "You are a Supplier Logistics Agent. Your scope: optimize shipments to distributors ONLY.\n\n"
-            f"DATA (supplier shipments): {json.dumps(data[:20] if data else [], default=str)}\n\n"
-            "Analyze shipment routes and delivery performance. Identify delayed or inefficient routes.\n\n"
-            "RETURN ONLY VALID JSON:\n"
-            '{"agent_type":"Supplier Agent","urgency_level":"LOW","role_scope_valid":true,'
-            '"shipment_analysis":{"total_shipments":0,"delayed_count":0,"on_time_rate":0,"avg_delivery_hours":0},'
-            '"analysis":{"issue_detected":"DELAYED_ROUTE|INEFFICIENT_CARRIER|NONE","reason":"","confidence_score":0.0},'
-            '"recommended_action":{"action_type":"REROUTE|CHANGE_CARRIER|NONE","carrier_recommendation":"","estimated_savings_idr":0},'
+            "You are a logistics AI for a SUPPLIER. Analyze shipment performance to distributors.\n\n"
+            f"SHIPMENT DATA: {json.dumps(data[:20] if data else [], default=str)}\n\n"
+            "YOUR TASK:\n"
+            "1. Calculate on-time delivery rate.\n"
+            "2. Identify delayed shipments — which destination, how late, to which distributor.\n"
+            "3. Recommend specific improvements (route changes, carrier switches).\n"
+            "4. Be SPECIFIC — mention destination names, carrier names, and delay durations. NEVER include raw IDs or UUIDs in your response.\n\n"
+            "RULES FOR FILLING JSON:\n"
+            "- issue_detected: pick ONE of DELAYED_ROUTE, INEFFICIENT_CARRIER, or NONE\n"
+            "- reason: explain which shipments are delayed and by how much\n"
+            "- action_type: pick ONE of REROUTE, CHANGE_CARRIER, or NONE\n\n"
+            "RETURN ONLY THIS JSON (fill in real values):\n"
+            '{"agent_type":"Supplier Agent","urgency_level":"HIGH or MEDIUM or LOW",'
+            '"shipment_analysis":{"total_shipments":0,"delayed_count":0,"on_time_rate":95.0,"avg_delivery_hours":48},'
+            '"analysis":{"issue_detected":"DELAYED_ROUTE","reason":"3 shipments to Distributor X delayed by 2+ days due to route congestion","confidence_score":0.8},'
+            '"recommended_action":{"action_type":"REROUTE","carrier_recommendation":"Switch to JNE for Surabaya route","estimated_savings_idr":150000},'
             '"system_flags":{"requires_human_approval":true,"auto_execute_allowed":false}}'
         ),
     },
     "price_optimization": {
         "scope": "supplier",
-        "query": lambda uid, r: supabase.table("inventories").select("*").eq("user_id", uid).execute(),
+        "query": lambda uid, r: supabase.table("inventories").select("product_name, current_stock, min_threshold, unit, category, price").eq("user_id", uid).limit(20).execute(),
         "prompt": lambda data, uid: (
-            "You are a Supplier Pricing Agent. Your scope: optimize pricing based on supply-demand for distributor-facing products.\n\n"
-            f"DATA (supplier inventory): {json.dumps(data[:20] if data else [], default=str)}\n\n"
-            "Analyze inventory levels, unit prices, and stock velocity. Recommend price adjustments.\n\n"
-            "RETURN ONLY VALID JSON:\n"
-            '{"agent_type":"Supplier Agent","urgency_level":"LOW","role_scope_valid":true,'
-            '"pricing_analysis":{"total_products":0,"overstocked":[],"underpriced":[],"overpriced":[]},'
-            '"analysis":{"issue_detected":"PRICE_GAP|OVERSTOCK|NONE","reason":"","confidence_score":0.0},'
-            '"recommended_action":{"action_type":"ADJUST_PRICE|DISCOUNT|NONE","target_product":"","current_price":0,"recommended_price":0,"estimated_revenue_impact_idr":0},'
+            "You are a pricing AI for a SUPPLIER. Analyze inventory and recommend price changes.\n\n"
+            f"INVENTORY DATA: {json.dumps(data[:20] if data else [], default=str)}\n\n"
+            "YOUR TASK:\n"
+            "1. Find products with stock far ABOVE min_stock (overstocked) — these may need a discount to move.\n"
+            "2. Find products with stock BELOW min_stock (understocked) — high demand, consider price increase.\n"
+            "3. Compare current prices to stock levels to find pricing mismatches.\n"
+            "4. Be SPECIFIC — name the product, current price, current stock vs min_stock, and recommended new price.\n\n"
+            "RULES FOR FILLING JSON:\n"
+            "- issue_detected: pick ONE of PRICE_GAP, OVERSTOCK, or NONE\n"
+            "- reason: explain which product has the issue and why (e.g. 'Granulated Sugar has 200 units vs min 50, price Rp12,000 — recommend 10% discount to move stock')\n"
+            "- confidence_score: higher if the gap between stock and min_stock is large\n"
+            "- action_type: pick ONE of ADJUST_PRICE, DISCOUNT, or NONE\n"
+            "- target_product: the specific product name\n"
+            "- recommended_price: your suggested new price in IDR\n\n"
+            "RETURN ONLY THIS JSON (fill in real values):\n"
+            '{"agent_type":"Supplier Agent","urgency_level":"HIGH or MEDIUM or LOW",'
+            '"pricing_analysis":{"total_products":10,"overstocked":["Product A (stock: 200, min: 50)"],"underpriced":["Product B at Rp5000 but high demand"],"overpriced":["Product C at Rp15000 but no movement"]},'
+            '"analysis":{"issue_detected":"OVERSTOCK","reason":"Granulated Sugar 1kg has 200 units (min: 50), sitting idle. Recommend 10% discount from Rp12,000 to Rp10,800 to accelerate sales.","confidence_score":0.82},'
+            '"recommended_action":{"action_type":"DISCOUNT","target_product":"Granulated Sugar 1kg","current_price":12000,"recommended_price":10800,"estimated_revenue_impact_idr":240000},'
             '"system_flags":{"requires_human_approval":true,"auto_execute_allowed":false}}'
         ),
     },
@@ -3383,16 +3752,24 @@ AGENT_PROMPTS = {
     # ── DISTRIBUTOR AGENTS ──
     "auto_restock": {
         "scope": "distributor",
-        "query": lambda uid, r: supabase.table("inventories").select("*").eq("user_id", uid).execute(),
+        "query": lambda uid, r: supabase.table("inventories").select("product_name, current_stock, min_threshold, unit, category").eq("user_id", uid).limit(20).execute(),
         "prompt": lambda data, uid: (
-            "You are a Distributor Restock Agent. Scope: monitor distributor inventory, detect low stock, recommend restock from connected suppliers. MUST NOT access retailers directly.\n\n"
-            f"DATA (distributor inventory): {json.dumps(data[:30] if data else [], default=str)}\n\n"
-            "Identify products below minimum threshold. Calculate restock quantities based on weekly sales velocity.\n\n"
-            "RETURN ONLY VALID JSON:\n"
-            '{"agent_type":"Distributor Agent","urgency_level":"MEDIUM","role_scope_valid":true,'
-            '"inventory_status":{"total_products":0,"low_stock_products":[],"healthy_stock_products":[],"low_stock_count":0},'
-            '"analysis":{"issue_detected":"LOW_STOCK|CRITICAL_STOCK|NONE","reason":"","confidence_score":0.0},'
-            '"recommended_action":{"action_type":"RESTOCK_NOW|CREATE_PURCHASE_ORDER|MONITOR_STOCK|NONE","recommended_products":[],"estimated_cost_idr":0},'
+            "You are a restock AI for a DISTRIBUTOR. Analyze inventory and recommend what to reorder from suppliers.\n\n"
+            f"INVENTORY DATA: {json.dumps(data[:30] if data else [], default=str)}\n\n"
+            "YOUR TASK:\n"
+            "1. Find products where stock <= min_stock (critical) or stock is 0 (out of stock).\n"
+            "2. For each low-stock product, recommend reorder quantity = (min_stock * 2) - current_stock.\n"
+            "3. Prioritize by urgency: out_of_stock > below min_stock > approaching min_stock.\n"
+            "4. Be SPECIFIC — name each product, its current stock, min_stock, and how many to reorder.\n\n"
+            "RULES:\n"
+            "- issue_detected: pick ONE of CRITICAL_STOCK, LOW_STOCK, or NONE\n"
+            "- reason: list the critical products with numbers (e.g. 'Kopi ABC at 0/24 units, Instant Noodle at 5/180 units')\n"
+            "- action_type: pick ONE of RESTOCK_NOW, CREATE_PURCHASE_ORDER, MONITOR_STOCK, or NONE\n\n"
+            "RETURN ONLY THIS JSON (fill in real values):\n"
+            '{"agent_type":"Distributor Agent","urgency_level":"HIGH or MEDIUM or LOW",'
+            '"inventory_status":{"total_products":10,"low_stock_count":3,"low_stock_products":["Kopi ABC (0/24)","Instant Noodle (5/180)"],"healthy_stock_products":["Sugar (200/50)"]},'
+            '"analysis":{"issue_detected":"CRITICAL_STOCK","reason":"3 products critically low: Kopi ABC at 0 units (min 24), Instant Noodle at 5 units (min 180). Immediate restock needed.","confidence_score":0.95},'
+            '"recommended_action":{"action_type":"RESTOCK_NOW","recommended_products":["Kopi ABC: order 48 units","Instant Noodle: order 355 units"],"estimated_cost_idr":2500000},'
             '"system_flags":{"requires_human_approval":true,"auto_execute_allowed":false}}'
         ),
     },
@@ -3400,14 +3777,22 @@ AGENT_PROMPTS = {
         "scope": "distributor",
         "query": lambda uid, r: supabase.table("credit_accounts").select("*").eq("distributor_id", uid).execute(),
         "prompt": lambda data, uid: (
-            "You are a Distributor Credit Risk Agent. Scope: analyze retailer credit accounts under this distributor ONLY.\n\n"
-            f"DATA (distributor credit accounts): {json.dumps(data[:20] if data else [], default=str)}\n\n"
-            "Identify high-risk retailers. Recommend credit limit adjustments. Flag overdue accounts.\n\n"
-            "RETURN ONLY VALID JSON:\n"
-            '{"agent_type":"Distributor Agent","urgency_level":"MEDIUM","role_scope_valid":true,'
-            '"credit_analysis":{"total_accounts":0,"high_risk_count":0,"overdue_count":0,"total_outstanding_idr":0,"risky_retailers":[]},'
-            '"analysis":{"issue_detected":"HIGH_RISK_DETECTED|OVERDUE_ACCOUNT|CREDIT_OVERUTILIZED|NONE","reason":"","confidence_score":0.0},'
-            '"recommended_action":{"action_type":"REDUCE_LIMIT|SUSPEND_ACCOUNT|INCREASE_LIMIT|NONE","target_retailer_id":"","suggested_new_limit":0},'
+            "You are a credit risk AI for a DISTRIBUTOR. Analyze retailer credit accounts.\n\n"
+            f"CREDIT DATA: {json.dumps(data[:20] if data else [], default=str)}\n\n"
+            "YOUR TASK:\n"
+            "1. Find retailers with high utilization (used > 80% of limit).\n"
+            "2. Find overdue accounts (past due date).\n"
+            "3. Recommend credit limit changes with specific amounts.\n"
+            "4. Be SPECIFIC — name the retailer, their current balance, limit, and risk level.\n\n"
+            "RULES:\n"
+            "- issue_detected: pick ONE of HIGH_RISK_DETECTED, OVERDUE_ACCOUNT, CREDIT_OVERUTILIZED, or NONE\n"
+            "- reason: explain which retailer is risky and why (amounts, percentages)\n"
+            "- action_type: pick ONE of REDUCE_LIMIT, SUSPEND_ACCOUNT, INCREASE_LIMIT, or NONE\n\n"
+            "RETURN ONLY THIS JSON (fill in real values):\n"
+            '{"agent_type":"Distributor Agent","urgency_level":"HIGH or MEDIUM or LOW",'
+            '"credit_analysis":{"total_accounts":5,"high_risk_count":1,"overdue_count":0,"total_outstanding_idr":5000000,"risky_retailers":["Retailer X: Rp4.5M/Rp5M (90% utilized)"]},'
+            '"analysis":{"issue_detected":"CREDIT_OVERUTILIZED","reason":"Retailer Maju Jaya using 90% of Rp5M credit limit with 2 late payments in last 30 days.","confidence_score":0.88},'
+            '"recommended_action":{"action_type":"REDUCE_LIMIT","target_retailer_id":"retailer-id","suggested_new_limit":3000000},'
             '"system_flags":{"requires_human_approval":true,"auto_execute_allowed":false}}'
         ),
     },
@@ -3415,14 +3800,22 @@ AGENT_PROMPTS = {
         "scope": "distributor",
         "query": lambda uid, r: supabase.table("partnerships").select("*").or_(f"distributor_id.eq.{uid},distributor_name.eq.{uid}").execute(),
         "prompt": lambda data, uid: (
-            "You are a Distributor Supplier Recommendation Agent. Scope: analyze existing partnerships and recommend new supplier connections for this distributor. MUST NOT recommend unverified suppliers.\n\n"
-            f"DATA (current distributor partnerships): {json.dumps(data[:20] if data else [], default=str)}\n\n"
-            "Identify underperforming suppliers. Detect gaps in product coverage. Recommend supplier expansion.\n\n"
-            "RETURN ONLY VALID JSON:\n"
-            '{"agent_type":"Distributor Agent","urgency_level":"LOW","role_scope_valid":true,'
-            '"partnership_analysis":{"total_suppliers":0,"top_performers":[],"underperformers":[],"product_gaps":[]},'
-            '"analysis":{"issue_detected":"SUPPLIER_GAP|UNDERPERFORMER|NONE","reason":"","confidence_score":0.0},'
-            '"recommended_action":{"action_type":"ONBOARD_SUPPLIER|REVIEW_PARTNERSHIP|NONE","recommended_category":"","expected_benefit":""},'
+            "You are a partnership AI for a DISTRIBUTOR. Analyze current supplier partnerships.\n\n"
+            f"PARTNERSHIP DATA: {json.dumps(data[:20] if data else [], default=str)}\n\n"
+            "YOUR TASK:\n"
+            "1. Evaluate each supplier partnership — fulfillment rate, reliability.\n"
+            "2. Identify underperforming suppliers (late deliveries, rejected orders).\n"
+            "3. Identify product categories not covered by current suppliers.\n"
+            "4. Be SPECIFIC — name suppliers and their performance metrics.\n\n"
+            "RULES:\n"
+            "- issue_detected: pick ONE of SUPPLIER_GAP, UNDERPERFORMER, or NONE\n"
+            "- reason: explain which supplier is underperforming or what category is missing\n"
+            "- action_type: pick ONE of ONBOARD_SUPPLIER, REVIEW_PARTNERSHIP, or NONE\n\n"
+            "RETURN ONLY THIS JSON (fill in real values):\n"
+            '{"agent_type":"Distributor Agent","urgency_level":"HIGH or MEDIUM or LOW",'
+            '"partnership_analysis":{"total_suppliers":3,"top_performers":["Supplier A: 98% fulfillment"],"underperformers":["Supplier B: 72% fulfillment, 5 late deliveries"],"product_gaps":["No dairy supplier currently"]},'
+            '"analysis":{"issue_detected":"UNDERPERFORMER","reason":"Supplier B has 72% fulfillment rate with 5 late deliveries this month. Consider reviewing terms or finding alternative.","confidence_score":0.78},'
+            '"recommended_action":{"action_type":"REVIEW_PARTNERSHIP","recommended_category":"dairy","expected_benefit":"Reduce stockouts for milk products by 40%"},'
             '"system_flags":{"requires_human_approval":true,"auto_execute_allowed":false}}'
         ),
     },
@@ -3430,14 +3823,22 @@ AGENT_PROMPTS = {
         "scope": "distributor",
         "query": lambda uid, r: supabase.table("invoices").select("*").or_(f"buyer_id.eq.{uid},seller_id.eq.{uid}").execute(),
         "prompt": lambda data, uid: (
-            "You are a Distributor Cash Flow Agent. Scope: analyze invoices and payment schedules for this distributor ONLY.\n\n"
-            f"DATA (distributor invoices): {json.dumps(data[:25] if data else [], default=str)}\n\n"
-            "Identify overdue invoices. Recommend payment prioritization. Optimize cash flow timing.\n\n"
-            "RETURN ONLY VALID JSON:\n"
-            '{"agent_type":"Distributor Agent","urgency_level":"MEDIUM","role_scope_valid":true,'
-            '"cashflow_analysis":{"total_payable":0,"total_receivable":0,"overdue_payable":0,"overdue_receivable":0,"net_cash_position":0},'
-            '"analysis":{"issue_detected":"NEGATIVE_CASHFLOW|OVERDUE_RISK|NONE","reason":"","confidence_score":0.0},'
-            '"recommended_action":{"action_type":"PRIORITIZE_PAYMENT|DELAY_PAYMENT|COLLECT_RECEIVABLE|NONE","target_invoice_id":"","estimated_cashflow_impact_idr":0},'
+            "You are a cash flow AI for a DISTRIBUTOR. Analyze invoices and payment timing.\n\n"
+            f"INVOICE DATA: {json.dumps(data[:25] if data else [], default=str)}\n\n"
+            "YOUR TASK:\n"
+            "1. Calculate total payable (you owe suppliers) vs total receivable (retailers owe you).\n"
+            "2. Find overdue invoices — both payable and receivable.\n"
+            "3. Recommend payment prioritization to optimize cash position.\n"
+            "4. Be SPECIFIC — mention invoice amounts, due dates, and which party.\n\n"
+            "RULES:\n"
+            "- issue_detected: pick ONE of NEGATIVE_CASHFLOW, OVERDUE_RISK, or NONE\n"
+            "- reason: explain the cash flow situation with numbers (e.g. 'Rp8M payable due in 3 days but only Rp3M receivable collected')\n"
+            "- action_type: pick ONE of PRIORITIZE_PAYMENT, DELAY_PAYMENT, COLLECT_RECEIVABLE, or NONE\n\n"
+            "RETURN ONLY THIS JSON (fill in real values):\n"
+            '{"agent_type":"Distributor Agent","urgency_level":"HIGH or MEDIUM or LOW",'
+            '"cashflow_analysis":{"total_payable":8000000,"total_receivable":12000000,"overdue_payable":2000000,"overdue_receivable":3500000,"net_cash_position":4000000},'
+            '"analysis":{"issue_detected":"OVERDUE_RISK","reason":"Rp3.5M receivable overdue from 2 retailers. Rp2M payment to Supplier X due in 3 days. Need to collect before paying.","confidence_score":0.85},'
+            '"recommended_action":{"action_type":"COLLECT_RECEIVABLE","target_invoice_id":"inv-123","estimated_cashflow_impact_idr":3500000},'
             '"system_flags":{"requires_human_approval":true,"auto_execute_allowed":false}}'
         ),
     },
@@ -3447,44 +3848,68 @@ AGENT_PROMPTS = {
         "scope": "retailer",
         "query": lambda uid, r: supabase.table("inventories").select("*").eq("user_id", uid).execute(),
         "prompt": lambda data, uid: (
-            "You are a Retailer Reorder Agent. Scope: monitor retail stock levels and recommend reorders from connected distributors. MUST NOT order from suppliers directly.\n\n"
-            f"DATA (retailer inventory): {json.dumps(data[:30] if data else [], default=str)}\n\n"
-            "Identify fast-moving products that need reorder. Calculate optimal reorder quantity based on sales velocity.\n\n"
-            "RETURN ONLY VALID JSON:\n"
-            '{"agent_type":"Retailer Agent","urgency_level":"MEDIUM","role_scope_valid":true,'
-            '"inventory_status":{"total_products":0,"low_stock_products":[],"fast_moving_products":[],"reorder_recommendations":[]},'
-            '"analysis":{"issue_detected":"LOW_STOCK|FAST_MOVING|NONE","reason":"","confidence_score":0.0},'
-            '"recommended_action":{"action_type":"REORDER_PRODUCT|LOW_STOCK_ALERT|NONE","recommended_order_value_idr":0,"suggested_distributor":""},'
+            "You are a restock AI for a RETAILER. Analyze inventory and recommend what to reorder from distributors.\n\n"
+            f"INVENTORY DATA: {json.dumps(data[:30] if data else [], default=str)}\n\n"
+            "YOUR TASK:\n"
+            "1. Find products where stock <= min_stock or stock is 0.\n"
+            "2. For each, recommend reorder quantity = (min_stock * 2) - current_stock.\n"
+            "3. Estimate cost based on unit price * reorder quantity.\n"
+            "4. Be SPECIFIC — name each product, current stock, min_stock, and reorder qty.\n\n"
+            "RULES:\n"
+            "- issue_detected: pick ONE of LOW_STOCK, FAST_MOVING, or NONE\n"
+            "- reason: list critical products with numbers\n"
+            "- action_type: pick ONE of REORDER_PRODUCT, LOW_STOCK_ALERT, or NONE\n\n"
+            "RETURN ONLY THIS JSON (fill in real values):\n"
+            '{"agent_type":"Retailer Agent","urgency_level":"HIGH or MEDIUM or LOW",'
+            '"inventory_status":{"total_products":10,"low_stock_products":["Kopi ABC (2/20)","Mie Goreng (0/50)"],"fast_moving_products":["Teh Botol: sells 30/week"],"reorder_recommendations":["Kopi ABC: order 38 units @ Rp8,000 = Rp304,000"]},'
+            '"analysis":{"issue_detected":"LOW_STOCK","reason":"2 products critically low: Kopi ABC at 2 units (min 20), Mie Goreng out of stock (min 50). Both are fast-moving items.","confidence_score":0.92},'
+            '"recommended_action":{"action_type":"REORDER_PRODUCT","recommended_order_value_idr":1500000,"suggested_distributor":"nearest partner distributor"},'
             '"system_flags":{"requires_human_approval":true,"auto_execute_allowed":false}}'
         ),
     },
     "retailer_sales_trend": {
         "scope": "retailer",
-        "query": lambda uid, r: supabase.table("orders").select("*").eq("buyer_id", uid).limit(50).execute(),
+        "query": lambda uid, r: supabase.table("orders").select("items, status, created_at, total_amount").eq("buyer_id", uid).order("created_at", desc=True).limit(15).execute(),
         "prompt": lambda data, uid: (
-            "You are a Retailer Sales Trend Agent. Scope: analyze retail sales data and consumer demand patterns. MUST NOT access supplier data directly.\n\n"
-            f"DATA (retailer purchase orders): {json.dumps(data[:20] if data else [], default=str)}\n\n"
-            "Analyze buying patterns, identify trends, detect declining products, flag seasonal spikes.\n\n"
-            "RETURN ONLY VALID JSON:\n"
-            '{"agent_type":"Retailer Agent","urgency_level":"LOW","role_scope_valid":true,'
-            '"sales_analysis":{"trending_up":[],"trending_down":[],"seasonal_patterns":[],"monthly_spend_trend":"stable"},'
-            '"analysis":{"issue_detected":"DECLINING_TREND|SEASONAL_SPIKE|NONE","reason":"","confidence_score":0.0},'
-            '"recommended_action":{"action_type":"SALES_TREND_WARNING|PROMOTE_PRODUCT|NONE","details":"","projected_next_month_idr":0},'
+            "You are a sales trend AI for a RETAILER. Analyze purchase history to find patterns.\n\n"
+            f"ORDER DATA: {json.dumps(data[:20] if data else [], default=str)}\n\n"
+            "YOUR TASK:\n"
+            "1. Identify products with increasing order frequency (trending up).\n"
+            "2. Identify products with decreasing orders (trending down).\n"
+            "3. Detect seasonal patterns (e.g. more ice cream in summer).\n"
+            "4. Be SPECIFIC — name products and their trend direction with percentages.\n\n"
+            "RULES:\n"
+            "- issue_detected: pick ONE of DECLINING_TREND, SEASONAL_SPIKE, or NONE\n"
+            "- reason: explain which product is declining/spiking and by how much\n"
+            "- action_type: pick ONE of SALES_TREND_WARNING, PROMOTE_PRODUCT, or NONE\n\n"
+            "RETURN ONLY THIS JSON (fill in real values):\n"
+            '{"agent_type":"Retailer Agent","urgency_level":"HIGH or MEDIUM or LOW",'
+            '"sales_analysis":{"trending_up":["Kopi ABC: +25% orders this month"],"trending_down":["Mie Instant: -15% vs last month"],"seasonal_patterns":["Ice products spike in dry season"],"monthly_spend_trend":"increasing"},'
+            '"analysis":{"issue_detected":"DECLINING_TREND","reason":"Mie Instant orders dropped 15% this month compared to last month. May indicate customer preference shift or competitor pricing.","confidence_score":0.75},'
+            '"recommended_action":{"action_type":"PROMOTE_PRODUCT","details":"Consider bundling Mie Instant with popular items or running a discount to recover volume","projected_next_month_idr":3200000},'
             '"system_flags":{"requires_human_approval":true,"auto_execute_allowed":false}}'
         ),
     },
     "retailer_demand_insight": {
         "scope": "retailer",
-        "query": lambda uid, r: supabase.table("orders").select("*").eq("buyer_id", uid).limit(50).execute(),
+        "query": lambda uid, r: supabase.table("orders").select("items, status, created_at, total_amount").eq("buyer_id", uid).order("created_at", desc=True).limit(15).execute(),
         "prompt": lambda data, uid: (
-            "You are a Retailer Demand Insight Agent. Scope: predict consumer demand based on retail purchase history. MUST NOT recommend supplier-direct ordering.\n\n"
-            f"DATA (retailer orders): {json.dumps(data[:20] if data else [], default=str)}\n\n"
-            "Forecast demand for next 7-14 days. Identify products retailers should stock up on. Detect changing consumer preferences.\n\n"
-            "RETURN ONLY VALID JSON:\n"
-            '{"agent_type":"Retailer Agent","urgency_level":"MEDIUM","role_scope_valid":true,'
-            '"demand_forecast":{"predicted_top_products":[],"confidence_by_product":{},"forecast_period_days":14},'
-            '"analysis":{"issue_detected":"DEMAND_SURGE|DEMAND_DROP|NONE","reason":"","confidence_score":0.0},'
-            '"recommended_action":{"action_type":"STOCK_UP|REDUCE_ORDER|MONITOR|NONE","details":"","estimated_impact_idr":0},'
+            "You are a demand forecast AI for a RETAILER. Predict what to stock up on next.\n\n"
+            f"ORDER DATA: {json.dumps(data[:20] if data else [], default=str)}\n\n"
+            "YOUR TASK:\n"
+            "1. Based on order history, predict which products will be needed most in next 7-14 days.\n"
+            "2. Estimate quantities based on average order frequency.\n"
+            "3. Flag products where demand is changing (up or down).\n"
+            "4. Be SPECIFIC — name products, predicted quantities, and confidence level.\n\n"
+            "RULES:\n"
+            "- issue_detected: pick ONE of DEMAND_SURGE, DEMAND_DROP, or NONE\n"
+            "- reason: explain what's driving the demand change\n"
+            "- action_type: pick ONE of STOCK_UP, REDUCE_ORDER, MONITOR, or NONE\n\n"
+            "RETURN ONLY THIS JSON (fill in real values):\n"
+            '{"agent_type":"Retailer Agent","urgency_level":"HIGH or MEDIUM or LOW",'
+            '"demand_forecast":{"predicted_top_products":["Kopi ABC: ~50 units needed","Gula Pasir: ~30 units needed"],"confidence_by_product":{"Kopi ABC":0.85,"Gula Pasir":0.7},"forecast_period_days":14},'
+            '"analysis":{"issue_detected":"DEMAND_SURGE","reason":"Kopi ABC orders increased 40% over last 2 weeks. Predict continued high demand — stock up to avoid stockout.","confidence_score":0.82},'
+            '"recommended_action":{"action_type":"STOCK_UP","details":"Order 50 units of Kopi ABC and 30 units of Gula Pasir within next 3 days","estimated_impact_idr":800000},'
             '"system_flags":{"requires_human_approval":true,"auto_execute_allowed":false}}'
         ),
     },
@@ -3511,10 +3936,10 @@ def _execute_agent(agent_key: str, agent: dict, role: str, user_id: str) -> dict
 
     # 3. Call Gemini with strict JSON enforcement
     import os
-    if not OPENROUTER_KEY:
-        raise RuntimeError("OPENROUTER_API_KEY not configured")
+    if not OPENROUTER_KEY and not GEMINI_KEY and not GROQ_KEY:
+        raise RuntimeError("No AI API keys configured")
     ai_text = _call_ai(
-        prompt + "\n\nIMPORTANT: Return ONLY the JSON object. No markdown code blocks, no backticks, no explanatory text. Start with { and end with }."
+        prompt + "\n\nIMPORTANT: Return ONLY the JSON object. No markdown code blocks, no backticks, no explanatory text. Start with { and end with }. For action_type and issue_detected, pick EXACTLY ONE option from the choices — do NOT return multiple options separated by |."
     ).strip()
 
     # 4. Parse JSON — strip markdown if present
@@ -3575,6 +4000,12 @@ def run_ai_agent(agent_key: str,
         reason = analysis.get("reason", "")
         action_type = action.get("action_type", "NONE")
         confidence = analysis.get("confidence_score", 0)
+
+        # Clean template literals (AI returned enum options instead of choosing)
+        if "|" in action_type:
+            action_type = action_type.split("|")[0].strip()
+        if "|" in issue:
+            issue = issue.split("|")[0].strip()
 
         issue_label = issue.replace("_", " ").title() if issue not in ("NONE", "PARSE_ERROR") else ""
         action_label = action_type.replace("_", " ").title() if action_type != "NONE" else "No Action"
@@ -3641,7 +4072,15 @@ def auto_tick_agents(x_user_role: Optional[str] = Header(default=None),
                 reason = analysis.get("reason", "")
                 action_type = action.get("action_type", "NONE")
                 confidence = analysis.get("confidence_score", 0)
-                has_finding = issue not in ("NONE", "PARSE_ERROR") and action_type != "NONE"
+                # Reject template literals (AI returned enum options instead of choosing one)
+                is_template = "|" in action_type or "|" in issue
+                has_finding = not is_template and issue not in ("NONE", "PARSE_ERROR") and action_type != "NONE"
+
+                # Clean for display
+                if "|" in action_type:
+                    action_type = action_type.split("|")[0].strip()
+                if "|" in issue:
+                    issue = issue.split("|")[0].strip()
 
                 now = now_iso()
                 issue_label = issue.replace("_", " ").title() if issue not in ("NONE", "PARSE_ERROR") else ""
@@ -3870,6 +4309,38 @@ def get_integrations():
               "wallet": {"connected": False, "address": None}, "logistics": {"connected": False, "provider": None}, "api_keys": []},
         message="Integration settings retrieved",
     )
+
+
+@app.get("/settings/preferences")
+def get_preferences(current_user: AuthenticatedUser = Depends(get_current_user)):
+    uid = current_user.user_id
+    try:
+        res = supabase.table("user_settings").select("*").eq("user_id", uid).limit(1).execute()
+        if res.data:
+            return success_response(data=res.data[0], message="Preferences retrieved")
+    except Exception:
+        pass
+    # Default preferences
+    return success_response(data={
+        "user_id": uid,
+        "default_processing_hours": 24,
+        "low_stock_threshold_multiplier": 1.0,
+        "preferred_carrier": "JNE",
+        "auto_accept_orders": False,
+    }, message="Preferences retrieved (defaults)")
+
+
+@app.put("/settings/preferences")
+def update_preferences(body: dict, current_user: AuthenticatedUser = Depends(get_current_user)):
+    uid = current_user.user_id
+    allowed = {"default_processing_hours", "low_stock_threshold_multiplier", "preferred_carrier", "auto_accept_orders"}
+    payload = {k: v for k, v in body.items() if k in allowed}
+    payload["user_id"] = uid
+    try:
+        supabase.table("user_settings").upsert(payload, on_conflict="user_id").execute()
+    except Exception:
+        pass
+    return success_response(data=payload, message="Preferences updated")
 
 
 @app.get("/settings/security/sessions")

@@ -93,7 +93,9 @@ export function DemandMap({ regions, selectedRegion, onSelectRegion }: Props) {
     const bounds: L.LatLngExpression[] = [];
 
     regions.forEach((r) => {
-      const coords = CITY_COORDS[r.region];
+      const coords: [number, number] | undefined = (r.lat != null && r.lng != null)
+        ? [r.lat, r.lng]
+        : CITY_COORDS[r.region];
       if (!coords) return;
       bounds.push(coords);
 
@@ -112,7 +114,7 @@ export function DemandMap({ regions, selectedRegion, onSelectRegion }: Props) {
         `<div style="text-align:center">
           <b>${r.region}</b><br/>
           Demand: ${r.demand_score.toLocaleString()}<br/>
-          Growth: ${r.growth_pct >= 0 ? "+" : ""}${r.growth_pct}%
+          Growth: ${r.growth_pct >= 0 ? "+" : ""}${r.growth_pct}%${r.distributor_count ? `<br/>Distributors: ${r.distributor_count}` : ""}
         </div>`,
       );
 

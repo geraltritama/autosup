@@ -13,6 +13,7 @@ import {
   Plug,
   Save,
   Shield,
+  Settings2,
   Smartphone,
   User,
   Wallet,
@@ -48,12 +49,14 @@ import {
   useBrowserWalletDetection,
 } from "@/hooks/useWallet";
 import { useAuthStore } from "@/store/useAuthStore";
+import { api, type ApiResponse } from "@/lib/api";
 
-type Tab = "profile" | "business" | "notifications" | "security" | "integrations" | "wallet";
+type Tab = "profile" | "business" | "notifications" | "security" | "integrations" | "wallet" | "operations";
 
 const tabs: { id: Tab; label: string; icon: React.ElementType }[] = [
   { id: "profile", label: "Profile", icon: User },
   { id: "business", label: "Business", icon: Building2 },
+  { id: "operations", label: "Operations", icon: Settings2 },
   { id: "notifications", label: "Notifications", icon: Bell },
   { id: "security", label: "Security", icon: Shield },
   { id: "integrations", label: "Integrations", icon: Plug },
@@ -1048,6 +1051,90 @@ function WalletTab() {
   );
 }
 
+// ─── Operations Tab (Supplier) ────────────────────────────────────────────────
+
+function OperationsTab() {
+  const [processing, setProcessing] = useState(24);
+  const [threshold, setThreshold] = useState(1.0);
+  const [carrier, setCarrier] = useState("JNE");
+  const [autoAccept, setAutoAccept] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [loaded, setLoaded] = useState(false);
+
+  useEffect(() => {
+    api.get<ApiResponse<{ default_processing_hours?: number; low_stock_threshold_multiplier?: number; preferred_carrier?: string; auto_accept_orders?: boolean }>>("/settings/preferences")
+      .then(({ data }) => {
+        const d = data.data;
+        if (d.default_processing_hours) setProcessing(d.default_processing_hours);
+        if (d.low_stock_threshold_multiplier) setThreshold(d.low_stock_threshold_multiplier);
+        if (d.preferred_carrier) setCarrier(d.preferred_carrier);
+        if (d.auto_accept_orders != null) setAutoAccept(d.auto_accept_orders);
+        setLoaded(true);
+      })
+      .catch(() => setLoaded(true));
+  }, []);
+
+  async function handleSave() {
+    setSaving(true);
+    try {
+      await api.put("/settings/preferences", {
+        default_processing_hours: processing,
+        low_stock_threshold_multiplier: threshold,
+        preferred_carrier: carrier,
+        auto_accept_orders: autoAccept,
+      });
+    } catch { /* silent */ }
+    setSaving(false);
+  }
+
+  if (!loaded) return <div className="flex justify-center py-8"><Loader2 className="h-5 w-5 animate-spin text-[#94A3B8]" /></div>;
+
+  return (
+    <Card className="rounded-2xl">
+      <CardHeader>
+        <CardTitle>Operational Preferences</CardTitle>
+        <p className="text-sm text-[#64748B]">Configure default processing times, stock thresholds, and logistics preferences.</p>
+      </CardHeader>
+      <CardContent className="space-y-6">
+        <div className="grid gap-4 md:grid-cols-2">
+          <div className="space-y-2">
+            <Label>Default Processing Time (hours)</Label>
+            <Input type="number" value={processing} onChange={(e) => setProcessing(Number(e.target.value))} min={1} max={168} />
+            <p className="text-xs text-[#94A3B8]">Target hours to process incoming orders</p>
+          </div>
+          <div className="space-y-2">
+            <Label>Low Stock Threshold Multiplier</Label>
+            <Input type="number" value={threshold} onChange={(e) => setThreshold(Number(e.target.value))} min={0.5} max={3} step={0.1} />
+            <p className="text-xs text-[#94A3B8]">1.0 = use min_stock as-is, 1.5 = alert at 1.5x min_stock</p>
+          </div>
+        </div>
+        <div className="space-y-2">
+          <Label>Preferred Carrier</Label>
+          <select value={carrier} onChange={(e) => setCarrier(e.target.value)} className="h-10 w-full rounded-md border border-[#E2E8F0] bg-white px-3 text-sm">
+            <option value="JNE">JNE</option>
+            <option value="J&T">J&T Express</option>
+            <option value="SiCepat">SiCepat</option>
+            <option value="AnterAja">AnterAja</option>
+            <option value="Ninja">Ninja Xpress</option>
+            <option value="GoSend">GoSend</option>
+          </select>
+        </div>
+        <div className="flex items-center justify-between rounded-lg border border-[#E2E8F0] px-4 py-3">
+          <div>
+            <p className="text-sm font-medium text-[#0F172A]">Auto-accept orders</p>
+            <p className="text-xs text-[#64748B]">Automatically accept incoming orders without manual approval</p>
+          </div>
+          <Switch checked={autoAccept} onCheckedChange={setAutoAccept} />
+        </div>
+        <Button onClick={handleSave} disabled={saving} className="gap-2">
+          {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+          Save Preferences
+        </Button>
+      </CardContent>
+    </Card>
+  );
+}
+
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
 export default function SettingsPage() {
@@ -1091,6 +1178,7 @@ export default function SettingsPage() {
         <div className="flex-1 min-w-0">
           {activeTab === "profile" && <ProfileTab />}
           {activeTab === "business" && <BusinessTab />}
+          {activeTab === "operations" && <OperationsTab />}
           {activeTab === "notifications" && <NotificationsTab />}
           {activeTab === "security" && <SecurityTab />}
           {activeTab === "integrations" && <IntegrationsTab />}

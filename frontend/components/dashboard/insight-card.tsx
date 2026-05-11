@@ -150,20 +150,37 @@ export function InsightCard({ insights }: { insights: AiInsight[] }) {
 
   if (!primary) return null;
 
+  const primaryHasDetail = !!(primary.full_result && primary.full_result.length > 10);
+  const primaryExpanded = expandedIdx === -1;
+
   return (
     <Card className="rounded-2xl border-blue-100 bg-[linear-gradient(135deg,#EFF6FF_0%,#FFFFFF_65%)]">
       <CardHeader className="flex flex-row items-start justify-between gap-4">
-        <div className="space-y-2">
+        <button type="button" onClick={() => setExpandedIdx(primaryExpanded ? null : -1)} className="text-left space-y-2 flex-1 min-w-0">
           <div className="flex items-center gap-2">
             <Badge tone="info">AI operations insight</Badge>
             <Badge tone={urgencyTone[primary.urgency]}>{urgencyLabel[primary.urgency]}</Badge>
           </div>
-          <CardTitle className="text-xl">{primary.message}</CardTitle>
-        </div>
-        <div className="rounded-xl bg-white/80 p-3 text-[#2563EB] shadow-sm">
+          <p className={`text-lg font-semibold text-[#0F172A] ${primaryExpanded ? "" : "line-clamp-2"}`}>{primary.message}</p>
+          {primary.agent_name && <p className="text-xs text-[#94A3B8]">{primary.agent_name}</p>}
+          {primaryHasDetail && (
+            <p className="text-[10px] text-[#3B82F6] font-medium flex items-center gap-1">
+              {primaryExpanded ? <><ChevronUp className="h-3 w-3" /> Close details</> : <><ChevronDown className="h-3 w-3" /> View full insight</>}
+            </p>
+          )}
+        </button>
+        <div className="rounded-xl bg-white/80 p-3 text-[#2563EB] shadow-sm shrink-0">
           <Sparkles className="h-5 w-5" />
         </div>
       </CardHeader>
+
+      {primaryExpanded && primaryHasDetail && (
+        <CardContent className="pt-0 pb-4">
+          <div className="rounded-xl border border-[#E2E8F0] bg-white/80 p-4">
+            <InsightDetail fullResult={primary.full_result!} />
+          </div>
+        </CardContent>
+      )}
 
       {secondary.length > 0 && (
         <CardContent className="space-y-2">

@@ -46,7 +46,7 @@ const ROLE_COPY = {
   supplier: {
     badge: "Supplier · Product Inventory",
     title: "Product Inventory",
-    description: "Manage products you sell to distributors. Set selling prices, minimum thresholds, and stock status.",
+    description: "Manage products you supply to distributors. Set selling prices, minimum thresholds, and monitor stock levels.",
     kpi1Label: "Total Products",
     kpi1Meta: "All SKUs you sell",
     showPrice: true,
@@ -458,7 +458,7 @@ export default function InventoryPage() {
       </section>
 
       {/* AI Restock panel (shown after recommendation is fetched) */}
-      {restock && (
+      {restock && role !== "supplier" && (
         <RestockPanel
           recommendation={restock}
           onClose={() => setRestock(null)}
@@ -467,7 +467,7 @@ export default function InventoryPage() {
       )}
 
       {/* Loading restock */}
-      {restockMutation.isPending && (
+      {restockMutation.isPending && role !== "supplier" && (
         <div className="rounded-2xl border border-blue-100 bg-[#EFF6FF] px-5 py-4 text-sm text-[#2563EB]">
           Fetching restock recommendations from AI...
         </div>
@@ -496,13 +496,22 @@ export default function InventoryPage() {
       )}
 
       {!isLoading && !isError && items.length > 0 && (
+        <>
+        {role === "supplier" && data?.insight && (
+          <div className="flex items-center gap-3 rounded-xl border border-orange-200 bg-orange-50 px-4 py-3">
+            <span className="text-lg">🔥</span>
+            <p className="text-sm font-medium text-orange-800">{data.insight}</p>
+          </div>
+        )}
         <InventoryTable
           items={items}
           onEdit={openEdit}
           onDelete={openDelete}
-          onRestock={handleRestock}
+          onRestock={role !== "supplier" ? handleRestock : undefined}
           showPrice={copy.showPrice}
+          showDemand={role === "supplier"}
         />
+        </>
       )}
 
       {/* Dialogs */}

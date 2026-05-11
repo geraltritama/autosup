@@ -65,6 +65,12 @@ export type OrdersResponse = {
     completed_orders: number;
     cancelled_orders: number;
   };
+  fulfillment_metrics?: {
+    avg_processing_hours: number;
+    completion_rate: number;
+    delayed_count: number;
+    on_time_rate: number;
+  };
   pagination: { page: number; limit: number; total: number };
 };
 

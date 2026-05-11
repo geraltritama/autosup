@@ -20,6 +20,8 @@ type DistributorSummaryData = {
   orders: { active_orders: number; pending_orders: number; completed_this_month: number };
   suppliers: { partner_count: number; pending_requests: number };
   retailers: { partner_count: number; pending_requests: number };
+  financials?: { revenue: number; spending: number; net_margin: number; monthly_revenue: number };
+  pending_incoming?: { order_id: string; buyer_name: string; total: number; created_at: string }[];
   ai_insights: AiInsight[];
 };
 
@@ -28,6 +30,11 @@ type SupplierSummaryData = {
   products: { total_active: number; low_stock_count: number; out_of_stock_count: number };
   orders: { incoming_orders: number; processing: number; completed_this_month: number };
   partners: { distributor_count: number; pending_requests: number };
+  demand_growth?: number;
+  top_products?: { name: string; volume: number }[];
+  recent_orders?: { order_id: string; buyer_name: string; status: string; total: number; created_at: string }[];
+  demand_trend_chart?: { period: string; value: number }[];
+  distributor_activity?: { event: string; timestamp: string }[];
   ai_insights: AiInsight[];
 };
 
