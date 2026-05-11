@@ -33,29 +33,46 @@ class AuthenticatedUser:
 
 
 async def get_current_user(request: Request) -> AuthenticatedUser:
-    """Verify Supabase JWT and extract user_id + role. Raises 401 if invalid."""
+    """Verify Supabase JWT locally (no network call) and extract user_id + role."""
+    import jwt as _jwt
     auth_header = request.headers.get("authorization", "")
     if not auth_header.startswith("Bearer "):
         raise HTTPException(status_code=401, detail="Missing or invalid Authorization header")
     token = auth_header[7:]
     try:
-        # Verify token via Supabase Auth API
-        headers = {
-            "apikey": os.getenv("SUPABASE_KEY", ""),
-            "Authorization": f"Bearer {token}",
-        }
-        resp = requests.get(
-            f"{os.getenv('SUPABASE_URL')}/auth/v1/user",
-            headers=headers,
-            timeout=5,
-        )
-        if resp.status_code != 200:
-            raise HTTPException(status_code=401, detail="Invalid or expired token")
-        user_data = resp.json()
-        user_id = user_data.get("id", "")
-        meta = user_data.get("user_metadata", {}) or {}
-        role = meta.get("role", "distributor")
-        email = user_data.get("email", "")
+        # Decode JWT locally using Supabase JWT secret
+        jwt_secret = os.getenv("SUPABASE_JWT_SECRET", "")
+        if jwt_secret:
+            payload = _jwt.decode(token, jwt_secret, algorithms=["HS256"], audience="authenticated")
+            user_id = payload.get("sub", "")
+            meta = payload.get("user_metadata", {}) or {}
+            role = meta.get("role", "distributor")
+            email = payload.get("email", "")
+        else:
+            # Fallback: verify via Supabase Auth API (slower)
+            headers = {
+                "apikey": os.getenv("SUPABASE_KEY", ""),
+                "Authorization": f"Bearer {token}",
+            }
+            resp = requests.get(
+                f"{os.getenv('SUPABASE_URL')}/auth/v1/user",
+                headers=headers,
+                timeout=5,
+            )
+            if resp.status_code != 200:
+                raise HTTPException(status_code=401, detail="Invalid or expired token")
+            user_data = resp.json()
+            user_id = user_data.get("id", "")
+            meta = user_data.get("user_metadata", {}) or {}
+            role = meta.get("role", "distributor")
+            email = user_data.get("email", "")
+        if not user_id:
+            raise HTTPException(status_code=401, detail="Could not resolve user from token")
+        return AuthenticatedUser(user_id=user_id, role=role, email=email)
+    except HTTPException:
+        raise
+    except Exception:
+        raise HTTPException(status_code=401, detail="Token verification failed")
         if not user_id:
             raise HTTPException(status_code=401, detail="Could not resolve user from token")
         return AuthenticatedUser(user_id=user_id, role=role, email=email)
@@ -278,8 +295,17 @@ def safe_query(table: str, select="*", filters=None):
         raise
 
 
+_auth_users_cache: dict = {}
+_auth_users_cache_ts: float = 0
+
 def auth_users_by_role(role: str) -> list[dict]:
-    """Fetch users from Supabase Auth by role, return as dict list."""
+    """Fetch users from Supabase Auth by role, return as dict list. Cached 60s."""
+    global _auth_users_cache, _auth_users_cache_ts
+    import time as _t
+    now = _t.time()
+    if now - _auth_users_cache_ts < 60 and _auth_users_cache:
+        return [u for u in _auth_users_cache.get("_all", []) if u.get("role") == role]
+
     results = []
 
     # Primary: Supabase Auth REST API with pagination
@@ -303,13 +329,14 @@ def auth_users_by_role(role: str) -> list[dict]:
                 break
             for u in users:
                 meta = u.get("user_metadata", {}) or {}
-                if meta.get("role") == role:
+                u_role = meta.get("role", "")
+                if u_role:
                     results.append({
                         "id": u.get("id", ""),
                         "email": u.get("email", ""),
                         "full_name": meta.get("full_name", ""),
                         "business_name": meta.get("business_name", ""),
-                        "role": role,
+                        "role": u_role,
                         "phone": meta.get("phone", ""),
                         "business_type": meta.get("business_type", ""),
                         "reputation_score": meta.get("reputation_score", 0),
@@ -322,7 +349,10 @@ def auth_users_by_role(role: str) -> list[dict]:
         # Deduplicate by user ID
         seen = set()
         results = [r for r in results if r["id"] not in seen and not seen.add(r["id"])]
-        return results
+        # Cache all fetched users
+        _auth_users_cache["_all"] = results
+        _auth_users_cache_ts = now
+        return [u for u in results if u.get("role") == role]
     except Exception:
         pass
 
