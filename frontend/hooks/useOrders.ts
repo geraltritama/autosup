@@ -150,6 +150,7 @@ export function useCreateOrder() {
   return useMutation({
     mutationFn: async (payload: CreateOrderPayload): Promise<CreateOrderResponse> => {
       const { data } = await api.post<ApiResponse<CreateOrderResponse>>("/orders", payload);
+      if (!data.success) throw { response: { data } };
       return data.data;
     },
     onSuccess: () => {

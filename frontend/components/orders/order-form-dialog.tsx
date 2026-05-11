@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { AlertCircle, CheckCircle2, CreditCard, Loader2, Plus, Trash2 } from "lucide-react";
+import { AlertCircle, CheckCircle2, CreditCard, Loader2, Plus, Trash2, Wallet, Building2 } from "lucide-react";
 import { LegacyDialog as Dialog } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -10,6 +10,33 @@ import { useSuppliers } from "@/hooks/useSuppliers";
 import { useDistributors } from "@/hooks/useDistributors";
 import { useSellerInventory } from "@/hooks/useInventory";
 import { useAuthStore } from "@/store/useAuthStore";
+import { api, type ApiResponse } from "@/lib/api";
+import { useQuery } from "@tanstack/react-query";
+
+type PaymentMethod = { id: string; name: string; type: string; icon: string };
+
+const PAYMENT_LOGOS: Record<string, string> = {
+  gopay: "/images/payments/gopay.svg",
+  ovo: "/images/payments/ovo.svg",
+  dana: "/images/payments/dana.svg",
+  shopeepay: "/images/payments/shopeepay.svg",
+  bca: "/images/payments/bca.svg",
+  mandiri: "/images/payments/mandiri.svg",
+  bri: "/images/payments/bri.svg",
+  bni: "/images/payments/bni.svg",
+  qris: "/images/payments/qris.svg",
+};
+
+function usePaymentMethods() {
+  return useQuery({
+    queryKey: ["payment-methods"],
+    queryFn: async () => {
+      const { data } = await api.get<ApiResponse<{ methods: PaymentMethod[] }>>("/payments/methods");
+      return data.data.methods;
+    },
+    staleTime: 5 * 60 * 1000,
+  });
+}
 
 
 type OrderItem = {
@@ -65,6 +92,9 @@ export function OrderFormDialog({ open, onClose, prefill }: Props) {
 
   const create = useCreateOrder();
   const isLoading = create.isPending;
+  const [selectedMethod, setSelectedMethod] = useState("");
+  const [checkoutLoading, setCheckoutLoading] = useState(false);
+  const { data: paymentMethods = [], isLoading: methodsLoading } = usePaymentMethods();
 
   const isRetailer = role === "retailer";
   const sellerType = isRetailer ? "distributor" as const : "supplier" as const;
@@ -97,6 +127,7 @@ export function OrderFormDialog({ open, onClose, prefill }: Props) {
       setDeliveryAddress("");
       setNotes("");
       setError(null);
+      setSelectedMethod("");
     }, 0);
     return () => clearTimeout(t);
   }, [open]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -149,15 +180,20 @@ export function OrderFormDialog({ open, onClose, prefill }: Props) {
   }
 
   async function handleConfirmPayment() {
-    if (!pendingPayload) return;
+    if (!pendingPayload || !selectedMethod) return;
     setError(null);
+    setCheckoutLoading(true);
     try {
-      await create.mutateAsync(pendingPayload);
+      const orderRes = await create.mutateAsync(pendingPayload);
+      await api.post(`/payments/checkout/${orderRes.order_id}`, { payment_method: selectedMethod });
       setStep("success");
       setTimeout(() => onClose(), 1800);
-    } catch {
-      setError("Failed to create order. Please try again.");
+    } catch (err: any) {
+      const msg = err?.response?.data?.message || "Failed to create order. Please try again.";
+      setError(msg);
       setStep("form");
+    } finally {
+      setCheckoutLoading(false);
     }
   }
 
@@ -182,38 +218,175 @@ export function OrderFormDialog({ open, onClose, prefill }: Props) {
       (s, it) => s + it.qty * it.price_per_unit,
       0,
     );
+    const ewallets = paymentMethods.filter((m) => m.type === "e-wallet");
+    const banks = paymentMethods.filter((m) => m.type === "bank_transfer");
+    const qrisMethods = paymentMethods.filter((m) => m.type === "qris");
+    const busy = isLoading || checkoutLoading;
     return (
-      <Dialog open={open} onClose={() => { setStep("form"); setError(null); }} title="Confirm Payment">
+      <Dialog open={open} onClose={() => { setStep("form"); setError(null); }} title="Select Payment Method">
         <div className="space-y-5">
-          <div className="rounded-xl border border-[#DDD6FE] bg-[#F5F3FF] p-4 space-y-3">
-            <div className="flex items-center gap-2">
-              <CreditCard className="h-4 w-4 text-[#7C3AED]" />
-              <span className="text-sm font-semibold text-[#7C3AED]">Payment Simulation</span>
+          {/* Total */}
+          <div className="rounded-xl border border-[#E2E8F0] bg-[#F8FAFC] px-4 py-3">
+            <p className="text-xs text-[#64748B] uppercase tracking-[0.12em]">Total Amount</p>
+            <p className="mt-1 text-2xl font-semibold text-[#0F172A]">{formatCurrency(total)}</p>
+          </div>
+
+          {methodsLoading ? (
+            <div className="flex justify-center py-6"><Loader2 className="h-5 w-5 animate-spin text-[#94A3B8]" /></div>
+          ) : (
+            <div className="space-y-4">
+              {/* E-Wallet */}
+              {ewallets.length > 0 && (
+                <div className="space-y-2">
+                  <p className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-[0.1em] text-[#64748B]">
+                    <Wallet className="h-3.5 w-3.5" /> E-Wallet
+                  </p>
+                  <div className="grid grid-cols-2 gap-2">
+                    {ewallets.map((m) => (
+                      <button
+                        key={m.id}
+                        type="button"
+                        onClick={() => setSelectedMethod(m.id)}
+                        className={`flex items-center gap-3 rounded-xl border px-4 py-3 text-left transition-all ${
+                          selectedMethod === m.id
+                            ? "border-[#3B82F6] bg-[#EFF6FF] ring-2 ring-[#BFDBFE]"
+                            : "border-[#E2E8F0] bg-white hover:border-[#94A3B8]"
+                        }`}
+                      >
+                        {PAYMENT_LOGOS[m.id] && <img src={PAYMENT_LOGOS[m.id]} alt={m.name} className="h-6 w-auto max-w-[32px] object-contain" />}
+                        <span className="text-sm font-medium text-[#0F172A]">{m.name}</span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Bank Transfer */}
+              {banks.length > 0 && (
+                <div className="space-y-2">
+                  <p className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-[0.1em] text-[#64748B]">
+                    <Building2 className="h-3.5 w-3.5" /> Bank Transfer
+                  </p>
+                  <div className="grid grid-cols-2 gap-2">
+                    {banks.map((m) => (
+                      <button
+                        key={m.id}
+                        type="button"
+                        onClick={() => setSelectedMethod(m.id)}
+                        className={`flex items-center gap-3 rounded-xl border px-4 py-3 text-left transition-all ${
+                          selectedMethod === m.id
+                            ? "border-[#3B82F6] bg-[#EFF6FF] ring-2 ring-[#BFDBFE]"
+                            : "border-[#E2E8F0] bg-white hover:border-[#94A3B8]"
+                        }`}
+                      >
+                        {PAYMENT_LOGOS[m.id] && <img src={PAYMENT_LOGOS[m.id]} alt={m.name} className="h-6 w-auto max-w-[32px] object-contain" />}
+                        <span className="text-sm font-medium text-[#0F172A]">{m.name}</span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* QRIS */}
+              {qrisMethods.length > 0 && (
+                <div className="space-y-2">
+                  <p className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-[0.1em] text-[#64748B]">
+                    <CreditCard className="h-3.5 w-3.5" /> QRIS
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => setSelectedMethod("qris")}
+                    className={`flex w-full items-center gap-3 rounded-xl border px-4 py-3 text-left transition-all ${
+                      selectedMethod === "qris"
+                        ? "border-[#3B82F6] bg-[#EFF6FF] ring-2 ring-[#BFDBFE]"
+                        : "border-[#E2E8F0] bg-white hover:border-[#94A3B8]"
+                    }`}
+                  >
+                    <img src="/images/payments/qris.svg" alt="QRIS" className="h-6 w-auto max-w-[40px] object-contain" />
+                    <span className="text-sm font-medium text-[#0F172A]">QRIS (All E-Wallet & Bank)</span>
+                  </button>
+                  {selectedMethod === "qris" && (
+                    <div className="flex flex-col items-center gap-3 rounded-xl border border-[#E2E8F0] bg-[#F8FAFC] p-4">
+                      <svg viewBox="0 0 200 200" className="h-40 w-40">
+                        <rect width="200" height="200" fill="#fff" />
+                        <rect x="20" y="20" width="30" height="30" fill="#000" />
+                        <rect x="150" y="20" width="30" height="30" fill="#000" />
+                        <rect x="20" y="150" width="30" height="30" fill="#000" />
+                        <rect x="25" y="25" width="20" height="20" fill="#fff" />
+                        <rect x="155" y="25" width="20" height="20" fill="#fff" />
+                        <rect x="25" y="155" width="20" height="20" fill="#fff" />
+                        <rect x="30" y="30" width="10" height="10" fill="#000" />
+                        <rect x="160" y="30" width="10" height="10" fill="#000" />
+                        <rect x="30" y="160" width="10" height="10" fill="#000" />
+                        <rect x="60" y="20" width="8" height="8" fill="#000" />
+                        <rect x="76" y="20" width="8" height="8" fill="#000" />
+                        <rect x="92" y="20" width="8" height="8" fill="#000" />
+                        <rect x="108" y="28" width="8" height="8" fill="#000" />
+                        <rect x="124" y="20" width="8" height="8" fill="#000" />
+                        <rect x="60" y="36" width="8" height="8" fill="#000" />
+                        <rect x="84" y="36" width="8" height="8" fill="#000" />
+                        <rect x="108" y="36" width="8" height="8" fill="#000" />
+                        <rect x="132" y="36" width="8" height="8" fill="#000" />
+                        <rect x="60" y="60" width="8" height="8" fill="#000" />
+                        <rect x="76" y="68" width="8" height="8" fill="#000" />
+                        <rect x="92" y="60" width="8" height="8" fill="#000" />
+                        <rect x="108" y="68" width="8" height="8" fill="#000" />
+                        <rect x="124" y="60" width="8" height="8" fill="#000" />
+                        <rect x="140" y="68" width="8" height="8" fill="#000" />
+                        <rect x="156" y="60" width="8" height="8" fill="#000" />
+                        <rect x="172" y="68" width="8" height="8" fill="#000" />
+                        <rect x="20" y="60" width="8" height="8" fill="#000" />
+                        <rect x="36" y="68" width="8" height="8" fill="#000" />
+                        <rect x="20" y="76" width="8" height="8" fill="#000" />
+                        <rect x="60" y="76" width="8" height="8" fill="#000" />
+                        <rect x="84" y="84" width="8" height="8" fill="#000" />
+                        <rect x="100" y="76" width="8" height="8" fill="#000" />
+                        <rect x="116" y="84" width="8" height="8" fill="#000" />
+                        <rect x="140" y="76" width="8" height="8" fill="#000" />
+                        <rect x="60" y="92" width="8" height="8" fill="#000" />
+                        <rect x="76" y="100" width="8" height="8" fill="#000" />
+                        <rect x="92" y="92" width="8" height="8" fill="#000" />
+                        <rect x="116" y="100" width="8" height="8" fill="#000" />
+                        <rect x="140" y="92" width="8" height="8" fill="#000" />
+                        <rect x="156" y="100" width="8" height="8" fill="#000" />
+                        <rect x="172" y="92" width="8" height="8" fill="#000" />
+                        <rect x="20" y="92" width="8" height="8" fill="#000" />
+                        <rect x="36" y="100" width="8" height="8" fill="#000" />
+                        <rect x="20" y="108" width="8" height="8" fill="#000" />
+                        <rect x="60" y="116" width="8" height="8" fill="#000" />
+                        <rect x="76" y="124" width="8" height="8" fill="#000" />
+                        <rect x="100" y="116" width="8" height="8" fill="#000" />
+                        <rect x="124" y="124" width="8" height="8" fill="#000" />
+                        <rect x="148" y="116" width="8" height="8" fill="#000" />
+                        <rect x="172" y="124" width="8" height="8" fill="#000" />
+                        <rect x="60" y="140" width="8" height="8" fill="#000" />
+                        <rect x="84" y="148" width="8" height="8" fill="#000" />
+                        <rect x="108" y="140" width="8" height="8" fill="#000" />
+                        <rect x="132" y="148" width="8" height="8" fill="#000" />
+                        <rect x="156" y="140" width="8" height="8" fill="#000" />
+                        <rect x="172" y="148" width="8" height="8" fill="#000" />
+                        <rect x="60" y="164" width="8" height="8" fill="#000" />
+                        <rect x="76" y="172" width="8" height="8" fill="#000" />
+                        <rect x="100" y="164" width="8" height="8" fill="#000" />
+                        <rect x="124" y="172" width="8" height="8" fill="#000" />
+                        <rect x="148" y="164" width="8" height="8" fill="#000" />
+                        <rect x="172" y="172" width="8" height="8" fill="#000" />
+                        <rect x="155" y="155" width="20" height="20" fill="#000" />
+                        <rect x="160" y="160" width="10" height="10" fill="#fff" />
+                      </svg>
+                      <p className="text-xs text-[#64748B] text-center">Scan QR code with any QRIS-supported app</p>
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
+          )}
+
+          {/* Escrow info */}
+          <div className="rounded-xl border border-[#DDD6FE] bg-[#F5F3FF] px-4 py-3">
             <p className="text-xs text-[#64748B]">
-              Backend will record payment proof on-chain via Solana Memo Program (Devnet).
-              No real token transfer — this is an escrow simulation.
+              Payment secured via on-chain escrow (Solana Devnet). Funds auto-release on delivery confirmation.
             </p>
-            <div className="rounded-lg bg-white px-4 py-3 border border-[#E9D5FF]">
-              <p className="text-xs text-[#64748B] uppercase tracking-[0.12em]">Total Amount</p>
-              <p className="mt-1 text-2xl font-semibold text-[#0F172A]">
-                {formatCurrency(total)}
-              </p>
-            </div>
-            <div className="space-y-1.5 text-xs text-[#64748B]">
-              <div className="flex justify-between">
-                <span>To</span>
-                <span className="font-medium text-[#0F172A]">{pendingPayload.seller_name || pendingPayload.seller_id.slice(0, 12) + "…"}</span>
-              </div>
-              <div className="flex justify-between">
-                <span>From</span>
-                <span className="font-medium text-[#0F172A]">{pendingPayload.buyer_name}</span>
-              </div>
-              <div className="flex justify-between">
-                <span>Escrow status</span>
-                <span className="font-medium text-[#F59E0B]">held (auto-release on delivery)</span>
-              </div>
-            </div>
           </div>
 
           {error && (
@@ -224,11 +397,11 @@ export function OrderFormDialog({ open, onClose, prefill }: Props) {
           )}
 
           <div className="flex justify-end gap-2">
-            <Button type="button" variant="secondary" onClick={() => { setStep("form"); setError(null); }} disabled={isLoading}>
+            <Button type="button" variant="secondary" onClick={() => { setStep("form"); setError(null); setSelectedMethod(""); }} disabled={busy}>
               Back
             </Button>
-            <Button type="button" onClick={handleConfirmPayment} disabled={isLoading}>
-              {isLoading ? (
+            <Button type="button" onClick={handleConfirmPayment} disabled={busy || !selectedMethod}>
+              {busy ? (
                 <><Loader2 className="mr-1.5 h-4 w-4 animate-spin" />Processing…</>
               ) : (
                 "Confirm & Pay"

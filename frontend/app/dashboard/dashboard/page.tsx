@@ -133,7 +133,7 @@ function DistributorDashboard({ data }: { data: Extract<DashboardSummary, { role
               Monitor inventory, orders, and partners
             </h1>
             <p className="max-w-2xl text-sm leading-7 text-[#64748B]">
-              Monitor stock, manage orders to suppliers and from retailers, and make faster restock decisions with AI.
+              Track stock, manage orders to suppliers and from retailers, and make faster restock decisions with AI.
             </p>
           </div>
         </div>

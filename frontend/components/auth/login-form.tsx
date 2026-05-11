@@ -19,6 +19,7 @@ export function LoginForm() {
   const [forgotLoading, setForgotLoading] = useState(false);
   const [forgotSent, setForgotSent] = useState(false);
   const [forgotError, setForgotError] = useState("");
+  const [resetEmailSent, setResetEmailSent] = useState(false);
   const { login, isLoading, error } = useLogin();
   const { executeRecaptcha } = useGoogleReCaptcha();
 
@@ -62,6 +63,12 @@ export function LoginForm() {
       </CardHeader>
 
       <CardContent className="space-y-5">
+        {resetEmailSent && (
+          <div className="flex items-start gap-2 rounded-lg border border-[#86EFAC] bg-[#F0FDF4] px-3 py-2.5 text-sm text-[#16A34A]">
+            <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" />
+            <span>Password reset link has been sent to your email. Please check your inbox.</span>
+          </div>
+        )}
         <form onSubmit={handleSubmit} className="space-y-4">
           <div className="space-y-2">
             <label className="text-sm font-medium text-[#0F172A]" htmlFor="email">
@@ -148,7 +155,7 @@ export function LoginForm() {
                   <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" />
                   <span>A password reset link has been sent to your email.</span>
                 </div>
-                <Button onClick={() => setForgotOpen(false)} className="w-full">
+                <Button onClick={() => { setForgotOpen(false); setResetEmailSent(true); }} className="w-full">
                   Back to Login
                 </Button>
               </div>

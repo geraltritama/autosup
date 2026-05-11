@@ -183,6 +183,9 @@ function ProfileTab() {
         {saved && (
           <span className="text-sm text-[#22C55E]">Profile updated successfully.</span>
         )}
+        {updateProfile.isError && (
+          <span className="text-sm text-[#EF4444]">{(updateProfile.error as Error)?.message || "Gagal menyimpan."}</span>
+        )}
       </div>
     </form>
   );
@@ -365,6 +368,9 @@ function BusinessTab() {
           Save
         </Button>
         {saved && <span className="text-sm text-[#22C55E]">Saved.</span>}
+        {updateBusiness.isError && (
+          <span className="text-sm text-[#EF4444]">{(updateBusiness.error as Error)?.message || "Gagal menyimpan."}</span>
+        )}
       </div>
     </form>
   );

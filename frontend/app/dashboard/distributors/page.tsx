@@ -10,7 +10,6 @@ import {
   Network,
   Plus,
   Search,
-  Shield,
   Trash2,
   Truck,
   XCircle,
@@ -19,7 +18,6 @@ import { KpiCard } from "@/components/dashboard/kpi-card";
 import { PageErrorState } from "@/components/dashboard/page-error-state";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { LegacyDialog as Dialog } from "@/components/ui/dialog";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { DistributorCard } from "@/components/distributors/distributor-card";
@@ -48,9 +46,6 @@ const [selectedDistributor, setSelectedDistributor] = useState<Distributor | nul
   const [distributorDetailOpen, setDistributorDetailOpen] = useState(false);
   const [selectedRequest, setSelectedRequest] = useState<DistributorPartnershipRequest | null>(null);
   const [requestDetailOpen, setRequestDetailOpen] = useState(false);
-  const [mouTarget, setMouTarget] = useState<Distributor | null>(null);
-  const [mouTerms, setMouTerms] = useState("");
-  const [mouRegion, setMouRegion] = useState("");
 
   const handleViewStock = useCallback((distributor: Distributor) => {
     setSelectedDistributor(distributor);
@@ -92,6 +87,7 @@ const [selectedDistributor, setSelectedDistributor] = useState<Distributor | nul
     );
   }
 
+  const [requestingId, setRequestingId] = useState<string | null>(null);
   const isRetailer = role === "retailer";
   const distributors = data?.distributors ?? [];
   const summary = data?.summary;
@@ -126,8 +122,8 @@ const [selectedDistributor, setSelectedDistributor] = useState<Distributor | nul
         )}
       </section>
 
-      {/* KPI cards — hide on pending tab */}
-      {summary && statusFilter !== "pending" && (
+      {/* KPI cards */}
+      {summary && (
         <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
           <KpiCard
             label={isRetailer ? "Partner Distributors" : "Active Partners"}
@@ -248,21 +244,17 @@ const [selectedDistributor, setSelectedDistributor] = useState<Distributor | nul
                     distributor={dist}
                     role="retailer"
                     onRequestPartnership={
-                      dist.partnership_status === "none"
-                        ? (d) => { setMouTarget(d); setMouTerms(""); setMouRegion(""); }
-                        : undefined
-                    }
-                    isRequesting={requestPartnership.isPending}
-                    onViewStock={
-                      dist.partnership_status === "partner"
-                        ? handleViewStock
-                        : undefined
-                    }
-                    onDeletePartnership={
-                      dist.partnership_status !== "none"
-                        ? (d) => setDeleteTarget(d)
-                        : undefined
-                    }
+                    dist.partnership_status === "none"
+                      ? (d) => {
+                          setRequestingId(d.distributor_id);
+                          requestPartnership.mutate(
+                            { distributor_id: d.distributor_id },
+                            { onSettled: () => setRequestingId(null) }
+                          );
+                        }
+                      : undefined
+                  }
+                  isRequesting={requestingId === dist.distributor_id}
                   />
                 ))
               ) : (
@@ -347,38 +339,7 @@ const [selectedDistributor, setSelectedDistributor] = useState<Distributor | nul
         {/* Side panel — role-aware */}
         <div className="space-y-4">
           {!isRetailer && role === "supplier" && (
-            <>
-            {/* Trust & Partnership NFT summary */}
-            <Card className="rounded-2xl border-[#DBEAFE] bg-[#EFF6FF]/50">
-              <CardContent className="p-5 space-y-3">
-                <div className="flex items-center gap-2">
-                  <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-[#2563EB] text-white">
-                    <Shield className="h-4 w-4" />
-                  </div>
-                  <div>
-                    <p className="text-sm font-semibold text-[#1E40AF]">Partnership Trust Layer</p>
-                    <p className="text-[10px] text-[#64748B]">Solana Devnet · Soulbound NFTs</p>
-                  </div>
-                </div>
-                <div className="grid grid-cols-3 gap-2">
-                  <div className="rounded-lg bg-white px-2 py-1.5 text-center">
-                    <p className="text-lg font-bold text-[#0F172A]">{summary?.partner_count ?? 0}</p>
-                    <p className="text-[9px] text-[#64748B]">Active</p>
-                  </div>
-                  <div className="rounded-lg bg-white px-2 py-1.5 text-center">
-                    <p className="text-lg font-bold text-[#F59E0B]">{summary?.pending_count ?? 0}</p>
-                    <p className="text-[9px] text-[#64748B]">Pending</p>
-                  </div>
-                  <div className="rounded-lg bg-white px-2 py-1.5 text-center">
-                    <p className="text-lg font-bold text-[#7C3AED]">{summary?.partner_count ?? 0}</p>
-                    <p className="text-[9px] text-[#64748B]">NFTs</p>
-                  </div>
-                </div>
-                <p className="text-[10px] text-[#64748B]">Each approved partnership mints a soulbound NFT on Solana as immutable proof of agreement.</p>
-              </CardContent>
-            </Card>
             <PartnershipRequestsPanel />
-            </>
           )}
           {isRetailer ? (
             <Card className="rounded-2xl">
@@ -520,56 +481,6 @@ const [selectedDistributor, setSelectedDistributor] = useState<Distributor | nul
         confirmLabel={deleteTarget?.partnership_status === "partner" ? "End Partnership" : "Cancel Request"}
         isLoading={deletePartnership.isPending}
       />
-
-      {/* MOU Dialog for retailer requesting partnership */}
-      {mouTarget && (
-        <Dialog open={!!mouTarget} onClose={() => setMouTarget(null)} title="Request Partnership" description={`Send partnership request to ${mouTarget.name} with MOU details.`}>
-          <div className="space-y-4">
-            <div className="space-y-1">
-              <label className="text-xs font-medium text-[#64748B]">MOU Terms *</label>
-              <textarea
-                className="w-full rounded-lg border border-[#E2E8F0] px-3 py-2 text-sm focus:border-[#3B82F6] focus:outline-none"
-                rows={3}
-                placeholder="e.g. Retailer is authorized to purchase products at wholesale price. Minimum order Rp 200,000 per transaction."
-                value={mouTerms}
-                onChange={(e) => setMouTerms(e.target.value)}
-              />
-            </div>
-            <div className="space-y-1">
-              <label className="text-xs font-medium text-[#64748B]">Area Coverage</label>
-              <input
-                className="w-full rounded-lg border border-[#E2E8F0] px-3 py-2 text-sm focus:border-[#3B82F6] focus:outline-none"
-                placeholder="e.g. East Jakarta, Bekasi"
-                value={mouRegion}
-                onChange={(e) => setMouRegion(e.target.value)}
-              />
-            </div>
-            <div className="space-y-1">
-              <label className="text-xs font-medium text-[#64748B]">MOU Document (PDF) <span className="text-[#94A3B8] italic">— optional</span></label>
-              <input
-                type="file"
-                accept=".pdf"
-                className="w-full rounded-lg border border-dashed border-[#CBD5E1] px-3 py-2 text-xs text-[#64748B] file:mr-2 file:rounded file:border-0 file:bg-[#EFF6FF] file:px-2 file:py-1 file:text-xs file:text-[#2563EB]"
-              />
-              <p className="text-[10px] text-[#94A3B8]">Upload signed MOU document if available. Max 5MB.</p>
-            </div>
-            <div className="flex justify-end gap-2">
-              <Button variant="secondary" onClick={() => setMouTarget(null)}>Cancel</Button>
-              <Button
-                disabled={!mouTerms.trim() || requestPartnership.isPending}
-                onClick={() => {
-                  requestPartnership.mutate(
-                    { distributor_id: mouTarget.distributor_id, terms: mouTerms, distribution_region: mouRegion },
-                    { onSuccess: () => setMouTarget(null) },
-                  );
-                }}
-              >
-                {requestPartnership.isPending ? "Sending..." : "Send Request"}
-              </Button>
-            </div>
-          </div>
-        </Dialog>
-      )}
     </main>
   );
 }
