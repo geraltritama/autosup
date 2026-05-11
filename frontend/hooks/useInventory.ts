@@ -321,7 +321,7 @@ export function useSellerInventory(sellerId: string) {
       if (!sellerId) return [];
       type BackendItem = { id: string; name: string; stock: number; min_stock: number; category: string; unit: string; price?: number };
       const { data } = await api.get<ApiResponse<BackendItem[]>>(`/inventory/seller/${sellerId}`);
-      const mapped = (data.data || []).map((item) => ({
+      const mapped = (data.data || []).map((item): InventoryItem => ({
         ...item,
         price: item.price ?? 0,
         status: item.stock === 0 ? "out_of_stock" : item.stock < item.min_stock ? "low_stock" : "in_stock",

@@ -405,7 +405,7 @@ const [selectedDistributor, setSelectedDistributor] = useState<Distributor | nul
                         >
                           <div>
                             <p className="text-sm font-semibold text-[#0F172A]">
-                              {req.distributor?.business_name ?? req.distributor_name ?? "—"}
+                              {req.distributor?.business_name ?? "—"}
                             </p>
                             <p className="mt-0.5 text-xs text-[#64748B]">
                               {new Intl.DateTimeFormat("en-US", {
