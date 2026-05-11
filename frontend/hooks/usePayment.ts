@@ -102,7 +102,14 @@ export function usePayInvoice() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async (invoice_id: string) => {
-      const { data } = await api.post<ApiResponse>(`/invoices/${invoice_id}/pay`);
+      const { data } = await api.post<ApiResponse<{
+        success: boolean;
+        payment_status?: string;
+        invoice_id?: string;
+        xendit_invoice_id?: string;
+        invoice_url?: string;
+        expiry_date?: string;
+      }>>(`/invoices/${invoice_id}/pay`);
       if (!data.success) throw new Error(data.message || "Payment failed");
       return data.data;
     },

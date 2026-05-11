@@ -258,7 +258,15 @@ export default function PaymentPage() {
                     <div>
                       {inv.status !== "paid" ? (
                         <Button
-                          onClick={() => payMutation.mutate(inv.invoice_id)}
+                          onClick={() =>
+                            payMutation.mutate(inv.invoice_id, {
+                              onSuccess: (res) => {
+                                if (res?.invoice_url) {
+                                  window.open(res.invoice_url, "_blank", "noopener,noreferrer");
+                                }
+                              },
+                            })
+                          }
                           disabled={payMutation.isPending}
                         >
                           {payMutation.isPending && payMutation.variables === inv.invoice_id && (

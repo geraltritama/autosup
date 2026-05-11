@@ -6,6 +6,7 @@ import uuid
 import json
 import hashlib
 import requests
+import base64
 from datetime import datetime, timedelta
 from contextlib import asynccontextmanager
 from dateutil.relativedelta import relativedelta
@@ -1688,16 +1689,71 @@ def settle_payment(data: SettlePaymentReq):
 
 
 @app.post("/invoices/{invoice_id}/pay")
-def pay_invoice(invoice_id: str):
+def pay_invoice(invoice_id: str, current_user: AuthenticatedUser = Depends(get_current_user)):
     try:
-        # Update order status to delivered (invoices are generated from orders)
-        supabase.table("orders").update({"status": "delivered", "escrow_status": "released", "updated_at": now_iso()}).eq("id", invoice_id).execute()
-        # Also try invoices table in case it exists
-        try:
-            supabase.table("invoices").update({"status": "paid", "paid_at": now_iso()}).eq("id", invoice_id).execute()
-        except Exception:
-            pass
-        return success_response(data={"success": True}, message="Invoice paid successfully")
+        uid = current_user.user_id
+        inv_res = supabase.table("invoices").select("*").eq("id", invoice_id).limit(1).execute()
+        if not inv_res.data:
+            return error_response("Invoice not found")
+        inv = inv_res.data[0]
+        if inv.get("buyer_id") != uid:
+            return error_response("Not your invoice")
+
+        amount = int(inv.get("amount", 0) or 0)
+        if amount <= 0:
+            return error_response("Invalid invoice amount")
+
+        external_id = f"autosup-invoice-{invoice_id}"
+        success_url = f"{XENDIT_CALLBACK_BASE_URL}/dashboard/payment?payment=success" if XENDIT_CALLBACK_BASE_URL else ""
+        failed_url = f"{XENDIT_CALLBACK_BASE_URL}/dashboard/payment?payment=failed" if XENDIT_CALLBACK_BASE_URL else ""
+        x_invoice = _create_xendit_invoice(
+            external_id=external_id,
+            amount=amount,
+            description=f"AUTOSUP invoice {invoice_id[:8]}",
+            payer_email=current_user.email,
+            success_redirect_url=success_url,
+            failure_redirect_url=failed_url,
+            metadata={
+                "invoice_id": invoice_id,
+                "order_id": inv.get("order_id", ""),
+                "buyer_id": uid,
+                "seller_id": inv.get("seller_id", ""),
+            },
+        )
+
+        _payment_tx_upsert(
+            {
+                "order_id": inv.get("order_id", ""),
+                "invoice_id": invoice_id,
+                "payer_id": uid,
+                "payee_id": inv.get("seller_id", ""),
+                "amount": amount,
+                "currency": x_invoice.get("currency", "IDR"),
+                "payment_method": "invoice_payment",
+                "gateway": "xendit",
+                "external_id": external_id,
+                "xendit_invoice_id": x_invoice.get("id", ""),
+                "invoice_url": x_invoice.get("invoice_url", ""),
+                "status": x_invoice.get("status", "PENDING"),
+                "raw_response": x_invoice,
+                "created_at": now_iso(),
+                "updated_at": now_iso(),
+            }
+        )
+
+        supabase.table("invoices").update({"status": "pending", "updated_at": now_iso()}).eq("id", invoice_id).execute()
+
+        return success_response(
+            data={
+                "success": True,
+                "payment_status": "awaiting_payment",
+                "invoice_id": invoice_id,
+                "xendit_invoice_id": x_invoice.get("id", ""),
+                "invoice_url": x_invoice.get("invoice_url", ""),
+                "expiry_date": x_invoice.get("expiry_date", ""),
+            },
+            message="Invoice payment intent created",
+        )
     except Exception as e:
         return error_response(str(e))
 
@@ -5702,6 +5758,134 @@ PAYMENT_METHODS = [
     {"id": "bni", "name": "BNI Virtual Account", "type": "bank_transfer", "icon": "bni"},
 ]
 
+XENDIT_SECRET_KEY = os.getenv("XENDIT_SECRET_KEY", "")
+XENDIT_WEBHOOK_TOKEN = os.getenv("XENDIT_WEBHOOK_TOKEN", "")
+XENDIT_API_BASE = os.getenv("XENDIT_API_BASE", "https://api.xendit.co")
+XENDIT_CALLBACK_BASE_URL = os.getenv("XENDIT_CALLBACK_BASE_URL", os.getenv("APP_BASE_URL", "")).rstrip("/")
+
+
+def _xendit_enabled() -> bool:
+    return bool(XENDIT_SECRET_KEY)
+
+
+def _xendit_headers() -> dict:
+    encoded = base64.b64encode(f"{XENDIT_SECRET_KEY}:".encode()).decode()
+    return {
+        "Authorization": f"Basic {encoded}",
+        "Content-Type": "application/json",
+        "Accept": "application/json",
+    }
+
+
+def _payment_tx_select(order_id: str = "", invoice_id: str = "", external_id: str = "", xendit_invoice_id: str = "") -> list[dict]:
+    query = supabase.table("payment_transactions").select("*")
+    if order_id:
+        query = query.eq("order_id", order_id)
+    if invoice_id:
+        query = query.eq("invoice_id", invoice_id)
+    if external_id:
+        query = query.eq("external_id", external_id)
+    if xendit_invoice_id:
+        query = query.eq("xendit_invoice_id", xendit_invoice_id)
+    res = query.order("created_at", desc=True).limit(1).execute()
+    return res.data or []
+
+
+def _payment_tx_upsert(payload: dict):
+    row = {
+        "id": payload.get("id") or str(uuid.uuid4()),
+        "order_id": payload.get("order_id"),
+        "invoice_id": payload.get("invoice_id"),
+        "payer_id": payload.get("payer_id"),
+        "payee_id": payload.get("payee_id"),
+        "amount": payload.get("amount", 0),
+        "currency": payload.get("currency", "IDR"),
+        "payment_method": payload.get("payment_method", ""),
+        "gateway": payload.get("gateway", "xendit"),
+        "external_id": payload.get("external_id", ""),
+        "xendit_invoice_id": payload.get("xendit_invoice_id", ""),
+        "invoice_url": payload.get("invoice_url", ""),
+        "status": payload.get("status", "PENDING"),
+        "raw_response": payload.get("raw_response", {}),
+        "created_at": payload.get("created_at", now_iso()),
+        "updated_at": payload.get("updated_at", now_iso()),
+    }
+    minimal_row = {
+        "id": row["id"],
+        "order_id": row["order_id"],
+        "invoice_id": row["invoice_id"],
+        "payer_id": row["payer_id"],
+        "payee_id": row["payee_id"],
+        "amount": row["amount"],
+        "payment_method": row["payment_method"],
+        "external_id": row["external_id"],
+        "status": row["status"],
+        "created_at": row["created_at"],
+        "updated_at": row["updated_at"],
+    }
+    try:
+        existing = _payment_tx_select(external_id=row["external_id"]) if row["external_id"] else []
+        if existing:
+            supabase.table("payment_transactions").update(row).eq("id", existing[0]["id"]).execute()
+            return existing[0]["id"]
+        supabase.table("payment_transactions").insert(row).execute()
+        return row["id"]
+    except Exception as e:
+        if "payment_transactions" not in str(e):
+            raise
+        # Fallback for legacy schemas without payment_transactions table
+        return row["id"]
+
+
+def _save_webhook_event(event_id: str, payload: dict) -> bool:
+    event_row = {
+        "id": str(uuid.uuid4()),
+        "event_id": event_id,
+        "gateway": "xendit",
+        "payload": payload,
+        "created_at": now_iso(),
+    }
+    try:
+        existing = supabase.table("payment_webhook_events").select("id").eq("event_id", event_id).limit(1).execute().data or []
+        if existing:
+            return False
+        supabase.table("payment_webhook_events").insert(event_row).execute()
+        return True
+    except Exception as e:
+        if "payment_webhook_events" not in str(e):
+            raise
+        # Legacy fallback: no table means continue processing
+        return True
+
+
+def _create_xendit_invoice(*, external_id: str, amount: int, description: str, payer_email: str = "", success_redirect_url: str = "", failure_redirect_url: str = "", metadata: Optional[dict] = None) -> dict:
+    if not _xendit_enabled():
+        raise ValueError("XENDIT_SECRET_KEY is not configured")
+    payload = {
+        "external_id": external_id,
+        "amount": amount,
+        "description": description,
+        "currency": "IDR",
+        "invoice_duration": 86400,
+        "metadata": metadata or {},
+    }
+    if payer_email:
+        payload["customer"] = {"email": payer_email}
+    if success_redirect_url:
+        payload["success_redirect_url"] = success_redirect_url
+    if failure_redirect_url:
+        payload["failure_redirect_url"] = failure_redirect_url
+
+    resp = requests.post(
+        f"{XENDIT_API_BASE}/v2/invoices",
+        headers=_xendit_headers(),
+        json=payload,
+        timeout=20,
+    )
+    if resp.status_code >= 300:
+        raise ValueError(f"Xendit invoice creation failed: {resp.status_code} {resp.text[:300]}")
+    return resp.json()
+
 
 @app.get("/payments/methods")
 def get_payment_methods():
@@ -5709,45 +5893,196 @@ def get_payment_methods():
 
 
 @app.post("/payments/checkout/{order_id}")
-def checkout_order(order_id: str, body: dict = {}):
+def checkout_order(order_id: str, body: dict = {}, current_user: AuthenticatedUser = Depends(get_current_user)):
     try:
         res = supabase.table("orders").select("*").eq("id", order_id).execute()
         if not res.data:
             return error_response("Order not found.")
         order = res.data[0]
+        uid = current_user.user_id
+        if order.get("buyer_id") != uid:
+            return error_response("Not your order")
+        if order.get("status") not in ("pending", "processing"):
+            return error_response("Order is not eligible for checkout")
+
         method_id = body.get("payment_method", "bca")
+        if method_id == "credit_line":
+            credit_account_id = body.get("credit_account_id", "")
+            if not credit_account_id:
+                account_rows = (
+                    supabase.table("credit_accounts")
+                    .select("id")
+                    .eq("retailer_id", uid)
+                    .eq("distributor_id", order.get("seller_id", ""))
+                    .eq("status", "active")
+                    .limit(1)
+                    .execute()
+                    .data
+                    or []
+                )
+                if account_rows:
+                    credit_account_id = account_rows[0].get("id", "")
+            if not credit_account_id:
+                return error_response("No active credit account found for this distributor")
+            credit_result = pay_order_with_credit({"order_id": order_id, "credit_account_id": credit_account_id}, current_user)
+            if not credit_result.get("success"):
+                return credit_result
+            supabase.table("orders").update({"status": "processing", "updated_at": now_iso()}).eq("id", order_id).execute()
+            return success_response(
+                data={
+                    "order_id": order_id,
+                    "total_bill": int(order.get("total_price", 0) or 0),
+                    "method": "Credit Line",
+                    "method_type": "credit_line",
+                    "payment_detail": {"credit_account_id": credit_account_id},
+                    "payment_status": "paid",
+                },
+                message="Credit line payment successful",
+            )
+
         method = next((m for m in PAYMENT_METHODS if m["id"] == method_id), PAYMENT_METHODS[5])
-
-        if method["type"] == "e-wallet":
-            payment_detail = {"deeplink": f"https://{method_id}.mock/pay/{order_id}", "qr_url": f"https://api.mock/qr/{order_id}"}
-        elif method["type"] == "qris":
-            payment_detail = {"qr_string": f"00020101021226610014ID.CO.AUTOSUP.WWW0215{order_id[:15]}5303360540{int(order.get('total_price', 0))}5802ID5913AUTOSUP STORE6007JAKARTA63041234"}
-        else:
-            payment_detail = {"va_number": f"8077{random.randint(1000000, 9999999)}"}
-
-        supabase.table("orders").update({"status": "processing"}).eq("id", order_id).execute()
+        amount = int(order.get("total_price", 0) or 0)
+        external_id = f"autosup-order-{order_id}"
+        success_url = f"{XENDIT_CALLBACK_BASE_URL}/dashboard/orders?payment=success" if XENDIT_CALLBACK_BASE_URL else ""
+        failed_url = f"{XENDIT_CALLBACK_BASE_URL}/dashboard/orders?payment=failed" if XENDIT_CALLBACK_BASE_URL else ""
+        x_invoice = _create_xendit_invoice(
+            external_id=external_id,
+            amount=amount,
+            description=f"AUTOSUP order {order.get('order_number', order_id[:8])}",
+            payer_email=current_user.email,
+            success_redirect_url=success_url,
+            failure_redirect_url=failed_url,
+            metadata={"order_id": order_id, "buyer_id": uid, "seller_id": order.get("seller_id", ""), "payment_method": method_id},
+        )
+        _payment_tx_upsert(
+            {
+                "order_id": order_id,
+                "invoice_id": "",
+                "payer_id": uid,
+                "payee_id": order.get("seller_id", ""),
+                "amount": amount,
+                "currency": x_invoice.get("currency", "IDR"),
+                "payment_method": method_id,
+                "gateway": "xendit",
+                "external_id": external_id,
+                "xendit_invoice_id": x_invoice.get("id", ""),
+                "invoice_url": x_invoice.get("invoice_url", ""),
+                "status": x_invoice.get("status", "PENDING"),
+                "raw_response": x_invoice,
+                "created_at": now_iso(),
+                "updated_at": now_iso(),
+            }
+        )
+        supabase.table("orders").update({"status": "pending", "updated_at": now_iso()}).eq("id", order_id).execute()
 
         return success_response(
             data={
                 "order_id": order_id,
-                "total_bill": order.get("total_price"),
+                "total_bill": amount,
                 "method": method["name"],
                 "method_type": method["type"],
-                "payment_detail": payment_detail,
-                "payment_status": "paid",
+                "payment_detail": {
+                    "invoice_id": x_invoice.get("id", ""),
+                    "invoice_url": x_invoice.get("invoice_url", ""),
+                    "expiry_date": x_invoice.get("expiry_date", ""),
+                    "status": x_invoice.get("status", "PENDING"),
+                },
+                "payment_status": "awaiting_payment",
             },
-            message="Payment successful",
+            message="Payment intent created",
         )
+    except Exception as e:
+        return error_response(str(e))
+
+
+@app.post("/payments/webhook/xendit")
+async def payment_webhook_xendit(request: Request):
+    try:
+        token = request.headers.get("x-callback-token", "")
+        if XENDIT_WEBHOOK_TOKEN and token != XENDIT_WEBHOOK_TOKEN:
+            return error_response("Invalid webhook token")
+
+        payload = await request.json()
+        event_id = payload.get("id", "")
+        if event_id:
+            should_process = _save_webhook_event(event_id, payload)
+            if not should_process:
+                return success_response(data={"event_id": event_id}, message="Duplicate webhook ignored")
+
+        external_id = payload.get("external_id", "")
+        xendit_invoice_id = payload.get("id", "")
+        x_status = str(payload.get("status", "PENDING")).upper()
+
+        tx = []
+        if external_id:
+            tx = _payment_tx_select(external_id=external_id)
+        if not tx and xendit_invoice_id:
+            tx = _payment_tx_select(xendit_invoice_id=xendit_invoice_id)
+        tx_row = tx[0] if tx else {}
+        order_id = tx_row.get("order_id")
+        invoice_id = tx_row.get("invoice_id")
+
+        order_status = "pending"
+        invoice_status = "pending"
+        if x_status == "PAID":
+            order_status = "processing"
+            invoice_status = "paid"
+        elif x_status == "EXPIRED":
+            order_status = "pending"
+            invoice_status = "overdue"
+        elif x_status in ("FAILED", "CANCELLED"):
+            order_status = "cancelled"
+            invoice_status = "cancelled"
+
+        if order_id:
+            update_payload = {"status": order_status, "updated_at": now_iso()}
+            if order_status == "cancelled":
+                update_payload["escrow_status"] = "refunded"
+            supabase.table("orders").update(update_payload).eq("id", order_id).execute()
+
+        if invoice_id:
+            try:
+                inv_payload = {"status": invoice_status, "updated_at": now_iso()}
+                if invoice_status == "paid":
+                    inv_payload["paid_at"] = now_iso()
+                supabase.table("invoices").update(inv_payload).eq("id", invoice_id).execute()
+            except Exception:
+                pass
+
+        if tx_row:
+            _payment_tx_upsert(
+                {
+                    "id": tx_row.get("id"),
+                    "order_id": tx_row.get("order_id", ""),
+                    "invoice_id": tx_row.get("invoice_id", ""),
+                    "payer_id": tx_row.get("payer_id", ""),
+                    "payee_id": tx_row.get("payee_id", ""),
+                    "amount": tx_row.get("amount", 0),
+                    "currency": tx_row.get("currency", "IDR"),
+                    "payment_method": tx_row.get("payment_method", ""),
+                    "gateway": "xendit",
+                    "external_id": external_id or tx_row.get("external_id", ""),
+                    "xendit_invoice_id": xendit_invoice_id or tx_row.get("xendit_invoice_id", ""),
+                    "invoice_url": tx_row.get("invoice_url", ""),
+                    "status": x_status,
+                    "raw_response": payload,
+                    "created_at": tx_row.get("created_at", now_iso()),
+                    "updated_at": now_iso(),
+                }
+            )
+
+        return success_response(data={"order_id": order_id, "invoice_id": invoice_id, "status": x_status}, message="Xendit webhook processed")
     except Exception as e:
         return error_response(str(e))
 
 
 @app.post("/payments/webhook")
 def payment_webhook(data: WebhookPayment):
+    # Backward-compatible legacy webhook.
     try:
         status_map = {"settlement": "processing", "expire": "cancelled", "cancel": "cancelled", "deny": "cancelled"}
         new_status = status_map.get(data.transaction_status, "pending")
-        supabase.table("orders").update({"status": new_status}).eq("id", data.order_id).execute()
+        supabase.table("orders").update({"status": new_status, "updated_at": now_iso()}).eq("id", data.order_id).execute()
         return success_response(data={"order_id": data.order_id}, message=f"Webhook received, status: {new_status}")
     except Exception as e:
         return error_response(str(e))
