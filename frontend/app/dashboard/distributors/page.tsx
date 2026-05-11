@@ -530,7 +530,7 @@ const [selectedDistributor, setSelectedDistributor] = useState<Distributor | nul
               <textarea
                 className="w-full rounded-lg border border-[#E2E8F0] px-3 py-2 text-sm focus:border-[#3B82F6] focus:outline-none"
                 rows={3}
-                placeholder="e.g. Retailer berhak membeli produk dari distributor dengan harga grosir. Minimum order Rp 200.000."
+                placeholder="e.g. Retailer is authorized to purchase products at wholesale price. Minimum order Rp 200,000 per transaction."
                 value={mouTerms}
                 onChange={(e) => setMouTerms(e.target.value)}
               />
@@ -539,10 +539,19 @@ const [selectedDistributor, setSelectedDistributor] = useState<Distributor | nul
               <label className="text-xs font-medium text-[#64748B]">Area Coverage</label>
               <input
                 className="w-full rounded-lg border border-[#E2E8F0] px-3 py-2 text-sm focus:border-[#3B82F6] focus:outline-none"
-                placeholder="e.g. Jakarta Timur, Bekasi"
+                placeholder="e.g. East Jakarta, Bekasi"
                 value={mouRegion}
                 onChange={(e) => setMouRegion(e.target.value)}
               />
+            </div>
+            <div className="space-y-1">
+              <label className="text-xs font-medium text-[#64748B]">MOU Document (PDF) <span className="text-[#94A3B8] italic">— optional</span></label>
+              <input
+                type="file"
+                accept=".pdf"
+                className="w-full rounded-lg border border-dashed border-[#CBD5E1] px-3 py-2 text-xs text-[#64748B] file:mr-2 file:rounded file:border-0 file:bg-[#EFF6FF] file:px-2 file:py-1 file:text-xs file:text-[#2563EB]"
+              />
+              <p className="text-[10px] text-[#94A3B8]">Upload signed MOU document if available. Max 5MB.</p>
             </div>
             <div className="flex justify-end gap-2">
               <Button variant="secondary" onClick={() => setMouTarget(null)}>Cancel</Button>
