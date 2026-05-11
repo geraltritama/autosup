@@ -30,7 +30,7 @@ export type DistributorPartnershipHistoryItem = {
   created_at: string;
   terms?: string;
   distribution_region?: string;
-  valid_until?: number;
+  valid_until?: string | number | null;
   legal_contract_hash?: string;
   mou_document_name?: string;
   mou_document_data?: string;

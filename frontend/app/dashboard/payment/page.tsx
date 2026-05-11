@@ -9,12 +9,11 @@ import {
   Clock3,
   CreditCard,
   Loader2,
-  PieChart,
   Wallet,
 } from "lucide-react";
 import { KpiCard } from "@/components/dashboard/kpi-card";
-import { InsightCard } from "@/components/dashboard/insight-card";
 import { PageErrorState } from "@/components/dashboard/page-error-state";
+import { useDashboard } from "@/hooks/useDashboard";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -38,7 +37,8 @@ export default function PaymentPage() {
   const role = useAuthStore((s) => s.user?.role);
   const retailerQuery = useRetailerPayments();
   const distributorQuery = useDistributorPayments();
-  const { data, isLoading, isError, refetch } = role === "distributor" ? distributorQuery : retailerQuery;
+  const dashboardQuery = useDashboard();
+  const { isLoading, isError, refetch } = role === "distributor" ? distributorQuery : retailerQuery;
   const payMutation = usePayInvoice();
   const settleMutation = useSettlePayment();
 
@@ -59,14 +59,41 @@ export default function PaymentPage() {
   const distSummary = distData?.summary;
   const invoices = retailerData?.invoices ?? [];
   const distPayments = distData?.payments ?? [];
-  const insights = retailerData?.insights ?? [];
+  const retailerDashboard = role === "retailer" && dashboardQuery.data?.role === "retailer"
+    ? dashboardQuery.data
+    : undefined;
+  const creditLines = retailerDashboard?.credit_lines ?? [];
+  const invoicesByDistributor = invoices.reduce<
+    Array<{
+      seller_name: string;
+      total_amount: number;
+      invoice_count: number;
+      overdue_count: number;
+      next_due_date: string | null;
+    }>
+  >((groups, invoice) => {
+    const existing = groups.find((entry) => entry.seller_name === invoice.seller_name);
+    if (!existing) {
+      groups.push({
+        seller_name: invoice.seller_name,
+        total_amount: invoice.amount,
+        invoice_count: 1,
+        overdue_count: invoice.status === "overdue" ? 1 : 0,
+        next_due_date: invoice.status !== "paid" ? invoice.due_date : null,
+      });
+      return groups;
+    }
 
-  const adaptedInsights = insights.map((i) => ({
-    type: i.type,
-    message: i.message,
-    urgency: i.urgency,
-    item_id: i.type,
-  }));
+    existing.total_amount += invoice.amount;
+    existing.invoice_count += 1;
+    if (invoice.status === "overdue") existing.overdue_count += 1;
+    if (invoice.status !== "paid") {
+      if (!existing.next_due_date || new Date(invoice.due_date) < new Date(existing.next_due_date)) {
+        existing.next_due_date = invoice.due_date;
+      }
+    }
+    return groups;
+  }, []).sort((a, b) => b.total_amount - a.total_amount);
 
   return (
     <main className="space-y-6 px-6 py-6 lg:px-8 lg:py-8">
@@ -78,8 +105,8 @@ export default function PaymentPage() {
             <h1 className="text-3xl font-semibold tracking-tight text-[#0F172A]">Payments & Credit</h1>
             <p className="max-w-3xl text-sm leading-7 text-[#64748B]">
               {role === "retailer"
-                ? "Track invoices to distributors, leverage credit line facilities, and optimize spending with AI cash flow recommendations."
-                : "Track incoming payments from retailers and outgoing to suppliers, and optimize cash flow with AI."}
+                ? "Track invoices, due dates, and credit exposure across all partnered distributors."
+                : "Track incoming payments from retailers and outgoing settlements to suppliers."}
             </p>
           </div>
         </div>
@@ -95,19 +122,54 @@ export default function PaymentPage() {
         </section>
       )}
 
+      {role === "retailer" && invoicesByDistributor.length > 0 && (
+        <section>
+          <Card className="rounded-2xl">
+            <CardContent className="p-5">
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[#64748B]">
+                    Outstanding by Distributor
+                  </p>
+                  <p className="mt-1 text-sm text-[#64748B]">
+                    Invoice exposure is now spread across {invoicesByDistributor.length} distributor partners.
+                  </p>
+                </div>
+              </div>
+              <div className="mt-4 grid gap-3 md:grid-cols-2">
+                {invoicesByDistributor.map((group) => (
+                  <div key={group.seller_name} className="rounded-xl border border-[#E2E8F0] p-4">
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <p className="text-sm font-semibold text-[#0F172A]">{group.seller_name}</p>
+                        <p className="mt-1 text-xs text-[#64748B]">
+                          {group.invoice_count} invoice{group.invoice_count > 1 ? "s" : ""}
+                        </p>
+                      </div>
+                      <Badge tone={group.overdue_count > 0 ? "danger" : "info"}>
+                        {group.overdue_count > 0 ? `${group.overdue_count} overdue` : "on schedule"}
+                      </Badge>
+                    </div>
+                    <p className="mt-3 text-xl font-semibold text-[#0F172A]">{formatCurrency(group.total_amount)}</p>
+                    {group.next_due_date && (
+                      <p className="mt-1 text-xs text-[#64748B]">
+                        Next due: {new Intl.DateTimeFormat("en-US", { day: "2-digit", month: "short", year: "numeric" }).format(new Date(group.next_due_date))}
+                      </p>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </CardContent>
+          </Card>
+        </section>
+      )}
+
       {/* KPI cards — distributor */}
       {role === "distributor" && distSummary && (
         <section className="grid gap-4 md:grid-cols-3">
           <KpiCard label="Total Payable" value={formatCurrency(distSummary.total_payable)} meta="Outgoing payments" tone="warning" icon={ArrowUpRight} />
           <KpiCard label="Total Receivable" value={formatCurrency(distSummary.total_receivable)} meta="Incoming payments" tone="success" icon={ArrowDownLeft} />
           <KpiCard label="Pending" value={String(distSummary.pending_count)} meta="Awaiting settlement" tone="danger" icon={Clock3} />
-        </section>
-      )}
-
-      {/* AI Insights */}
-      {adaptedInsights.length > 0 && (
-        <section>
-          <InsightCard insights={adaptedInsights} />
         </section>
       )}
 
@@ -225,7 +287,7 @@ export default function PaymentPage() {
                 {role === "distributor" ? "Settlement Summary" : "Credit & Financing Panel"}
               </CardTitle>
               <p className="text-sm text-[#64748B]">
-                {role === "distributor" ? "Payment status summary" : "Credit facility from distributor partners"}
+                {role === "distributor" ? "Payment status summary" : "Credit facility from all distributor partners"}
               </p>
             </CardHeader>
             <CardContent className="space-y-6">
@@ -261,9 +323,46 @@ export default function PaymentPage() {
                   </div>
                   
                   <div className="rounded-xl border border-[#E2E8F0] p-4">
-                    <p className="text-xs uppercase tracking-[0.15em] text-[#64748B]">Total Invoices</p>
+                    <p className="text-xs uppercase tracking-[0.15em] text-[#64748B]">Outstanding Balance</p>
                     <p className="mt-1 text-2xl font-semibold text-[#0F172A]">{formatCurrency(summary.total_outstanding)}</p>
                   </div>
+
+                  {creditLines.length > 0 && (
+                    <div className="space-y-3">
+                      <div>
+                        <p className="text-xs uppercase tracking-[0.15em] text-[#64748B]">Distributor Credit Lines</p>
+                        <p className="mt-1 text-sm text-[#64748B]">Active financing status per partner.</p>
+                      </div>
+                      {creditLines.map((line) => (
+                        <div key={line.distributor_id} className="rounded-xl border border-[#E2E8F0] p-4">
+                          <div className="flex items-center justify-between gap-3">
+                            <p className="text-sm font-semibold text-[#0F172A]">{line.distributor_name}</p>
+                            <Badge tone={line.status === "overdue" ? "danger" : "success"}>{line.status}</Badge>
+                          </div>
+                          <div className="mt-3 space-y-1 text-xs text-[#64748B]">
+                            <div className="flex items-center justify-between gap-3">
+                              <span>Limit</span>
+                              <span className="font-medium text-[#0F172A]">{formatCurrency(line.credit_limit)}</span>
+                            </div>
+                            <div className="flex items-center justify-between gap-3">
+                              <span>Used</span>
+                              <span className="font-medium text-[#0F172A]">{formatCurrency(line.utilized_amount)}</span>
+                            </div>
+                            <div className="flex items-center justify-between gap-3">
+                              <span>Available</span>
+                              <span className="font-medium text-[#22C55E]">{formatCurrency(line.available_amount)}</span>
+                            </div>
+                            {line.next_due_amount > 0 && (
+                              <div className="flex items-center justify-between gap-3">
+                                <span>Next due</span>
+                                <span className="font-medium text-[#F59E0B]">{formatCurrency(line.next_due_amount)}</span>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </>
               )}
 

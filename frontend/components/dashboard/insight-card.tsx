@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { ChevronDown, ChevronUp, Sparkles } from "lucide-react";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import type { AiInsight } from "@/hooks/useDashboard";
 
@@ -143,7 +143,13 @@ function InsightDetail({ fullResult }: { fullResult: string }) {
   );
 }
 
-export function InsightCard({ insights }: { insights: AiInsight[] }) {
+export function InsightCard({
+  insights,
+  badgeLabel = "AI operations insight",
+}: {
+  insights: AiInsight[];
+  badgeLabel?: string;
+}) {
   const primary = insights[0];
   const secondary = insights.slice(1);
   const [expandedIdx, setExpandedIdx] = useState<number | null>(null);
@@ -158,7 +164,7 @@ export function InsightCard({ insights }: { insights: AiInsight[] }) {
       <CardHeader className="flex flex-row items-start justify-between gap-4">
         <button type="button" onClick={() => setExpandedIdx(primaryExpanded ? null : -1)} className="text-left space-y-2 flex-1 min-w-0">
           <div className="flex items-center gap-2">
-            <Badge tone="info">AI operations insight</Badge>
+            <Badge tone="info">{badgeLabel}</Badge>
             <Badge tone={urgencyTone[primary.urgency]}>{urgencyLabel[primary.urgency]}</Badge>
           </div>
           <p className={`text-lg font-semibold text-[#0F172A] ${primaryExpanded ? "" : "line-clamp-2"}`}>{primary.message}</p>

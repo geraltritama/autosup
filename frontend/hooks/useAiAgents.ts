@@ -189,9 +189,11 @@ export function useAutoTickAgents() {
 export function useClearActivities() {
   const qc = useQueryClient();
   const role = useAuthStore((s) => s.user?.role);
+  const userId = useAuthStore((s) => s.user?.user_id);
   return useMutation({
     mutationFn: async () => {
-      const { data } = await api.delete<ApiResponse>("/ai/activities", {
+      const params = userId ? `?user_id=${userId}` : "";
+      const { data } = await api.delete<ApiResponse>(`/ai/activities${params}`, {
         headers: { "x-user-role": role ?? "distributor" },
       });
       return data;

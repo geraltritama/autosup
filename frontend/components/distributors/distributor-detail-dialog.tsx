@@ -45,10 +45,12 @@ function formatDate(value: string) {
   }
 }
 
-function formatValidUntil(ts?: number) {
+function formatValidUntil(ts?: string | number | null) {
   if (!ts || ts === 0) return null;
   try {
-    return new Date(ts * 1000).toLocaleDateString("en-US", {
+    const parsed = typeof ts === "number" ? new Date(ts * 1000) : new Date(ts);
+    if (Number.isNaN(parsed.getTime())) return null;
+    return parsed.toLocaleDateString("en-US", {
       day: "numeric",
       month: "short",
       year: "numeric",
@@ -69,7 +71,7 @@ function downloadMou(dataUrl: string, filename: string) {
 
 export function DistributorDetailDialog({ open, onClose, distributor, role = "supplier" }: Props) {
   const { data: historyData, isLoading: isHistoryLoading } = useDistributorPartnershipHistory(
-    open && role === "supplier" ? (distributor?.distributor_id ?? null) : null,
+    open ? (distributor?.distributor_id ?? null) : null,
   );
   if (!distributor) return null;
   const history = historyData?.history ?? [];
@@ -150,12 +152,14 @@ export function DistributorDetailDialog({ open, onClose, distributor, role = "su
           )}
         </div>
 
-        {role === "supplier" && (
+        {distributor.partnership_status !== "none" && (
           <div className="rounded-xl border border-[#E2E8F0] p-4 space-y-4">
             <div className="flex items-center justify-between gap-3">
               <div>
                 <p className="text-xs uppercase tracking-[0.15em] text-[#64748B]">Partnership Data</p>
-                <p className="text-sm text-[#0F172A]">Latest MOU and distributor request history.</p>
+                <p className="text-sm text-[#0F172A]">
+                  {role === "retailer" ? "Latest retailer agreement, MOU, and NFT data." : "Latest MOU and distributor request history."}
+                </p>
               </div>
               {latestRecord && (
                 <Badge tone={historyTone[latestRecord.status] ?? "neutral"}>
