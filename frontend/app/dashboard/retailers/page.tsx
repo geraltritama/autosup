@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useScrollLock } from "@/hooks/useScrollLock";
 import {
   Building2,
+  CreditCard,
   Loader2,
   Plus,
   Search,
@@ -13,6 +14,7 @@ import {
   X,
   Trash2,
 } from "lucide-react";
+import { api } from "@/lib/api";
 import { KpiCard } from "@/components/dashboard/kpi-card";
 import { PageErrorState } from "@/components/dashboard/page-error-state";
 import { Badge } from "@/components/ui/badge";
@@ -379,6 +381,20 @@ function RetailerDetailPanel({
                   </>
                 )}
               </div>
+              )}
+              {!data.credit_summary?.has_active_credit && data.segment !== "new" && (
+                <Button
+                  className="w-full mt-2 gap-2"
+                  onClick={() => {
+                    const limit = data.segment === "premium" ? 20000000 : 5000000;
+                    if (confirm(`Grant credit line Rp ${limit.toLocaleString("id-ID")} to ${data.name}?`)) {
+                      api.post("/credit/accounts", { retailer_id: retailerId, credit_limit: limit }).then(() => window.location.reload());
+                    }
+                  }}
+                >
+                  <CreditCard className="h-4 w-4" />
+                  Grant Credit ({data.segment === "premium" ? "Rp 20M" : "Rp 5M"})
+                </Button>
               )}
             </div>
           )}

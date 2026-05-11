@@ -3764,6 +3764,113 @@ def update_credit(account_id: str, data: UpdateCreditReq):
     except Exception as e:
         return error_response(str(e))
 
+
+@app.get("/credit/eligibility/{retailer_id}")
+def check_credit_eligibility(retailer_id: str, current_user: AuthenticatedUser = Depends(get_current_user)):
+    """Check if retailer is eligible for credit line based on segment."""
+    try:
+        uid = current_user.user_id
+        # Verify partnership exists
+        p_res = supabase.table("partnerships").select("id,created_at").eq("type", "distributor_retailer").eq("approver_id", uid).eq("requester_id", retailer_id).eq("status", "accepted").execute()
+        if not p_res.data:
+            return success_response(data={"eligible": False, "reason": "No active partnership", "segment": "none", "suggested_limit": 0})
+
+        # Calculate segment from orders
+        orders_res = supabase.table("orders").select("total_price,status").eq("seller_id", uid).eq("buyer_id", retailer_id).execute()
+        orders = orders_res.data or []
+        total_purchase = sum(int(o.get("total_price", 0) or 0) for o in orders if o.get("status") == "delivered")
+        order_count = len([o for o in orders if o.get("status") == "delivered"])
+
+        # Partnership duration
+        partnership_created = p_res.data[0].get("created_at", "")
+        days_partnered = 0
+        if partnership_created:
+            try:
+                days_partnered = (datetime.utcnow() - _parse_ts(partnership_created)).days
+            except Exception:
+                pass
+
+        # Determine segment
+        if total_purchase >= 10_000_000 and order_count >= 5 and days_partnered >= 90:
+            segment = "premium"
+            suggested_limit = 20_000_000
+        elif total_purchase >= 2_000_000 or order_count >= 2:
+            segment = "regular"
+            suggested_limit = 5_000_000
+        else:
+            segment = "new"
+            suggested_limit = 0
+
+        eligible = segment in ("regular", "premium")
+
+        # Check if already has credit
+        existing = supabase.table("credit_accounts").select("id").eq("distributor_id", uid).eq("retailer_id", retailer_id).neq("status", "closed").execute()
+        already_has = bool(existing.data)
+
+        return success_response(data={
+            "eligible": eligible and not already_has,
+            "segment": segment,
+            "suggested_limit": suggested_limit,
+            "total_purchase": total_purchase,
+            "order_count": order_count,
+            "days_partnered": days_partnered,
+            "already_has_credit": already_has,
+            "reason": "Already has active credit line" if already_has else ("Eligible" if eligible else "Not enough order history (need Regular or Premium segment)"),
+        })
+    except Exception as e:
+        return error_response(str(e))
+
+
+@app.post("/orders/pay-with-credit")
+def pay_order_with_credit(body: dict, current_user: AuthenticatedUser = Depends(get_current_user)):
+    """Deduct order amount from retailer's credit line."""
+    try:
+        order_id = body.get("order_id", "")
+        credit_account_id = body.get("credit_account_id", "")
+        uid = current_user.user_id
+
+        if not order_id or not credit_account_id:
+            return error_response("order_id and credit_account_id required")
+
+        # Get order
+        order_res = supabase.table("orders").select("total_price,buyer_id,status").eq("id", order_id).execute()
+        if not order_res.data:
+            return error_response("Order not found")
+        order = order_res.data[0]
+        if order.get("buyer_id") != uid:
+            return error_response("Not your order")
+        if order.get("status") != "pending":
+            return error_response("Order must be pending to pay with credit")
+        amount = int(order.get("total_price", 0) or 0)
+
+        # Get credit account
+        credit_res = supabase.table("credit_accounts").select("*").eq("id", credit_account_id).execute()
+        if not credit_res.data:
+            return error_response("Credit account not found")
+        credit = credit_res.data[0]
+        if credit.get("retailer_id") != uid:
+            return error_response("Not your credit account")
+        if credit.get("status") != "active":
+            return error_response("Credit account is not active")
+
+        available = int(credit.get("credit_limit", 0)) - int(credit.get("utilized_amount", 0))
+        if amount > available:
+            return error_response(f"Insufficient credit. Available: Rp {available:,}, Order: Rp {amount:,}")
+
+        # Deduct
+        new_utilized = int(credit.get("utilized_amount", 0)) + amount
+        supabase.table("credit_accounts").update({"utilized_amount": new_utilized}).eq("id", credit_account_id).execute()
+
+        return success_response(data={
+            "order_id": order_id,
+            "amount_charged": amount,
+            "new_utilized": new_utilized,
+            "remaining_available": int(credit.get("credit_limit", 0)) - new_utilized,
+        }, message="Order paid with credit successfully")
+    except Exception as e:
+        return error_response(str(e))
+
+
 # ==========================================
 # 17. AI AGENTS
 # ==========================================
