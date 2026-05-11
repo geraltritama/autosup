@@ -6,7 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { usePartnershipsSummary } from "@/hooks/usePartnerships";
 
 export function SuppliersTrustPanel() {
-  const { data, isLoading } = usePartnershipsSummary();
+  const { data, isLoading } = usePartnershipsSummary("supplier");
   const summary = data?.summary;
 
   return (
