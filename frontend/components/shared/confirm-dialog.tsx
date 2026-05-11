@@ -20,14 +20,14 @@ export function ConfirmDialog({
   onConfirm,
   title,
   description,
-  confirmLabel = "Hapus",
+  confirmLabel = "Delete",
   isLoading,
 }: Props) {
   return (
     <LegacyDialog open={open} onClose={onClose} title={title} description={description}>
       <div className="flex justify-end gap-3 pt-2">
         <Button variant="secondary" onClick={onClose} disabled={isLoading}>
-          Batal
+          Cancel
         </Button>
         <Button
           onClick={onConfirm}

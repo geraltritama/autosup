@@ -48,7 +48,7 @@ import { useRetailers } from "@/hooks/useRetailers";
 import { useAuthStore } from "@/store/useAuthStore";
 
 function formatCurrency(amount: number) {
-  return new Intl.NumberFormat("id-ID", {
+  return new Intl.NumberFormat("en-US", {
     style: "currency",
     currency: "IDR",
     maximumFractionDigits: 0,
@@ -57,7 +57,7 @@ function formatCurrency(amount: number) {
 }
 
 function formatDate(iso: string) {
-  return new Intl.DateTimeFormat("id-ID", {
+  return new Intl.DateTimeFormat("en-US", {
     day: "numeric",
     month: "short",
     year: "numeric",
@@ -72,10 +72,10 @@ const statusTone: Record<CreditAccountStatus, "success" | "danger" | "warning" |
 };
 
 const statusLabel: Record<CreditAccountStatus, string> = {
-  active: "Aktif",
-  overdue: "Jatuh Tempo",
-  suspended: "Ditangguhkan",
-  closed: "Ditutup",
+  active: "Active",
+  overdue: "Overdue",
+  suspended: "Suspended",
+  closed: "Closed",
 };
 
 const riskTone: Record<RiskLevel, "success" | "warning" | "danger"> = {
@@ -142,7 +142,7 @@ function OpenCreditDialog({
     <Dialog open={open} onOpenChange={onClose}>
       <DialogContent className="max-w-md">
         <DialogHeader>
-          <DialogTitle>Buka Credit Line</DialogTitle>
+          <DialogTitle>Open Credit Line</DialogTitle>
         </DialogHeader>
         <form onSubmit={handleSubmit} className="space-y-4 pt-2">
           <div className="space-y-1.5">
@@ -155,7 +155,7 @@ function OpenCreditDialog({
               }}
             >
               <SelectTrigger>
-                <SelectValue placeholder="Pilih retailer..." />
+                <SelectValue placeholder="Select retailer..." />
               </SelectTrigger>
               <SelectContent>
                 {(retailersData?.retailers ?? []).map((r) => (
@@ -185,7 +185,7 @@ function OpenCreditDialog({
                   {aiRisk.isPending ? (
                     <Loader2 className="mr-1.5 h-3 w-3 animate-spin" />
                   ) : null}
-                  Analisis
+                  Analyze
                 </Button>
               </div>
 
@@ -214,7 +214,7 @@ function OpenCreditDialog({
           )}
 
           <div className="space-y-1.5">
-            <Label>Limit Kredit (IDR)</Label>
+            <Label>Credit Limit (IDR)</Label>
             <Input
               required
               type="number"
@@ -225,7 +225,7 @@ function OpenCreditDialog({
             />
           </div>
           <div className="space-y-1.5">
-            <Label>Siklus Tagihan (hari)</Label>
+            <Label>Billing Cycle (days)</Label>
             <Select
               value={form.billing_cycle_days}
               onValueChange={(v) => setForm((f) => ({ ...f, billing_cycle_days: v }))}
@@ -234,31 +234,31 @@ function OpenCreditDialog({
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="14">14 hari</SelectItem>
-                <SelectItem value="30">30 hari</SelectItem>
-                <SelectItem value="45">45 hari</SelectItem>
-                <SelectItem value="60">60 hari</SelectItem>
+                <SelectItem value="14">14 days</SelectItem>
+                <SelectItem value="30">30 days</SelectItem>
+                <SelectItem value="45">45 days</SelectItem>
+                <SelectItem value="60">60 days</SelectItem>
               </SelectContent>
             </Select>
           </div>
           <div className="space-y-1.5">
-            <Label>Catatan (opsional)</Label>
+            <Label>Notes (optional)</Label>
             <Input
               value={form.notes}
               onChange={(e) => setForm((f) => ({ ...f, notes: e.target.value }))}
-              placeholder="Informasi tambahan..."
+              placeholder="Additional information..."
             />
           </div>
 
           <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs text-amber-700">
             <AlertTriangle className="mb-1 h-3.5 w-3.5 inline mr-1" />
-            Membuka credit line akan membebankan tanggung jawab pembayaran. Pastikan Anda
-            telah meninjau analisis risiko sebelum konfirmasi.
+            Opening a credit line will incur payment responsibility. Make sure you
+            have reviewed the risk analysis before confirming.
           </div>
 
           <DialogFooter className="pt-2">
             <Button type="button" variant="outline" onClick={onClose}>
-              Batal
+              Cancel
             </Button>
             <Button
               type="submit"
@@ -267,7 +267,7 @@ function OpenCreditDialog({
               {openCredit.isPending ? (
                 <Loader2 className="mr-2 h-4 w-4 animate-spin" />
               ) : null}
-              Buka Credit Line
+              Open Credit Line
             </Button>
           </DialogFooter>
         </form>
@@ -291,7 +291,7 @@ function RepaymentPanel({
     <div className="fixed inset-y-0 right-0 z-40 flex w-full max-w-md flex-col border-l border-[#E2E8F0] bg-white shadow-xl">
       <div className="flex items-center justify-between border-b border-[#E2E8F0] px-6 py-4">
         <div>
-          <h3 className="font-semibold text-[#0F172A]">Riwayat Repayment</h3>
+          <h3 className="font-semibold text-[#0F172A]">Repayment History</h3>
           <p className="text-xs text-[#64748B]">{retailerName}</p>
         </div>
         <button onClick={onClose} className="rounded-lg p-1.5 text-[#64748B] hover:bg-slate-100">
@@ -306,7 +306,7 @@ function RepaymentPanel({
           </div>
         ) : !repayments || repayments.length === 0 ? (
           <div className="flex h-48 items-center justify-center">
-            <p className="text-sm text-[#64748B]">Belum ada riwayat repayment.</p>
+            <p className="text-sm text-[#64748B]">No repayment history.</p>
           </div>
         ) : (
           <div className="space-y-3">
@@ -355,9 +355,9 @@ export default function CreditPage() {
     return (
       <main className="flex h-[80vh] items-center justify-center p-8">
         <div className="text-center">
-          <h2 className="text-xl font-semibold text-[#0F172A]">Akses Ditolak</h2>
+          <h2 className="text-xl font-semibold text-[#0F172A]">Access Denied</h2>
           <p className="mt-2 text-sm text-[#64748B]">
-            Halaman Credit Line khusus untuk Distributor.
+            Credit Line page is for Distributors only.
           </p>
         </div>
       </main>
@@ -384,14 +384,14 @@ export default function CreditPage() {
                 Credit Line
               </h1>
               <p className="max-w-3xl text-sm leading-7 text-[#64748B]">
-                Kelola fasilitas kredit yang Anda berikan kepada retailer. Pantau utilisasi,
-                repayment, dan risiko kredit secara real-time.
+                Manage credit facilities you provide to retailers. Monitor utilization,
+                repayments, and credit risk in real-time.
               </p>
             </div>
           </div>
           <Button onClick={() => setShowOpen(true)} className="gap-2 self-start lg:self-auto">
             <Plus className="h-4 w-4" />
-            Buka Credit Line
+            Open Credit Line
           </Button>
         </section>
 
@@ -401,28 +401,28 @@ export default function CreditPage() {
             <KpiCard
               label="Total Issued"
               value={formatCurrency(summary.total_credit_issued)}
-              meta="Total limit kredit diterbitkan"
+              meta="Total credit limit issued"
               tone="info"
               icon={CreditCard}
             />
             <KpiCard
               label="Outstanding"
               value={formatCurrency(summary.total_utilized)}
-              meta="Total saldo terutang"
+              meta="Total outstanding balance"
               tone="warning"
               icon={BadgeDollarSign}
             />
             <KpiCard
               label="Overdue"
               value={String(summary.overdue_count)}
-              meta="Akun melewati jatuh tempo"
+              meta="Accounts past due"
               tone="danger"
               icon={AlertTriangle}
             />
             <KpiCard
               label="Utilization"
               value={`${Math.round(summary.avg_utilization_pct)}%`}
-              meta="Rata-rata utilisasi kredit"
+              meta="Average credit utilization"
               tone="success"
               icon={TrendingUp}
             />
@@ -438,14 +438,14 @@ export default function CreditPage() {
             }
           >
             <SelectTrigger className="w-44">
-              <SelectValue placeholder="Semua Status" />
+              <SelectValue placeholder="All Statuses" />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="all">Semua Status</SelectItem>
-              <SelectItem value="active">Aktif</SelectItem>
-              <SelectItem value="overdue">Jatuh Tempo</SelectItem>
-              <SelectItem value="suspended">Ditangguhkan</SelectItem>
-              <SelectItem value="closed">Ditutup</SelectItem>
+              <SelectItem value="all">All Statuses</SelectItem>
+              <SelectItem value="active">Active</SelectItem>
+              <SelectItem value="overdue">Overdue</SelectItem>
+              <SelectItem value="suspended">Suspended</SelectItem>
+              <SelectItem value="closed">Closed</SelectItem>
             </SelectContent>
           </Select>
         </section>
@@ -454,7 +454,7 @@ export default function CreditPage() {
         <section className="space-y-3">
           {isError && !isLoading && (
             <PageErrorState
-              message="Gagal memuat data credit line"
+              message="Failed to load credit line data"
               onRetry={() => refetch()}
             />
           )}
@@ -469,9 +469,9 @@ export default function CreditPage() {
             <Card className="rounded-2xl">
               <CardContent className="flex h-[300px] flex-col items-center justify-center gap-3 pt-6">
                 <CreditCard className="h-10 w-10 text-[#CBD5E1]" />
-                <p className="text-sm text-[#64748B]">Belum ada credit line yang dibuka.</p>
+                <p className="text-sm text-[#64748B]">No credit lines have been opened.</p>
                 <Button variant="outline" size="sm" onClick={() => setShowOpen(true)}>
-                  Buka Credit Line Pertama
+                  Open Credit Line Pertama
                 </Button>
               </CardContent>
             </Card>
@@ -500,14 +500,14 @@ export default function CreditPage() {
                   {/* Utilization */}
                   <div className="space-y-1.5">
                     <div className="flex justify-between text-sm">
-                      <span className="text-[#64748B]">Utilisasi Kredit</span>
+                      <span className="text-[#64748B]">Credit Utilization</span>
                       <span className="font-medium text-[#0F172A]">
                         {account.utilization_pct}%
                       </span>
                     </div>
                     <UtilizationBar pct={account.utilization_pct} />
                     <div className="flex justify-between text-xs text-[#64748B]">
-                      <span>Terpakai: {formatCurrency(account.utilized_amount)}</span>
+                      <span>Used: {formatCurrency(account.utilized_amount)}</span>
                       <span>Limit: {formatCurrency(account.credit_limit)}</span>
                     </div>
                   </div>
@@ -515,13 +515,13 @@ export default function CreditPage() {
                   {/* Due info */}
                   <div className="flex items-center justify-between rounded-xl bg-[#F8FAFC] px-4 py-3">
                     <div>
-                      <p className="text-xs text-[#64748B]">Jatuh Tempo Berikutnya</p>
+                      <p className="text-xs text-[#64748B]">Overdue Berikutnya</p>
                       <p className="text-sm font-semibold text-[#0F172A]">
                         {formatDate(account.next_due_date)}
                       </p>
                     </div>
                     <div className="text-right">
-                      <p className="text-xs text-[#64748B]">Jumlah Tagihan</p>
+                      <p className="text-xs text-[#64748B]">Total Amount Due</p>
                       <p className="text-sm font-semibold text-[#0F172A]">
                         {formatCurrency(account.next_due_amount)}
                       </p>
@@ -541,7 +541,7 @@ export default function CreditPage() {
                         )
                       }
                     >
-                      Riwayat Repayment
+                      Repayment History
                     </Button>
                     {account.status === "active" && (
                       <Button
@@ -551,7 +551,7 @@ export default function CreditPage() {
                         onClick={() => handleSuspend(account.credit_account_id)}
                         disabled={updateAccount.isPending}
                       >
-                        Tangguhkan
+                        Suspend
                       </Button>
                     )}
                     {account.status === "suspended" && (
@@ -566,7 +566,7 @@ export default function CreditPage() {
                         }
                         disabled={updateAccount.isPending}
                       >
-                        Aktifkan Kembali
+                        Activekan Kembali
                       </Button>
                     )}
                   </div>

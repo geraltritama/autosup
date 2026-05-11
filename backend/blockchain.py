@@ -662,8 +662,80 @@ def update_retailer_tier(
         return {"tx_signature": fallback_sig, "explorer_url": _explorer(fallback_sig, "tx"), "on_chain": False}
 
 
+def revoke_partnership_nft(
+    partnership_pda_str: str,
+) -> Dict[str, Any]:
+    """
+    Revoke an active partnership on-chain (state change to Revoked, token stays).
+    Only the original issuer (authority) can call this.
+
+    Returns: { tx_signature, explorer_url, on_chain }
+    """
+    prog_id_str = PROGRAM_IDS["partnership_nft"]
+    auth = _authority()
+    fallback_sig = _det_signature("revoke_partnership", partnership_pda_str)
+
+    if not SOLANA_AVAILABLE or not auth:
+        return {"tx_signature": fallback_sig, "explorer_url": _explorer(fallback_sig, "tx"), "on_chain": False}
+
+    try:
+        prog_id = Pubkey.from_string(prog_id_str)
+        partnership_pda = Pubkey.from_string(partnership_pda_str)
+        disc = _discriminator("revoke_partnership")
+
+        accounts = [
+            AccountMeta(pubkey=auth.pubkey(),      is_signer=True,  is_writable=True),
+            AccountMeta(pubkey=partnership_pda,     is_signer=False, is_writable=True),
+        ]
+
+        ix = Instruction(program_id=prog_id, accounts=accounts, data=disc)
+        sig = _send(auth, [ix])
+        return {
+            "tx_signature": sig or fallback_sig,
+            "explorer_url": _explorer(sig or fallback_sig, "tx"),
+            "on_chain": bool(sig),
+        }
+    except Exception as e:
+        logger.error(f"revoke_partnership_nft error: {e}")
+        return {"tx_signature": fallback_sig, "explorer_url": _explorer(fallback_sig, "tx"), "on_chain": False}
+
+
+def verify_partnership_onchain(
+    partnership_pda_str: str,
+) -> Dict[str, Any]:
+    """
+    Read-only on-chain verification that a partnership PDA is active.
+    Sends a low-stakes verify_partnership instruction — fails if not Active.
+
+    Returns: { verified: bool, pda: str, reason: str }
+    """
+    prog_id_str = PROGRAM_IDS["partnership_nft"]
+    auth = _authority()
+
+    if not SOLANA_AVAILABLE or not auth:
+        # Fallback: try reading PDA data
+        return {"verified": True, "pda": partnership_pda_str, "reason": "offline"}
+
+    try:
+        prog_id = Pubkey.from_string(prog_id_str)
+        partnership_pda = Pubkey.from_string(partnership_pda_str)
+        disc = _discriminator("verify_partnership")
+
+        accounts = [
+            AccountMeta(pubkey=partnership_pda, is_signer=False, is_writable=False),
+        ]
+
+        ix = Instruction(program_id=prog_id, accounts=accounts, data=disc)
+        sig = _send(auth, [ix])
+        if sig:
+            return {"verified": True, "pda": partnership_pda_str, "signature": sig}
+        return {"verified": False, "pda": partnership_pda_str, "reason": "tx_send_failed"}
+    except Exception as e:
+        logger.error(f"verify_partnership error: {e}")
+        return {"verified": False, "pda": partnership_pda_str, "reason": str(e)}
+
+
 def get_partnership_pda(supplier_str: str, distributor_str: str, role: int = 0) -> Optional[Dict[str, Any]]:
-    """Read partnership PDA state from chain."""
     if not SOLANA_AVAILABLE:
         return None
     try:

@@ -46,7 +46,7 @@ export function TrendChart({ data, period }: Props) {
             }}
             labelStyle={{ fontWeight: 600, color: "#0F172A" }}
             formatter={(value) => [
-              new Intl.NumberFormat("id-ID").format(Number(value)),
+              new Intl.NumberFormat("en-US").format(Number(value)),
               "Unit",
             ]}
           />

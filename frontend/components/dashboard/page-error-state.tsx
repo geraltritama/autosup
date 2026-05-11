@@ -7,7 +7,7 @@ type Props = {
   onRetry?: () => void;
 };
 
-export function PageErrorState({ message = "Gagal memuat data", onRetry }: Props) {
+export function PageErrorState({ message = "Failed to load data", onRetry }: Props) {
   return (
     <Card className="rounded-2xl border-rose-200 bg-rose-50/50">
       <CardContent className="flex flex-col gap-4 px-5 py-5 lg:flex-row lg:items-center lg:justify-between">
@@ -18,7 +18,7 @@ export function PageErrorState({ message = "Gagal memuat data", onRetry }: Props
           <div>
             <p className="text-sm font-semibold text-[#0F172A]">{message}</p>
             <p className="mt-1 text-sm leading-6 text-[#64748B]">
-              Terjadi kesalahan saat mengambil data. Coba lagi atau hubungi tim jika masalah berlanjut.
+              An error occurred while fetching data. Try again or contact the team if the problem persists.
             </p>
           </div>
         </div>

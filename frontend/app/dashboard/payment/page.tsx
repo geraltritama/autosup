@@ -22,7 +22,7 @@ import { useRetailerPayments, usePayInvoice, useDistributorPayments, useSettlePa
 import { useAuthStore } from "@/store/useAuthStore";
 
 function formatCurrency(amount: number) {
-  return new Intl.NumberFormat("id-ID", {
+  return new Intl.NumberFormat("en-US", {
     style: "currency",
     currency: "IDR",
     maximumFractionDigits: 0,
@@ -30,7 +30,7 @@ function formatCurrency(amount: number) {
 }
 
 const statusTone = { draft: "neutral", sent: "info", pending: "warning", paid: "success", overdue: "danger", cancelled: "danger" } as const;
-const statusLabel = { draft: "Draft", sent: "Terkirim", pending: "Belum Dibayar", paid: "Lunas", overdue: "Jatuh Tempo", cancelled: "Dibatalkan" } as const;
+const statusLabel = { draft: "Draft", sent: "Sent", pending: "Unpaid", paid: "Paid", overdue: "Overdue", cancelled: "Cancelled" } as const;
 const distStatusTone = { pending: "warning", settled: "success", processing: "info" } as const;
 const distStatusLabel = { pending: "Pending", settled: "Settled", processing: "Processing" } as const;
 
@@ -46,8 +46,8 @@ export default function PaymentPage() {
     return (
       <main className="flex h-[80vh] items-center justify-center p-8">
         <div className="text-center">
-          <h2 className="text-xl font-semibold text-[#0F172A]">Akses Ditolak</h2>
-          <p className="mt-2 text-sm text-[#64748B]">Halaman Payment ini dikhususkan untuk Retailer atau Distributor.</p>
+          <h2 className="text-xl font-semibold text-[#0F172A]">Access Denied</h2>
+          <p className="mt-2 text-sm text-[#64748B]">This Payment page is for Retailers or Distributors only.</p>
         </div>
       </main>
     );
@@ -78,8 +78,8 @@ export default function PaymentPage() {
             <h1 className="text-3xl font-semibold tracking-tight text-[#0F172A]">Payments & Credit</h1>
             <p className="max-w-3xl text-sm leading-7 text-[#64748B]">
               {role === "retailer"
-                ? "Lacak invoice ke distributor, manfaatkan fasilitas credit line, dan optimalkan pengeluaran dengan AI cash flow recommendation."
-                : "Lacak pembayaran masuk dari retailer dan keluar ke supplier, dan optimalkan cash flow dengan AI."}
+                ? "Track invoices to distributors, leverage credit line facilities, and optimize spending with AI cash flow recommendations."
+                : "Track incoming payments from retailers and outgoing to suppliers, and optimize cash flow with AI."}
             </p>
           </div>
         </div>
@@ -88,19 +88,19 @@ export default function PaymentPage() {
       {/* KPI cards — retailer */}
       {role === "retailer" && summary && (
         <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-          <KpiCard label="Total Outstanding" value={formatCurrency(summary.total_outstanding)} meta="Hutang berjalan" tone="warning" icon={Banknote} />
-          <KpiCard label="Paid This Month" value={formatCurrency(summary.paid_this_month)} meta="Sudah dibayar bulan ini" tone="success" icon={CheckCircle2} />
-          <KpiCard label="Total Invoices" value={String(summary.total_invoices)} meta="Total tagihan" tone="info" icon={CreditCard} />
-          <KpiCard label="Overdue" value={String(summary.overdue_count)} meta="Tagihan jatuh tempo" tone="danger" icon={Clock3} />
+          <KpiCard label="Total Outstanding" value={formatCurrency(summary.total_outstanding)} meta="Outstanding debt" tone="warning" icon={Banknote} />
+          <KpiCard label="Paid This Month" value={formatCurrency(summary.paid_this_month)} meta="Paid this month" tone="success" icon={CheckCircle2} />
+          <KpiCard label="Total Invoices" value={String(summary.total_invoices)} meta="Total invoices" tone="info" icon={CreditCard} />
+          <KpiCard label="Overdue" value={String(summary.overdue_count)} meta="Overdue invoices" tone="danger" icon={Clock3} />
         </section>
       )}
 
       {/* KPI cards — distributor */}
       {role === "distributor" && distSummary && (
         <section className="grid gap-4 md:grid-cols-3">
-          <KpiCard label="Total Payable" value={formatCurrency(distSummary.total_payable)} meta="Pembayaran keluar" tone="warning" icon={ArrowUpRight} />
-          <KpiCard label="Total Receivable" value={formatCurrency(distSummary.total_receivable)} meta="Pembayaran masuk" tone="success" icon={ArrowDownLeft} />
-          <KpiCard label="Pending" value={String(distSummary.pending_count)} meta="Menunggu settlement" tone="danger" icon={Clock3} />
+          <KpiCard label="Total Payable" value={formatCurrency(distSummary.total_payable)} meta="Outgoing payments" tone="warning" icon={ArrowUpRight} />
+          <KpiCard label="Total Receivable" value={formatCurrency(distSummary.total_receivable)} meta="Incoming payments" tone="success" icon={ArrowDownLeft} />
+          <KpiCard label="Pending" value={String(distSummary.pending_count)} meta="Awaiting settlement" tone="danger" icon={Clock3} />
         </section>
       )}
 
@@ -123,11 +123,11 @@ export default function PaymentPage() {
               <Loader2 className="h-5 w-5 animate-spin text-[#94A3B8]" />
             </div>
           ) : isError ? (
-            <PageErrorState message="Gagal memuat data pembayaran" onRetry={() => refetch()} />
+            <PageErrorState message="Failed to load payment data" onRetry={() => refetch()} />
           ) : role === "distributor" ? (
             distPayments.length === 0 ? (
               <div className="flex h-32 flex-col items-center justify-center rounded-2xl border border-[#E2E8F0] bg-white">
-                <span className="text-sm font-medium text-[#0F172A]">Belum ada transaksi</span>
+                <span className="text-sm font-medium text-[#0F172A]">No transactions</span>
               </div>
             ) : (
               <div className="grid gap-4">
@@ -145,7 +145,7 @@ export default function PaymentPage() {
                         <p className="text-xl font-bold text-[#0F172A]">{formatCurrency(pmt.amount)}</p>
                         <div className="flex gap-4 text-xs text-[#64748B]">
                           <span>Order: {pmt.order_id}</span>
-                          <span>{new Intl.DateTimeFormat("id-ID", { day: "2-digit", month: "short", year: "numeric" }).format(new Date(pmt.created_at))}</span>
+                          <span>{new Intl.DateTimeFormat("en-US", { day: "2-digit", month: "short", year: "numeric" }).format(new Date(pmt.created_at))}</span>
                         </div>
                       </div>
                       <div>
@@ -172,8 +172,8 @@ export default function PaymentPage() {
             )
           ) : invoices.length === 0 ? (
             <div className="flex h-32 flex-col items-center justify-center rounded-2xl border border-[#E2E8F0] bg-white">
-              <span className="text-sm font-medium text-[#0F172A]">Tidak ada tagihan aktif</span>
-              <span className="text-xs text-[#64748B]">Semua tagihan {role === "retailer" ? "distributor" : "supplier"} sudah lunas.</span>
+              <span className="text-sm font-medium text-[#0F172A]">No active invoices</span>
+              <span className="text-xs text-[#64748B]">All invoices from {role === "retailer" ? "distributor" : "supplier"} are paid.</span>
             </div>
           ) : (
             <div className="grid gap-4">
@@ -189,7 +189,7 @@ export default function PaymentPage() {
                       <div className="flex gap-4 text-xs text-[#64748B]">
                         <span>Order ID: {inv.order_id}</span>
                         <span>
-                          Jatuh tempo: {new Intl.DateTimeFormat("id-ID", { day: "2-digit", month: "short", year: "numeric" }).format(new Date(inv.due_date))}
+                          Jatuh tempo: {new Intl.DateTimeFormat("en-US", { day: "2-digit", month: "short", year: "numeric" }).format(new Date(inv.due_date))}
                         </span>
                       </div>
                     </div>
@@ -202,11 +202,11 @@ export default function PaymentPage() {
                           {payMutation.isPending && payMutation.variables === inv.invoice_id && (
                             <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                           )}
-                          Bayar Sekarang
+                          Pay Now
                         </Button>
                       ) : (
                         <Button variant="secondary" disabled>
-                          Sudah Lunas
+                          Already Paid
                         </Button>
                       )}
                     </div>
@@ -225,7 +225,7 @@ export default function PaymentPage() {
                 {role === "distributor" ? "Settlement Summary" : "Credit & Financing Panel"}
               </CardTitle>
               <p className="text-sm text-[#64748B]">
-                {role === "distributor" ? "Ringkasan status pembayaran" : "Fasilitas kredit dari distributor partner"}
+                {role === "distributor" ? "Payment status summary" : "Credit facility from distributor partners"}
               </p>
             </CardHeader>
             <CardContent className="space-y-6">
@@ -261,7 +261,7 @@ export default function PaymentPage() {
                   </div>
                   
                   <div className="rounded-xl border border-[#E2E8F0] p-4">
-                    <p className="text-xs uppercase tracking-[0.15em] text-[#64748B]">Total Tagihan</p>
+                    <p className="text-xs uppercase tracking-[0.15em] text-[#64748B]">Total Invoices</p>
                     <p className="mt-1 text-2xl font-semibold text-[#0F172A]">{formatCurrency(summary.total_outstanding)}</p>
                   </div>
                 </>
@@ -271,8 +271,8 @@ export default function PaymentPage() {
                 <div className="flex gap-3">
                   <Wallet className="mt-0.5 h-5 w-5 text-[#64748B]" />
                   <div>
-                    <p className="text-sm font-medium text-[#0F172A]">Metode Pembayaran</p>
-                    <p className="mt-1 text-sm text-[#64748B]">Bank Transfer, E-Wallet, dan Escrow dihubungkan dan diamankan oleh backend.</p>
+                    <p className="text-sm font-medium text-[#0F172A]">Payment Method</p>
+                    <p className="mt-1 text-sm text-[#64748B]">Bank Transfer, E-Wallet, and Escrow connected and secured by the backend.</p>
                   </div>
                 </div>
               </div>

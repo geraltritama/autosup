@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import dynamic from "next/dynamic";
 import {
   MapPin,
   Flame,
@@ -18,25 +19,14 @@ import { useGeoDemand } from "@/hooks/useGeoDemand";
 import { useInventory } from "@/hooks/useInventory";
 import { useAuthStore } from "@/store/useAuthStore";
 
-function getHeatColor(demandScore: number, min: number, max: number): string {
-  if (max === min) return "bg-blue-400";
-  const ratio = (demandScore - min) / (max - min);
-  if (ratio >= 0.8) return "bg-blue-600 text-white";
-  if (ratio >= 0.6) return "bg-blue-500 text-white";
-  if (ratio >= 0.4) return "bg-blue-400 text-[#0F172A]";
-  if (ratio >= 0.2) return "bg-blue-300 text-[#0F172A]";
-  return "bg-blue-100 text-[#0F172A]";
-}
-
-function getHeatBorder(demandScore: number, min: number, max: number): string {
-  if (max === min) return "border-blue-400";
-  const ratio = (demandScore - min) / (max - min);
-  if (ratio >= 0.8) return "border-blue-600";
-  if (ratio >= 0.6) return "border-blue-500";
-  if (ratio >= 0.4) return "border-blue-400";
-  if (ratio >= 0.2) return "border-blue-300";
-  return "border-blue-200";
-}
+const DemandMap = dynamic(() => import("@/components/geo/demand-map").then((m) => m.DemandMap), {
+  ssr: false,
+  loading: () => (
+    <div className="flex h-[450px] items-center justify-center rounded-2xl bg-slate-50">
+      <Loader2 className="h-5 w-5 animate-spin text-[#94A3B8]" />
+    </div>
+  ),
+});
 
 export default function GeoMappingPage() {
   const role = useAuthStore((s) => s.user?.role);
@@ -70,15 +60,6 @@ export default function GeoMappingPage() {
 
   const regions = useMemo(() => geoData?.regions ?? [], [geoData]);
 
-  const minScore = useMemo(
-    () => (regions.length > 0 ? Math.min(...regions.map((r) => r.demand_score)) : 0),
-    [regions],
-  );
-  const maxScore = useMemo(
-    () => (regions.length > 0 ? Math.max(...regions.map((r) => r.demand_score)) : 100),
-    [regions],
-  );
-
   const sortedRegions = useMemo(
     () => [...regions].sort((a, b) => b.demand_score - a.demand_score),
     [regions],
@@ -109,9 +90,9 @@ export default function GeoMappingPage() {
     return (
       <main className="flex h-[80vh] items-center justify-center p-8">
         <div className="text-center">
-          <h2 className="text-xl font-semibold text-[#0F172A]">Akses Ditolak</h2>
+          <h2 className="text-xl font-semibold text-[#0F172A]">Access Denied</h2>
           <p className="mt-2 text-sm text-[#64748B]">
-            Halaman Geo Mapping khusus untuk Supplier.
+            Geo Mapping page is for Suppliers only.
           </p>
         </div>
       </main>
@@ -125,10 +106,10 @@ export default function GeoMappingPage() {
           <Badge tone="info">Regional Analytics</Badge>
           <div className="space-y-2">
             <h1 className="text-3xl font-semibold tracking-tight text-[#0F172A]">
-              Permintaan Distributor per Wilayah
+              Distributor Demand by Region
             </h1>
             <p className="max-w-3xl text-sm leading-7 text-[#64748B]">
-              Distribusi permintaan dari jaringan distributor berdasarkan wilayah geografis.
+              Demand distribution from the distributor network based on geographic regions.
             </p>
           </div>
         </div>
@@ -145,7 +126,7 @@ export default function GeoMappingPage() {
               }}
               className="h-11 bg-transparent text-sm text-[#0F172A] outline-none"
             >
-              <option value="all">Semua Produk</option>
+              <option value="all">All Products</option>
               {productOptions.map((p) => (
                 <option key={p.id} value={p.id}>
                   {p.name}
@@ -159,23 +140,23 @@ export default function GeoMappingPage() {
       {geoData && (
         <section className="grid gap-4 md:grid-cols-3">
           <KpiCard
-            label="Total Wilayah Aktif"
+            label="Total Active Regions"
             value={String(computedKpis.totalRegions)}
-            meta="Wilayah dengan permintaan distributor"
+            meta="Regions with distributor demand"
             tone="info"
             icon={MapIcon}
           />
           <KpiCard
-            label="Wilayah Tumbuh Tertinggi"
+            label="Highest Growth Region"
             value={computedKpis.topGrowthRegion}
-            meta="Pertumbuhan permintaan tertinggi"
+            meta="Highest demand growth"
             tone="success"
             icon={TrendingUp}
           />
           <KpiCard
-            label="Demand Score Tertinggi"
+            label="Highest Demand Score"
             value={computedKpis.highestDemandRegion}
-            meta="Wilayah dengan skor demand tertinggi"
+            meta="Regions with highest demand score"
             tone="info"
             icon={Flame}
           />
@@ -185,7 +166,7 @@ export default function GeoMappingPage() {
       {geoError && !geoLoading && (
         <section>
           <PageErrorState
-            message="Gagal memuat data permintaan regional"
+            message="Failed to load regional demand data"
             onRetry={() => refetch()}
           />
         </section>
@@ -195,102 +176,36 @@ export default function GeoMappingPage() {
         <section className="grid gap-6 xl:grid-cols-[1.5fr_1fr]">
           <div className="space-y-4">
             <h2 className="text-lg font-semibold text-[#0F172A]">
-              Heatmap Permintaan
+              Demand Heatmap
             </h2>
 
             {geoLoading ? (
               <Card className="rounded-2xl">
-                <CardContent className="flex h-[400px] items-center justify-center pt-6">
+                <CardContent className="flex h-[450px] items-center justify-center pt-6">
                   <Loader2 className="h-5 w-5 animate-spin text-[#94A3B8]" />
                 </CardContent>
               </Card>
             ) : regions.length === 0 ? (
               <Card className="rounded-2xl">
-                <CardContent className="flex h-[400px] flex-col items-center justify-center pt-6">
+                <CardContent className="flex h-[450px] flex-col items-center justify-center pt-6">
                   <MapPin className="mb-3 h-10 w-10 text-[#CBD5E1]" />
                   <p className="text-sm text-[#64748B]">
-                    Belum ada data permintaan regional.
+                    No regional demand data yet.
                   </p>
                 </CardContent>
               </Card>
             ) : (
-              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-                {sortedRegions.map((r) => (
-                  <button
-                    key={r.region}
-                    type="button"
-                    onClick={() =>
-                      setSelectedRegion((prev) =>
-                        prev === r.region ? undefined : r.region,
-                      )
-                    }
-                    className={`group relative flex flex-col gap-2 rounded-2xl border-2 p-4 text-left transition-all hover:shadow-md ${getHeatBorder(r.demand_score, minScore, maxScore)} ${
-                      selectedRegion === r.region
-                        ? "ring-2 ring-[#3B82F6] ring-offset-2"
-                        : ""
-                    }`}
-                  >
-                    <div
-                      className={`absolute inset-0 rounded-2xl ${getHeatColor(r.demand_score, minScore, maxScore)} opacity-15 transition-opacity group-hover:opacity-25`}
-                    />
-                    <div className="relative space-y-1">
-                      <div className="flex items-center justify-between">
-                        <p className="text-sm font-semibold text-[#0F172A]">
-                          {r.region}
-                        </p>
-                        <Badge
-                          tone={r.growth_pct >= 0 ? "success" : "danger"}
-                          className="gap-0.5"
-                        >
-                          {r.growth_pct >= 0 ? (
-                            <TrendingUp className="h-3 w-3" />
-                          ) : (
-                            <TrendingDown className="h-3 w-3" />
-                          )}
-                          {r.growth_pct >= 0 ? "+" : ""}
-                          {r.growth_pct}%
-                        </Badge>
-                      </div>
-                      <div className="flex items-end gap-1.5">
-                        <span className="text-2xl font-bold tracking-tight text-[#0F172A]">
-                          {r.demand_score}
-                        </span>
-                        <span className="mb-0.5 text-xs text-[#64748B]">
-                          demand score
-                        </span>
-                      </div>
-                      <div className="h-1.5 w-full overflow-hidden rounded-full bg-slate-100">
-                        <div
-                          className="h-full rounded-full bg-blue-500 transition-all"
-                          style={{
-                            width: `${maxScore === minScore ? 100 : ((r.demand_score - minScore) / (maxScore - minScore)) * 100}%`,
-                          }}
-                        />
-                      </div>
-                    </div>
-                  </button>
-                ))}
-              </div>
-            )}
-
-            {sortedRegions.length > 0 && (
-              <div className="flex items-center gap-2 px-1">
-                <span className="text-[10px] text-[#64748B]">Rendah</span>
-                <div className="flex flex-1 gap-0.5">
-                  <div className="h-2 flex-1 rounded-l-full bg-blue-100" />
-                  <div className="h-2 flex-1 bg-blue-300" />
-                  <div className="h-2 flex-1 bg-blue-400" />
-                  <div className="h-2 flex-1 bg-blue-500" />
-                  <div className="h-2 flex-1 rounded-r-full bg-blue-600" />
-                </div>
-                <span className="text-[10px] text-[#64748B]">Tinggi</span>
-              </div>
+              <DemandMap
+                regions={regions}
+                selectedRegion={selectedRegion}
+                onSelectRegion={setSelectedRegion}
+              />
             )}
           </div>
 
           <div className="space-y-4">
             <h2 className="text-lg font-semibold text-[#0F172A]">
-              Detail Wilayah
+              Region Detail
             </h2>
 
             {selectedRegionData ? (
@@ -334,7 +249,7 @@ export default function GeoMappingPage() {
                   </div>
                   <div className="rounded-xl bg-slate-50 px-3 py-2">
                     <p className="text-xs text-[#64748B]">
-                      Data berdasarkan pesanan dari distributor partner.
+                      Data based on orders from partner distributors.
                     </p>
                   </div>
                 </CardContent>
@@ -344,7 +259,7 @@ export default function GeoMappingPage() {
                 <CardContent className="flex h-[200px] flex-col items-center justify-center pt-6">
                   <MapPin className="mb-3 h-8 w-8 text-[#CBD5E1]" />
                   <p className="text-sm text-[#64748B]">
-                    Pilih wilayah pada heatmap untuk melihat detail.
+                    Select a region on the heatmap to view details.
                   </p>
                 </CardContent>
               </Card>
@@ -352,7 +267,7 @@ export default function GeoMappingPage() {
 
             <div className="space-y-3">
               <h3 className="text-sm font-semibold text-[#0F172A]">
-                Peringkat Permintaan
+                Demand Ranking
               </h3>
               {geoLoading ? (
                 <div className="flex h-[200px] items-center justify-center">
@@ -360,7 +275,7 @@ export default function GeoMappingPage() {
                 </div>
               ) : sortedRegions.length === 0 ? (
                 <p className="py-4 text-center text-sm text-[#64748B]">
-                  Belum ada data.
+                  No data yet.
                 </p>
               ) : (
                 <Card className="rounded-2xl">
@@ -368,7 +283,7 @@ export default function GeoMappingPage() {
                     <div className="space-y-0">
                       <div className="grid grid-cols-12 gap-4 border-b border-[#E2E8F0] pb-3 text-xs uppercase tracking-wider text-[#64748B]">
                         <div className="col-span-1">#</div>
-                        <div className="col-span-5">Wilayah</div>
+                        <div className="col-span-5">Region</div>
                         <div className="col-span-3 text-right">Demand Score</div>
                         <div className="col-span-3 text-right">Pertumbuhan</div>
                       </div>

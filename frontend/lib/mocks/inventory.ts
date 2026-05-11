@@ -3,7 +3,7 @@ import type { InventoryResponse, InventoryItem } from "@/hooks/useInventory";
 export const mockInventoryItems: InventoryItem[] = [
   {
     id: "item-uuid-001",
-    name: "Tepung Terigu",
+    name: "Wheat Flour",
     category: "bahan_baku",
     stock: 15,
     min_stock: 50,
@@ -14,7 +14,7 @@ export const mockInventoryItems: InventoryItem[] = [
   },
   {
     id: "item-uuid-002",
-    name: "Gula Pasir",
+    name: "Sugar",
     category: "bahan_baku",
     stock: 200,
     min_stock: 100,
@@ -25,7 +25,7 @@ export const mockInventoryItems: InventoryItem[] = [
   },
   {
     id: "item-uuid-003",
-    name: "Minyak Goreng",
+    name: "Cooking Oil",
     category: "bahan_baku",
     stock: 0,
     min_stock: 30,

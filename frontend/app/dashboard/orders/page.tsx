@@ -20,7 +20,7 @@ import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
 function formatDate(iso: string) {
-  return new Date(iso).toLocaleDateString("id-ID", {
+  return new Date(iso).toLocaleDateString("en-US", {
     day: "numeric",
     month: "short",
     year: "numeric",
@@ -48,8 +48,7 @@ export default function OrdersPage() {
     status: statusFilter || undefined,
   });
 
-  const { mutate: updateStatus, isPending: isUpdating, variables: updatingVars } =
-    useUpdateOrderStatus();
+  const { mutate: updateStatus, isPending: isUpdating } = useUpdateOrderStatus();
   const { data: orderDetail, isLoading: detailLoading } = useOrderDetail(detailOrderId);
   const { data: escrowChain } = useBlockchainEscrow(detailOrderId);
 
@@ -79,15 +78,15 @@ export default function OrdersPage() {
             <h1 className="text-3xl font-semibold tracking-tight text-[#0F172A]">
               Orders
             </h1>
-            <p className="max-w-3xl text-sm leading-7 text-[#64748B]">
-              {isDistributor
-                ? orderView === "outgoing"
-                  ? "Pantau order ke supplier dan buat order baru untuk restock inventory."
-                  : "Kelola incoming order dari retailer dan perbarui status fulfillment."
-                : role === "retailer"
-                  ? "Pantau semua order ke distributor partner dan buat order baru langsung dari sini."
-                  : "Kelola incoming order dari distributor dan perbarui status fulfillment."}
-            </p>
+              <p className="max-w-3xl text-sm leading-7 text-[#64748B]">
+                {isDistributor
+                  ? orderView === "outgoing"
+                    ? "Track orders to suppliers and create new orders for inventory restock."
+                    : "Manage incoming orders from retailers and update fulfillment status."
+                  : role === "retailer"
+                    ? "Track all orders to distributor partners and create new orders directly from here."
+                    : "Manage incoming orders from distributors and update fulfillment status."}
+              </p>
           </div>
         </div>
 
@@ -152,14 +151,14 @@ export default function OrdersPage() {
         <KpiCard
           label="Completed Orders"
           value={summary ? String(summary.completed_orders) : "—"}
-          meta="Selesai terkirim"
+          meta="Delivered successfully"
           tone="success"
           icon={CheckCheck}
         />
         <KpiCard
           label="Cancelled Orders"
           value={summary ? String(summary.cancelled_orders) : "—"}
-          meta="Dibatalkan"
+          meta="Cancelled"
           tone="danger"
           icon={Truck}
         />
@@ -202,6 +201,12 @@ export default function OrdersPage() {
                 }}
                 userRole={role}
                 onViewDetail={(orderId) => setDetailOrderId(orderId)}
+                onApprove={(orderId) => {
+                  updateStatus({ orderId, status: "processing" });
+                }}
+                onReject={(orderId) => {
+                  updateStatus({ orderId, status: "cancelled" });
+                }}
                 onShip={(orderId) => {
                   setSelectedOrderForShipping(orderId);
                   setTrackingDialogOpen(true);
@@ -221,7 +226,7 @@ export default function OrdersPage() {
         onClose={() => setCreateDialogOpen(false)}
       />
 
-      {/* Tracking Dialog - untuk input shipping info */}
+      {/* Tracking Dialog - for shipping info input */}
       {trackingDialogOpen && selectedOrderForShipping && (
         <OrderStatusUpdateDialog
           open={trackingDialogOpen}
@@ -255,19 +260,19 @@ export default function OrdersPage() {
         open={!!detailOrderId}
         onClose={() => setDetailOrderId(null)}
         title="Order Detail"
-        description={orderDetail ? `${orderDetail.order_number} — ${orderDetail.buyer.name} (${orderDetail.buyer.role}) → ${orderDetail.seller.name} (${orderDetail.seller.role})` : "Memuat detail order..."}
+        description={orderDetail ? `${orderDetail.order_number} — ${orderDetail.buyer.name} (${orderDetail.buyer.role}) → ${orderDetail.seller.name} (${orderDetail.seller.role})` : "Loading order detail..."}
       >
         {detailLoading ? (
           <div className="flex h-32 items-center justify-center">
             <Loader2 className="h-5 w-5 animate-spin text-[#94A3B8]" />
           </div>
         ) : !orderDetail ? (
-          <p className="text-sm text-[#64748B]">Data tidak ditemukan.</p>
+          <p className="text-sm text-[#64748B]">Data not found.</p>
         ) : (
           <div className="space-y-5 max-h-[60vh] overflow-y-auto pr-2 scrollbar-thin scrollbar-thumb-[#CBD5E1] scrollbar-track-transparent">
             {/* Items Ordered */}
             <div className="rounded-xl border border-[#E2E8F0] p-4 space-y-3">
-              <p className="text-xs uppercase tracking-[0.15em] text-[#64748B]">Items Dipesan</p>
+              <p className="text-xs uppercase tracking-[0.15em] text-[#64748B]">Items Ordered</p>
               <div className="space-y-2">
                 {orderDetail.items.map((item, i) => (
                   <div key={i} className="flex justify-between text-sm">
@@ -275,7 +280,7 @@ export default function OrdersPage() {
                       {item.item_name} × {item.qty} {item.unit}
                     </span>
                     <span className="text-[#0F172A] font-medium">
-                      Rp {(item.qty * item.price_per_unit).toLocaleString("id-ID")}
+                      Rp {(item.qty * item.price_per_unit).toLocaleString("en-US")}
                     </span>
                   </div>
                 ))}
@@ -283,7 +288,7 @@ export default function OrdersPage() {
               <div className="flex justify-between border-t border-[#E2E8F0] pt-2 mt-2">
                 <span className="text-sm font-semibold text-[#0F172A]">Total Amount</span>
                 <span className="text-sm font-bold text-[#0F172A]">
-                  Rp {orderDetail.total_amount.toLocaleString("id-ID")}
+                  Rp {orderDetail.total_amount.toLocaleString("en-US")}
                 </span>
               </div>
             </div>
@@ -292,7 +297,7 @@ export default function OrdersPage() {
             <div className="rounded-xl bg-slate-50 p-4 space-y-3">
               <div className="flex items-center gap-2">
                 <MapPin className="h-4 w-4 text-[#64748B]" />
-                <p className="text-xs uppercase tracking-[0.15em] text-[#64748B]">Alamat Pengiriman</p>
+                <p className="text-xs uppercase tracking-[0.15em] text-[#64748B]">Delivery Address</p>
               </div>
               <p className="text-sm text-[#0F172A]">{orderDetail.delivery_address}</p>
             </div>
@@ -301,19 +306,19 @@ export default function OrdersPage() {
               <div className="rounded-xl bg-slate-50 p-3">
                 <div className="flex items-center gap-2 mb-1">
                   <Calendar className="h-3.5 w-3.5 text-[#64748B]" />
-                  <p className="text-xs text-[#64748B]">Tanggal Order</p>
+                  <p className="text-xs text-[#64748B]">Order Date</p>
                 </div>
                 <p className="text-sm font-medium text-[#0F172A]">
-                  {new Date(orderDetail.created_at).toLocaleDateString("id-ID", { day: "numeric", month: "long", year: "numeric" })}
+                  {new Date(orderDetail.created_at).toLocaleDateString("en-US", { day: "numeric", month: "long", year: "numeric" })}
                 </p>
               </div>
               <div className="rounded-xl bg-slate-50 p-3">
                 <div className="flex items-center gap-2 mb-1">
                   <Truck className="h-3.5 w-3.5 text-[#64748B]" />
-                  <p className="text-xs text-[#64748B]">Estimasi Kirim</p>
+                  <p className="text-xs text-[#64748B]">Est. Delivery</p>
                 </div>
                 <p className="text-sm font-medium text-[#0F172A]">
-                  {new Date(orderDetail.estimated_delivery).toLocaleDateString("id-ID", { day: "numeric", month: "long", year: "numeric" })}
+                  {new Date(orderDetail.estimated_delivery).toLocaleDateString("en-US", { day: "numeric", month: "long", year: "numeric" })}
                 </p>
               </div>
             </div>
@@ -322,7 +327,7 @@ export default function OrdersPage() {
             <div className="flex items-center gap-3 rounded-xl border border-[#E2E8F0] p-4">
               <ShieldCheck className="h-5 w-5 shrink-0 text-[#3B82F6]" />
               <div className="flex-1">
-                <p className="text-xs uppercase tracking-[0.15em] text-[#64748B]">Status Pembayaran (Escrow)</p>
+                <p className="text-xs uppercase tracking-[0.15em] text-[#64748B]">Payment Status (Escrow)</p>
                 <Badge
                   className="mt-1"
                   tone={
@@ -333,7 +338,7 @@ export default function OrdersPage() {
                       : "info"
                   }
                 >
-                  {orderDetail.escrow_status === "held" ? "Ditahan" : orderDetail.escrow_status === "released" ? "Dibayar" : "Dikembalikan"}
+                  {orderDetail.escrow_status === "held" ? "Held" : orderDetail.escrow_status === "released" ? "Released" : "Refunded"}
                 </Badge>
                 {escrowChain && (
                   <div className="mt-3 space-y-2 rounded-lg border border-[#DDD6FE] bg-[#F5F3FF] p-3">
@@ -381,21 +386,21 @@ export default function OrdersPage() {
               <div className="rounded-xl border border-[#E2E8F0] bg-slate-50 p-4 space-y-3">
                 <div className="flex items-center gap-2">
                   <Truck className="h-4 w-4 text-[#0284C7]" />
-                  <span className="text-sm font-semibold text-[#0F172A]">Informasi Pengiriman</span>
+                  <span className="text-sm font-semibold text-[#0F172A]">Shipping Information</span>
                 </div>
                 <div className="grid gap-2 text-sm">
                   <div className="flex justify-between">
-                    <span className="text-[#64748B]">Ekspedisi</span>
+                    <span className="text-[#64748B]">Courier</span>
                     <span className="font-medium text-[#0F172A]">{orderDetail.shipping_info.courier}</span>
                   </div>
                   <div className="flex justify-between">
-                    <span className="text-[#64748B]">No. Resi</span>
+                    <span className="text-[#64748B]">Tracking No.</span>
                     <span className="font-mono text-[#0F172A]">{orderDetail.shipping_info.tracking_number}</span>
                   </div>
                   <div className="flex justify-between">
-                    <span className="text-[#64748B]">Dikirim</span>
+                    <span className="text-[#64748B]">Shipped</span>
                     <span className="text-[#0F172A]">
-                      {new Date(orderDetail.shipping_info.shipped_at).toLocaleDateString("id-ID", {
+                      {new Date(orderDetail.shipping_info.shipped_at).toLocaleDateString("en-US", {
                         day: "numeric", month: "long", year: "numeric"
                       })}
                     </span>
@@ -407,7 +412,7 @@ export default function OrdersPage() {
                       rel="noopener noreferrer"
                       className="flex items-center gap-1 text-xs font-medium text-[#0284C7] hover:underline mt-1"
                     >
-                      Lacak paket <ExternalLink className="h-3 w-3" />
+                      Track package <ExternalLink className="h-3 w-3" />
                     </a>
                   )}
                 </div>
@@ -422,7 +427,7 @@ export default function OrdersPage() {
               </div>
             )}
 
-            {/* Approve/Reject Button - untuk seller saat status pending */}
+            {/* Approve/Reject Button - for seller when status is pending */}
             {orderDetail.seller.role === role && orderDetail.status === "pending" && (
               <div className="flex gap-3">
                 <Button
@@ -433,7 +438,7 @@ export default function OrdersPage() {
                     setDetailOrderId(null);
                   }}
                 >
-                  Tolak Order
+                  Reject Order
                 </Button>
                 <Button
                   className="w-full gap-2"
@@ -448,7 +453,7 @@ export default function OrdersPage() {
               </div>
             )}
 
-            {/* Terima Barang Button - untuk buyer saat status shipped */}
+            {/* Confirm Receipt Button - for buyer when status is shipping */}
             {orderDetail.buyer.role === role && orderDetail.status === "shipping" && orderDetail.escrow_status === "held" && (
               <Button
                 className="w-full gap-2"
@@ -458,7 +463,7 @@ export default function OrdersPage() {
                 }}
               >
                 <CheckCircle className="h-4 w-4" />
-                Terima Barang
+                Confirm Receipt
               </Button>
             )}
 
@@ -479,7 +484,7 @@ export default function OrdersPage() {
                     <div className="pb-1 pt-0.5">
                       <p className="text-sm font-medium capitalize text-[#0F172A]">{entry.status}</p>
                       <p className="text-xs text-[#94A3B8]">
-                        {new Intl.DateTimeFormat("id-ID", {
+                        {new Intl.DateTimeFormat("en-US", {
                           day: "2-digit",
                           month: "short",
                           year: "numeric",

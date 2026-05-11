@@ -35,7 +35,7 @@ export function DistributorCard({ distributor, role = "supplier", onRequestPartn
             </div>
             <div className="flex flex-wrap gap-2">
               <Badge tone={isPartner ? "success" : distributor.partnership_status === "pending" ? "warning" : "neutral"}>
-                {isPartner ? "Partner" : distributor.partnership_status === "pending" ? "Pending" : "Belum Partner"}
+                {isPartner ? "Partner" : distributor.partnership_status === "pending" ? "Pending" : "Not Partnered"}
               </Badge>
               <Badge tone={distributor.is_active ? "success" : "neutral"}>
                 {distributor.is_active ? "Active" : "Inactive"}
@@ -55,7 +55,7 @@ export function DistributorCard({ distributor, role = "supplier", onRequestPartn
               <>
                 <div className="rounded-xl bg-slate-50 p-4">
                   <p className="text-xs uppercase tracking-[0.18em] text-[#64748B]">Avg. Delivery</p>
-                  <p className="mt-2 text-lg font-semibold text-[#0F172A]">{distributor.avg_delivery_days} hari</p>
+                  <p className="mt-2 text-lg font-semibold text-[#0F172A]">{distributor.avg_delivery_days} days</p>
                 </div>
                 <div className="rounded-xl bg-slate-50 p-4">
                   <p className="text-xs uppercase tracking-[0.18em] text-[#64748B]">On-time Delivery</p>
@@ -86,12 +86,12 @@ export function DistributorCard({ distributor, role = "supplier", onRequestPartn
             )}
             <div className="space-y-1">
               <p className="text-sm font-medium text-[#0F172A]">
-                {isPartner ? "Kemitraan aktif dengan distributor ini" : "Tersedia untuk permintaan kemitraan"}
+                {isPartner ? "Active partnership with this distributor" : "Available for partnership request"}
               </p>
               <p className="text-sm leading-6 text-[#64748B]">
                 {isPartner
-                  ? "Distributor ini adalah partner aktif. Lihat stok dan buat order langsung."
-                  : "Kirim permintaan kemitraan untuk mulai bertransaksi dengan distributor ini."}
+                  ? "This distributor is an active partner. View stock and create orders directly."
+                  : "Send a partnership request to start transacting with this distributor."}
               </p>
             </div>
           </div>
@@ -101,14 +101,14 @@ export function DistributorCard({ distributor, role = "supplier", onRequestPartn
           {onViewDetail && (
             <Button variant="secondary" className="gap-2" onClick={() => onViewDetail(distributor)}>
               <Eye className="h-4 w-4" />
-              Lihat Detail
+              View Detail
             </Button>
           )}
           {isPartner ? (
             <>
               {onViewStock && (
                 <Button variant="secondary" className="gap-2" onClick={() => onViewStock(distributor)}>
-                  Lihat Stok
+                  View Stock
                 </Button>
               )}
               <Button variant="ghost" className="gap-2 text-[#22C55E]" disabled>
@@ -122,7 +122,7 @@ export function DistributorCard({ distributor, role = "supplier", onRequestPartn
                   onClick={() => onDeletePartnership(distributor)}
                 >
                   <Trash2 className="h-4 w-4" />
-                  Putus Kemitraan
+                  End Partnership
                 </Button>
               )}
             </>
@@ -139,7 +139,7 @@ export function DistributorCard({ distributor, role = "supplier", onRequestPartn
                   onClick={() => onDeletePartnership(distributor)}
                 >
                   <X className="h-4 w-4" />
-                  Batalkan
+                  Cancel
                 </Button>
               )}
             </>

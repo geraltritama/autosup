@@ -30,7 +30,7 @@ export function DistributorStockDialog({ distributorId, distributorName, open, o
           <Loader2 className="h-5 w-5 animate-spin text-[#94A3B8]" />
         </div>
       ) : !data || data.products.length === 0 ? (
-        <p className="py-8 text-center text-sm text-[#64748B]">Belum ada data stok.</p>
+        <p className="py-8 text-center text-sm text-[#64748B]">No stock data yet.</p>
       ) : (
         <div className="space-y-3">
           {data.products.map((product) => (
@@ -45,7 +45,7 @@ export function DistributorStockDialog({ distributorId, distributorName, open, o
                   Stok: <span className="font-medium text-[#0F172A]">{product.stock} {product.unit}</span>
                   {" · "}Min: {product.min_stock} {product.unit}
                   {product.estimated_restock_days !== null && (
-                    <span className="text-[#F59E0B]"> · Restock ~{product.estimated_restock_days} hari</span>
+                    <span className="text-[#F59E0B]"> · Restock ~{product.estimated_restock_days} days</span>
                   )}
                 </p>
               </div>

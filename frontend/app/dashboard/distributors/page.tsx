@@ -78,9 +78,9 @@ const [selectedDistributor, setSelectedDistributor] = useState<Distributor | nul
     return (
       <main className="flex h-[80vh] items-center justify-center p-8">
         <div className="text-center">
-          <h2 className="text-xl font-semibold text-[#0F172A]">Akses Ditolak</h2>
+          <h2 className="text-xl font-semibold text-[#0F172A]">Access Denied</h2>
           <p className="mt-2 text-sm text-[#64748B]">
-            Halaman ini hanya untuk Supplier dan Retailer.
+            This page is only for Supplier and Retailer.
           </p>
         </div>
       </main>
@@ -106,8 +106,8 @@ const [selectedDistributor, setSelectedDistributor] = useState<Distributor | nul
             </h1>
             <p className="max-w-3xl text-sm leading-7 text-[#64748B]">
               {isRetailer
-                ? "Temukan distributor partner, lihat ketersediaan stok, dan kirim permintaan kemitraan."
-                : "Kelola distributor partner, pantau performa order dan ketepatan pembayaran, serta tanggapi permintaan kemitraan baru."}
+                ? "Find distributor partners, view stock availability, and send partnership requests."
+                : "Manage distributor partners, monitor order performance and payment punctuality, and respond to new partnership requests."}
             </p>
           </div>
         </div>
@@ -127,22 +127,22 @@ const [selectedDistributor, setSelectedDistributor] = useState<Distributor | nul
           <KpiCard
             label={isRetailer ? "Partner Distributors" : "Active Partners"}
             value={String(summary.partner_count)}
-            meta={isRetailer ? "Distributor partner aktif" : "Distributor partner aktif"}
+            meta={isRetailer ? "Active distributor partners" : "Active distributor partners"}
             tone="success"
             icon={Handshake}
           />
           <KpiCard
             label="Pending Requests"
             value={String(summary.pending_count)}
-            meta="Menunggu persetujuan"
+            meta="Awaiting approval"
             tone="warning"
             icon={Clock}
           />
           {isRetailer ? (
             <KpiCard
               label="Avg. Delivery"
-              value={`${summary.avg_delivery_days} hari`}
-              meta="Rata-rata waktu pengiriman"
+              value={`${summary.avg_delivery_days} days`}
+              meta="Average delivery time"
               tone="info"
               icon={Truck}
             />
@@ -150,16 +150,16 @@ const [selectedDistributor, setSelectedDistributor] = useState<Distributor | nul
             <KpiCard
               label="Total Order Volume"
               value={String(summary.total_order_volume)}
-              meta="Pesanan dari distributor"
+              meta="Orders from distributors"
               tone="info"
               icon={BarChart3}
             />
           )}
           {isRetailer ? (
             <KpiCard
-              label="Total Pesanan"
+              label="Total Orders"
               value={String(summary.total_order_volume)}
-              meta="Pesanan ke distributor"
+              meta="Orders to distributors"
               tone="info"
               icon={BarChart3}
             />
@@ -167,7 +167,7 @@ const [selectedDistributor, setSelectedDistributor] = useState<Distributor | nul
             <KpiCard
               label="Avg. Punctuality"
               value={`${summary.avg_punctuality}%`}
-              meta="Ketepatan pembayaran"
+              meta="Payment punctuality"
               tone="success"
               icon={CheckCircle2}
             />
@@ -180,7 +180,7 @@ const [selectedDistributor, setSelectedDistributor] = useState<Distributor | nul
         <div className="relative flex-1">
           <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[#94A3B8]" />
           <Input
-            placeholder="Cari distributor..."
+            placeholder="Search distributors..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             className="pl-9"
@@ -197,7 +197,7 @@ const [selectedDistributor, setSelectedDistributor] = useState<Distributor | nul
                   : "text-[#64748B] hover:text-[#0F172A]"
               }`}
             >
-              {s === "all" ? "Semua" : s === "partner" ? "Partner" : "Pending"}
+              {s === "all" ? "All" : s === "partner" ? "Partner" : "Pending"}
             </button>
           ))}
         </div>
@@ -216,7 +216,7 @@ const [selectedDistributor, setSelectedDistributor] = useState<Distributor | nul
 
           {isError && !isLoading && (
             <PageErrorState
-              message="Gagal memuat data distributor"
+              message="Failed to load distributor data"
               onRetry={() => refetch()}
             />
           )}
@@ -224,12 +224,12 @@ const [selectedDistributor, setSelectedDistributor] = useState<Distributor | nul
           {!isLoading && !isError && distributors.length === 0 && (
             <div className="flex h-32 flex-col items-center justify-center rounded-2xl border border-[#E2E8F0] bg-white">
               <span className="text-sm font-medium text-[#0F172A]">
-                Belum ada distributor ditemukan
+                No distributors found
               </span>
               <span className="mt-1 text-xs text-[#64748B]">
                 {isRetailer
-                  ? "Cari distributor di halaman ini atau kirim permintaan kemitraan."
-                  : "Distributor yang menjalin kemitraan akan muncul di sini."}
+                  ? "Find distributors on this page or send partnership requests."
+                  : "Distributors with active partnerships will appear here."}
               </span>
             </div>
           )}
@@ -244,7 +244,7 @@ const [selectedDistributor, setSelectedDistributor] = useState<Distributor | nul
                     role="retailer"
                     onRequestPartnership={
                       dist.partnership_status === "none"
-                        ? (d) => requestPartnership.mutate(d.distributor_id)
+                        ? (d) => requestPartnership.mutate({ distributor_id: d.distributor_id })
                         : undefined
                     }
                     isRequesting={requestPartnership.isPending}
@@ -309,7 +309,7 @@ const [selectedDistributor, setSelectedDistributor] = useState<Distributor | nul
                             ? "Partner"
                             : dist.partnership_status === "pending"
                               ? "Pending"
-                              : "Belum Partner"}
+                              : "Not Partnered"}
                         </Badge>
                         {dist.partnership_status === "partner" && (
                           <Button
@@ -317,7 +317,7 @@ const [selectedDistributor, setSelectedDistributor] = useState<Distributor | nul
                             variant="secondary"
                             onClick={() => handleViewDetail(dist)}
                           >
-                            Lihat Detail
+                            View Detail
                           </Button>
                         )}
                         {dist.partnership_status !== "none" && (
@@ -349,31 +349,31 @@ const [selectedDistributor, setSelectedDistributor] = useState<Distributor | nul
               <CardContent className="space-y-4 p-5">
                 <div className="flex items-center gap-2">
                   <Network className="h-5 w-5 text-[#3B82F6]" />
-                  <h3 className="text-sm font-semibold text-[#0F172A]">Kenapa bermitra dengan distributor?</h3>
+                  <h3 className="text-sm font-semibold text-[#0F172A]">Why partner with distributors?</h3>
                 </div>
                 <p className="text-sm leading-6 text-[#64748B]">
-                  Distributor menyediakan akses ke berbagai produk dengan harga kompetitif dan pengiriman terjadwal.
-                  Bermitra dengan distributor yang tepat membantu kamu menjaga stok toko tetap tersedia.
+                  Distributors provide access to various products at competitive prices with scheduled delivery.
+                  Partnering with the right distributor helps you keep your store stocked.
                 </p>
                 <div className="space-y-2">
                   <div className="flex items-center gap-2 text-sm text-[#0F172A]">
                     <CheckCircle2 className="h-4 w-4 text-[#22C55E]" />
-                    Akses stok real-time
+                    Real-time stock access
                   </div>
                   <div className="flex items-center gap-2 text-sm text-[#0F172A]">
                     <CheckCircle2 className="h-4 w-4 text-[#22C55E]" />
-                    Fasilitas credit line
+                    Credit line facility
                   </div>
                   <div className="flex items-center gap-2 text-sm text-[#0F172A]">
                     <CheckCircle2 className="h-4 w-4 text-[#22C55E]" />
-                    Pengiriman terjadwal
+                    Scheduled delivery
                   </div>
                 </div>
               </CardContent>
             </Card>
           ) : role !== "supplier" ? (
             <> {/* distributor-side: requests from retailers */}
-              <h2 className="text-lg font-semibold text-[#0F172A]">Partnership Requests</h2>
+              <h2 className="text-lg font-semibold text-[#0F172A]">Retailer Requests</h2>
               <Card className="rounded-2xl">
                 <CardContent className="pt-6">
                   {isRequestsLoading && (
@@ -384,14 +384,14 @@ const [selectedDistributor, setSelectedDistributor] = useState<Distributor | nul
 
                   {isRequestsError && !isRequestsLoading && (
                     <PageErrorState
-                      message="Gagal memuat permintaan kemitraan"
+                      message="Failed to load partnership requests"
                       onRetry={() => refetchRequests()}
                     />
                   )}
 
                   {!isRequestsLoading && !isRequestsError && requests.length === 0 && (
                     <p className="text-center text-sm text-[#64748B]">
-                      Tidak ada permintaan kemitraan baru.
+                      No new partnership requests.
                     </p>
                   )}
 
@@ -408,7 +408,7 @@ const [selectedDistributor, setSelectedDistributor] = useState<Distributor | nul
                               {req.distributor?.business_name ?? req.distributor_name ?? "—"}
                             </p>
                             <p className="mt-0.5 text-xs text-[#64748B]">
-                              {new Intl.DateTimeFormat("id-ID", {
+                              {new Intl.DateTimeFormat("en-US", {
                                 day: "numeric",
                                 month: "short",
                                 year: "numeric",
@@ -416,7 +416,7 @@ const [selectedDistributor, setSelectedDistributor] = useState<Distributor | nul
                             </p>
                           </div>
                           <Badge tone="warning">
-                            Lihat Detail
+                            View Detail
                           </Badge>
                         </div>
                       ))}
@@ -475,13 +475,13 @@ const [selectedDistributor, setSelectedDistributor] = useState<Distributor | nul
             onSuccess: () => setDeleteTarget(null),
           });
         }}
-        title={deleteTarget?.partnership_status === "partner" ? "Putus Kemitraan" : "Batalkan Permintaan"}
+        title={deleteTarget?.partnership_status === "partner" ? "End Partnership" : "Cancel Request"}
         description={
           deleteTarget?.partnership_status === "partner"
-            ? `Apakah Anda yakin ingin memutus kemitraan dengan ${deleteTarget?.name}? Tindakan ini tidak dapat dibatalkan.`
-            : `Apakah Anda yakin ingin membatalkan permintaan kemitraan dengan ${deleteTarget?.name}?`
+            ? `Are you sure you want to end the partnership with ${deleteTarget?.name}? This action cannot be undone.`
+            : `Are you sure you want to cancel the partnership request with ${deleteTarget?.name}?`
         }
-        confirmLabel={deleteTarget?.partnership_status === "partner" ? "Putus Kemitraan" : "Batalkan Permintaan"}
+        confirmLabel={deleteTarget?.partnership_status === "partner" ? "End Partnership" : "Cancel Request"}
         isLoading={deletePartnership.isPending}
       />
     </main>

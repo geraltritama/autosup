@@ -23,3 +23,9 @@ __pycache__/
 *.pyc
 *.pyo
 frontend/plan/
+database/
+docs/
+backend/venv/
+.agents/
+opencode.json
+skills-lock.json

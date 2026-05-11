@@ -20,7 +20,7 @@ import { useAiAgents, useUpdateAgentConfig, useRunAgent, useAutoTickAgents, useC
 import { useAuthStore } from "@/store/useAuthStore";
 
 function formatCurrency(amount: number) {
-  return new Intl.NumberFormat("id-ID", {
+  return new Intl.NumberFormat("en-US", {
     style: "currency",
     currency: "IDR",
     maximumFractionDigits: 0,
@@ -28,7 +28,7 @@ function formatCurrency(amount: number) {
 }
 
 const statusTone = { active: "success", paused: "warning", disabled: "neutral" } as const;
-const statusLabel = { active: "Aktif", paused: "Paused", disabled: "Nonaktif" } as const;
+const statusLabel = { active: "Active", paused: "Paused", disabled: "Disabled" } as const;
 
 function tryParseJson(text: string | undefined): Record<string, unknown> | null {
   if (!text) return null;
@@ -87,7 +87,7 @@ function ExpandedResult({ fullResult }: { fullResult: string }) {
           <p className="font-medium text-[#0F172A] mb-1">Inventory</p>
           {Object.entries(invStatus).slice(0, 5).map(([k, v]) => (
             <p key={k} className="text-[#64748B] capitalize">
-              {k.replace(/_/g, " ")}: <span className="text-[#0F172A] font-medium">{typeof v === "number" ? v.toLocaleString("id-ID") : String(v)}</span>
+              {k.replace(/_/g, " ")}: <span className="text-[#0F172A] font-medium">{typeof v === "number" ? v.toLocaleString("en-US") : String(v)}</span>
             </p>
           ))}
         </div>
@@ -99,7 +99,7 @@ function ExpandedResult({ fullResult }: { fullResult: string }) {
           <p className="font-medium text-[#0F172A] mb-1">Credit</p>
           {Object.entries(credit).slice(0, 5).map(([k, v]) => (
             <p key={k} className="text-[#64748B] capitalize">
-              {k.replace(/_/g, " ")}: <span className="text-[#0F172A] font-medium">{typeof v === "number" ? v.toLocaleString("id-ID") : String(v)}</span>
+              {k.replace(/_/g, " ")}: <span className="text-[#0F172A] font-medium">{typeof v === "number" ? v.toLocaleString("en-US") : String(v)}</span>
             </p>
           ))}
         </div>
@@ -111,7 +111,7 @@ function ExpandedResult({ fullResult }: { fullResult: string }) {
           <p className="font-medium text-[#0F172A] mb-1">Shipments</p>
           {Object.entries(shipment).slice(0, 4).map(([k, v]) => (
             <p key={k} className="text-[#64748B] capitalize">
-              {k.replace(/_/g, " ")}: <span className="text-[#0F172A] font-medium">{typeof v === "number" ? v.toLocaleString("id-ID") : String(v)}</span>
+              {k.replace(/_/g, " ")}: <span className="text-[#0F172A] font-medium">{typeof v === "number" ? v.toLocaleString("en-US") : String(v)}</span>
             </p>
           ))}
         </div>
@@ -123,7 +123,7 @@ function ExpandedResult({ fullResult }: { fullResult: string }) {
           <p className="font-medium text-[#0F172A] mb-1">Pricing</p>
           {Object.entries(pricing).filter(([, v]) => !Array.isArray(v)).slice(0, 4).map(([k, v]) => (
             <p key={k} className="text-[#64748B] capitalize">
-              {k.replace(/_/g, " ")}: <span className="text-[#0F172A] font-medium">{typeof v === "number" ? v.toLocaleString("id-ID") : String(v)}</span>
+              {k.replace(/_/g, " ")}: <span className="text-[#0F172A] font-medium">{typeof v === "number" ? v.toLocaleString("en-US") : String(v)}</span>
             </p>
           ))}
         </div>
@@ -135,7 +135,7 @@ function ExpandedResult({ fullResult }: { fullResult: string }) {
           <p className="font-medium text-[#0F172A] mb-1">Cashflow</p>
           {Object.entries(cashflow).slice(0, 5).map(([k, v]) => (
             <p key={k} className="text-[#64748B] capitalize">
-              {k.replace(/_/g, " ")}: <span className="text-[#0F172A] font-medium">{typeof v === "number" ? v.toLocaleString("id-ID") : String(v)}</span>
+              {k.replace(/_/g, " ")}: <span className="text-[#0F172A] font-medium">{typeof v === "number" ? v.toLocaleString("en-US") : String(v)}</span>
             </p>
           ))}
         </div>
@@ -147,7 +147,7 @@ function ExpandedResult({ fullResult }: { fullResult: string }) {
           <p className="font-medium text-[#0F172A] mb-1">Demand</p>
           {Object.entries(demand).filter(([, v]) => !Array.isArray(v)).slice(0, 4).map(([k, v]) => (
             <p key={k} className="text-[#64748B] capitalize">
-              {k.replace(/_/g, " ")}: <span className="text-[#0F172A] font-medium">{typeof v === "number" ? v.toLocaleString("id-ID") : String(v)}</span>
+              {k.replace(/_/g, " ")}: <span className="text-[#0F172A] font-medium">{typeof v === "number" ? v.toLocaleString("en-US") : String(v)}</span>
             </p>
           ))}
         </div>
@@ -159,7 +159,7 @@ function ExpandedResult({ fullResult }: { fullResult: string }) {
           <p className="font-medium text-[#0F172A] mb-1">Sales</p>
           {Object.entries(sales).filter(([, v]) => !Array.isArray(v)).slice(0, 4).map(([k, v]) => (
             <p key={k} className="text-[#64748B] capitalize">
-              {k.replace(/_/g, " ")}: <span className="text-[#0F172A] font-medium">{typeof v === "number" ? v.toLocaleString("id-ID") : String(v)}</span>
+              {k.replace(/_/g, " ")}: <span className="text-[#0F172A] font-medium">{typeof v === "number" ? v.toLocaleString("en-US") : String(v)}</span>
             </p>
           ))}
         </div>
@@ -171,7 +171,7 @@ function ExpandedResult({ fullResult }: { fullResult: string }) {
           <p className="font-medium text-[#0F172A] mb-1">Partnership</p>
           {Object.entries(partnership).filter(([, v]) => !Array.isArray(v)).slice(0, 4).map(([k, v]) => (
             <p key={k} className="text-[#64748B] capitalize">
-              {k.replace(/_/g, " ")}: <span className="text-[#0F172A] font-medium">{typeof v === "number" ? v.toLocaleString("id-ID") : String(v)}</span>
+              {k.replace(/_/g, " ")}: <span className="text-[#0F172A] font-medium">{typeof v === "number" ? v.toLocaleString("en-US") : String(v)}</span>
             </p>
           ))}
         </div>
@@ -183,7 +183,7 @@ function ExpandedResult({ fullResult }: { fullResult: string }) {
           <p className="font-medium text-[#0F172A] mb-1">Forecast</p>
           {Object.entries(demandFc).filter(([, v]) => !Array.isArray(v)).slice(0, 4).map(([k, v]) => (
             <p key={k} className="text-[#64748B] capitalize">
-              {k.replace(/_/g, " ")}: <span className="text-[#0F172A] font-medium">{typeof v === "number" ? v.toLocaleString("id-ID") : String(v)}</span>
+              {k.replace(/_/g, " ")}: <span className="text-[#0F172A] font-medium">{typeof v === "number" ? v.toLocaleString("en-US") : String(v)}</span>
             </p>
           ))}
         </div>
@@ -250,10 +250,10 @@ export default function AiAgentsPage() {
             <h1 className="text-3xl font-semibold tracking-tight text-[#0F172A]">AI Agents</h1>
             <p className="max-w-3xl text-sm leading-7 text-[#64748B]">
               {role === "supplier"
-                ? "Optimasi supply chain, prediksi demand, dan optimasi pengiriman untuk supplier."
+                ? "Supply chain optimization, demand prediction, and delivery optimization for suppliers."
                 : role === "distributor"
-                  ? "Auto restock, analisis kredit retailer, rekomendasi supplier, dan optimasi cash flow untuk distributor."
-                  : "Smart reorder, analisis tren penjualan, dan prediksi permintaan konsumen untuk retailer."}
+                  ? "Auto restock, retailer credit analysis, supplier recommendations, and cash flow optimization for distributors."
+                  : "Smart reorder, sales trend analysis, and consumer demand prediction for retailers."}
             </p>
           </div>
         </div>
@@ -273,21 +273,21 @@ export default function AiAgentsPage() {
           <KpiCard
             label="Prediction Accuracy"
             value={`${performance.accuracy_rate}%`}
-            meta="Akurasi model AI saat ini"
+            meta="Current AI model accuracy"
             tone="success"
             icon={BrainCircuit}
           />
           <KpiCard
             label="Est. Cost Savings"
             value={formatCurrency(performance.cost_savings)}
-            meta="Penghematan dari optimasi"
+            meta="Savings from optimization"
             tone="success"
             icon={TrendingUp}
           />
           <KpiCard
             label="Time Saved"
-            value={`${performance.time_saved_hours} Jam`}
-            meta="Otomasi tugas manual"
+            value={`${performance.time_saved_hours} Hours`}
+            meta="Manual task automation"
             tone="info"
             icon={Clock}
           />
@@ -304,12 +304,12 @@ export default function AiAgentsPage() {
               <Loader2 className="h-5 w-5 animate-spin text-[#94A3B8]" />
             </div>
           ) : isError ? (
-            <PageErrorState message="Gagal memuat data AI agents" onRetry={() => refetch()} />
+            <PageErrorState message="Failed to load AI agents data" onRetry={() => refetch()} />
           ) : agents.length === 0 ? (
             <div className="flex h-32 flex-col items-center justify-center rounded-2xl border border-[#E2E8F0] bg-white">
               <Bot className="h-8 w-8 text-[#CBD5E1] mb-2" />
-              <span className="text-sm font-medium text-[#0F172A]">Belum ada agent untuk role ini</span>
-              <span className="text-xs text-[#94A3B8] mt-1">Pastikan database sudah di-seed dengan migration SQL</span>
+              <span className="text-sm font-medium text-[#0F172A]">No agents for this role yet</span>
+              <span className="text-xs text-[#94A3B8] mt-1">Make sure the database has been seeded with SQL migration</span>
             </div>
           ) : (
             <div className="grid gap-4 md:grid-cols-2">
@@ -383,7 +383,7 @@ export default function AiAgentsPage() {
                             updateConfig.mutate({ id: agent.id, status: newStatus });
                           }}
                         >
-                          {agent.status === "active" ? "Pause" : "Aktifkan"}
+                          {agent.status === "active" ? "Pause" : "Activate"}
                         </Button>
                       </div>
                     </div>
@@ -428,8 +428,8 @@ export default function AiAgentsPage() {
               ) : activities.length === 0 ? (
                 <div className="flex flex-col items-center justify-center py-8 gap-2">
                   <Bot className="h-8 w-8 text-[#CBD5E1]" />
-                  <p className="text-sm text-[#64748B]">Belum ada aktivitas</p>
-                  <p className="text-xs text-[#94A3B8]">Jalankan agent untuk melihat log</p>
+                  <p className="text-sm text-[#64748B]">No activity yet</p>
+                  <p className="text-xs text-[#94A3B8]">Run an agent to view logs</p>
                 </div>
               ) : (
                 <div className="space-y-3">
@@ -447,7 +447,7 @@ export default function AiAgentsPage() {
                             <div className="flex items-center gap-2">
                               <p className="text-xs font-semibold text-[#0F172A]">{act.agent_name}</p>
                               <span className="text-[10px] text-[#94A3B8]">
-                                {new Intl.DateTimeFormat("id-ID", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }).format(new Date(act.timestamp))}
+                                {new Intl.DateTimeFormat("en-US", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }).format(new Date(act.timestamp))}
                               </span>
                             </div>
                             <p className="text-xs text-[#64748B] line-clamp-2">{act.action}</p>
@@ -458,7 +458,7 @@ export default function AiAgentsPage() {
                             )}
 
                             {!isExpanded && (
-                              <p className="text-[10px] text-[#3B82F6] font-medium mt-0.5">Klik untuk detail</p>
+                              <p className="text-[10px] text-[#3B82F6] font-medium mt-0.5">Click for details</p>
                             )}
                           </div>
                         </button>

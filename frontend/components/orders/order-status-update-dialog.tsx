@@ -19,7 +19,7 @@ type Props = {
   isLoading?: boolean;
 };
 
-const COURIERS = ["JNE", "J&T Express", "GrabExpress", "Gojek", "ShopeeExpress", "Tiket.com", "Lainnya"];
+const COURIERS = ["JNE", "J&T Express", "Sicepat", "AnterAja", "Pos Indonesia", "GrabExpress", "Gojek", "ShopeeExpress", "Others"];
 
 export function OrderStatusUpdateDialog({ open, onClose, orderNumber, newStatus, onUpdate, isLoading }: Props) {
   const [shippingInfo, setShippingInfo] = useState<ShippingInfo>({ courier: "", tracking_number: "" });
@@ -31,7 +31,7 @@ export function OrderStatusUpdateDialog({ open, onClose, orderNumber, newStatus,
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (isShipped && (!shippingInfo.courier.trim() || !shippingInfo.tracking_number.trim())) {
-      setError("Mohon isi informasi pengiriman");
+      setError("Please fill in shipping information");
       return;
     }
     onUpdate(isShipped ? shippingInfo : undefined);
@@ -56,32 +56,32 @@ export function OrderStatusUpdateDialog({ open, onClose, orderNumber, newStatus,
     <Dialog
       open={open}
       onClose={() => handleOpenChange(false)}
-      title={`Kirim Barang - Order ${orderNumber}`}
-      description={`Masukkan informasi pengiriman untuk menandai barang sebagai "${statusLabel[newStatus] || newStatus}".`}
+      title={`Ship Order — ${orderNumber}`}
+      description={`Enter the shipping information to mark the order as "${statusLabel[newStatus] || newStatus}".`}
     >
       <form onSubmit={handleSubmit} className="space-y-4">
         {isShipped && (
           <div className="space-y-3 rounded-xl border border-[#E2E8F0] bg-slate-50 p-4">
-            <p className="text-sm font-medium text-[#0F172A]">Informasi Pengiriman</p>
+            <p className="text-sm font-medium text-[#0F172A]">Shipping Information</p>
             <div className="space-y-2">
               <div className="space-y-1">
-                <label className="text-xs text-[#64748B]">Ekspedisi</label>
+                <label className="text-xs text-[#64748B]">Courier</label>
                 <select
                   className="h-11 w-full rounded-lg border border-[#E2E8F0] bg-white px-3 text-sm text-[#0F172A] outline-none focus:border-[#3B82F6] focus:ring-2 focus:ring-[#BFDBFE]"
                   value={shippingInfo.courier}
                   onChange={(e) => setShippingInfo({ ...shippingInfo, courier: e.target.value })}
                   required={isShipped}
                 >
-                  <option value="">Pilih ekspedisi</option>
+                  <option value="">Select courier</option>
                   {COURIERS.map((c) => (
                     <option key={c} value={c}>{c}</option>
                   ))}
                 </select>
               </div>
               <div className="space-y-1">
-                <label className="text-xs text-[#64748B]">Nomor Resi</label>
+                <label className="text-xs text-[#64748B]">Tracking Number</label>
                 <Input
-                  placeholder="cth: JNE123456789"
+                  placeholder="e.g. JNE123456789"
                   value={shippingInfo.tracking_number}
                   onChange={(e) => setShippingInfo({ ...shippingInfo, tracking_number: e.target.value })}
                   required={isShipped}
@@ -97,10 +97,10 @@ export function OrderStatusUpdateDialog({ open, onClose, orderNumber, newStatus,
 
         <div className="flex justify-end gap-2">
           <Button type="button" variant="secondary" onClick={() => handleOpenChange(false)} disabled={isLoading}>
-            Batal
+            Cancel
           </Button>
           <Button type="submit" disabled={isLoading || !canSubmit}>
-            {isLoading ? "Mengirim..." : `Kirim Barang`}
+            {isLoading ? "Shipping..." : "Ship Order"}
           </Button>
         </div>
       </form>

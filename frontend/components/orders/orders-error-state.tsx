@@ -12,10 +12,10 @@ export function OrdersErrorState({ onRetry }: { onRetry?: () => void }) {
           </div>
           <div>
             <p className="text-sm font-semibold text-[#0F172A]">
-              Gagal memuat orders workspace
+              Failed to load orders workspace
             </p>
             <p className="mt-1 text-sm leading-6 text-[#64748B]">
-              Cek koneksi kamu dan coba lagi.
+              Check your connection and try again.
             </p>
           </div>
         </div>

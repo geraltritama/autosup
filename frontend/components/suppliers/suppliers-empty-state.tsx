@@ -12,10 +12,10 @@ export function SuppliersEmptyState({ onExplore }: Props) {
           <Network className="h-6 w-6" />
         </div>
         <h3 className="mt-5 text-lg font-semibold text-[#0F172A]">
-          Belum ada supplier yang ditemukan
+          No suppliers found
         </h3>
         <p className="mt-2 max-w-md text-sm leading-6 text-[#64748B]">
-          Coba ubah filter pencarian atau jelajahi supplier baru untuk memulai kemitraan supply chain kamu.
+          Try changing your search filter or explore new suppliers to start your supply chain partnership.
         </p>
         <Button className="mt-6" onClick={onExplore}>Explore Suppliers</Button>
       </CardContent>

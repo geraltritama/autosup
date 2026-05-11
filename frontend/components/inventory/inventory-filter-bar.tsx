@@ -4,6 +4,7 @@ import { Filter, Search } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { CATEGORY_OPTIONS } from "@/components/inventory/category-labels";
 
 type Props = {
   search: string;
@@ -14,15 +15,6 @@ type Props = {
   onStatusChange: (v: string) => void;
   onReset: () => void;
 };
-
-const CATEGORIES = [
-  { value: "", label: "All categories" },
-  { value: "bahan_baku", label: "Bahan baku" },
-  { value: "packaging", label: "Packaging" },
-  { value: "produk_jadi", label: "Produk jadi" },
-  { value: "peralatan", label: "Peralatan" },
-  { value: "lainnya", label: "Lainnya" },
-];
 
 const STATUSES = [
   { value: "", label: "All status" },
@@ -60,7 +52,7 @@ export function InventoryFilterBar({
           value={category}
           onChange={(e) => onCategoryChange(e.target.value)}
         >
-          {CATEGORIES.map((c) => (
+          {CATEGORY_OPTIONS.map((c) => (
             <option key={c.value} value={c.value}>{c.label}</option>
           ))}
         </select>

@@ -39,6 +39,21 @@ export type AddItemPayload = {
 
 export type UpdateItemPayload = Partial<AddItemPayload>;
 
+export type InventoryImportRow = {
+  name: string;
+  category: string;
+  stock: number;
+  min_stock: number;
+  unit: string;
+  price: number;
+};
+
+export type InventoryImportResult = {
+  created: number;
+  updated: number;
+  total: number;
+};
+
 export type RestockRecommendation = {
   item_id: string;
   item_name: string;
@@ -66,6 +81,20 @@ type InventoryFilters = {
   limit?: number;
 };
 
+const inventoryStatusOrder: Record<InventoryStatus, number> = {
+  out_of_stock: 0,
+  low_stock: 1,
+  in_stock: 2,
+};
+
+function sortInventoryByPriority<T extends { status: InventoryStatus; name: string }>(items: T[]) {
+  return [...items].sort(
+    (a, b) =>
+      inventoryStatusOrder[a.status] - inventoryStatusOrder[b.status] ||
+      a.name.localeCompare(b.name),
+  );
+}
+
 export function useInventory(filters: InventoryFilters = {}) {
   const userId = useAuthStore((s) => s.user?.user_id);
   return useQuery({
@@ -86,14 +115,15 @@ export function useInventory(filters: InventoryFilters = {}) {
         if (filters.category && !item.category.toLowerCase().includes(filters.category.toLowerCase())) return false;
         return true;
       });
+      const sorted = sortInventoryByPriority(filtered);
       return {
-        items: filtered,
+        items: sorted,
         summary: {
           total_items: allItems.length,
           low_stock_count: allItems.filter((i) => i.status === "low_stock").length,
           out_of_stock_count: allItems.filter((i) => i.status === "out_of_stock").length,
         },
-        pagination: { page: 1, limit: filtered.length, total: filtered.length },
+        pagination: { page: 1, limit: sorted.length, total: sorted.length },
       };
     },
     staleTime: 30 * 1000,
@@ -170,7 +200,11 @@ export function useUpdateInventoryItem() {
       payload: UpdateItemPayload;
     }): Promise<InventoryItem> => {
       const patchBody: Record<string, unknown> = { current_stock: payload.stock ?? 0 };
+      if (payload.name !== undefined) patchBody.product_name = payload.name;
       if (payload.price !== undefined) patchBody.price = payload.price;
+      if (payload.min_stock !== undefined) patchBody.min_threshold = payload.min_stock;
+      if (payload.category !== undefined) patchBody.category = payload.category;
+      if (payload.unit !== undefined) patchBody.unit = payload.unit;
       const { data } = await api.patch<ApiResponse<InventoryItem>>(
         `/inventory/${id}`,
         patchBody,
@@ -186,6 +220,72 @@ export function useUpdateInventoryItem() {
         price: item.price ?? 0,
         status: item.stock === 0 ? "out_of_stock" : item.stock < item.min_stock ? "low_stock" : "in_stock",
         last_updated: new Date().toISOString(),
+      };
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["inventory"] }),
+  });
+}
+
+export function useImportInventory() {
+  const qc = useQueryClient();
+  const userId = useAuthStore((s) => s.user?.user_id);
+
+  return useMutation({
+    mutationFn: async (rows: InventoryImportRow[]): Promise<InventoryImportResult> => {
+      if (!userId) {
+        throw new Error("User not found.");
+      }
+
+      type BackendItem = {
+        id: string;
+        name: string;
+        stock: number;
+        min_stock: number;
+        category: string;
+        unit: string;
+        price?: number;
+      };
+
+      const { data } = await api.get<ApiResponse<BackendItem[]>>(`/inventory?user_id=${userId}`);
+      const existingItems = data.data ?? [];
+      const existingByName = new Map(
+        existingItems.map((item) => [item.name.trim().toLowerCase(), item]),
+      );
+
+      let created = 0;
+      let updated = 0;
+
+      for (const row of rows) {
+        const existing = existingByName.get(row.name.trim().toLowerCase());
+        if (existing) {
+          await api.patch(`/inventory/${existing.id}`, {
+            product_name: row.name,
+            current_stock: row.stock,
+            min_threshold: row.min_stock,
+            category: row.category,
+            unit: row.unit,
+            price: row.price,
+          });
+          updated += 1;
+          continue;
+        }
+
+        await api.post("/inventory", {
+          product_name: row.name,
+          current_stock: row.stock,
+          min_threshold: row.min_stock,
+          category: row.category,
+          unit: row.unit,
+          price: row.price,
+          user_id: userId,
+        });
+        created += 1;
+      }
+
+      return {
+        created,
+        updated,
+        total: rows.length,
       };
     },
     onSuccess: () => qc.invalidateQueries({ queryKey: ["inventory"] }),
@@ -221,12 +321,13 @@ export function useSellerInventory(sellerId: string) {
       if (!sellerId) return [];
       type BackendItem = { id: string; name: string; stock: number; min_stock: number; category: string; unit: string; price?: number };
       const { data } = await api.get<ApiResponse<BackendItem[]>>(`/inventory/seller/${sellerId}`);
-      return (data.data || []).map((item) => ({
+      const mapped = (data.data || []).map((item) => ({
         ...item,
         price: item.price ?? 0,
         status: item.stock === 0 ? "out_of_stock" : item.stock < item.min_stock ? "low_stock" : "in_stock",
         last_updated: new Date().toISOString(),
       }));
+      return sortInventoryByPriority(mapped);
     },
     enabled: !!sellerId,
     staleTime: 30 * 1000,

@@ -43,7 +43,7 @@ type Props = {
 };
 
 function formatCurrency(amount: number) {
-  return new Intl.NumberFormat("id-ID", {
+  return new Intl.NumberFormat("en-US", {
     style: "currency",
     currency: "IDR",
     maximumFractionDigits: 0,
@@ -78,10 +78,10 @@ export function OrderFormDialog({ open, onClose, prefill }: Props) {
     : (suppliersData?.suppliers ?? []);
   const partnersLoading = isRetailer ? distributorsLoading : suppliersLoading;
   const sellerLabel = isRetailer ? "Distributor partner" : "Supplier partner";
-  const sellerLoading = isRetailer ? "Memuat distributor..." : "Memuat supplier...";
+  const sellerLoading = isRetailer ? "Loading distributors..." : "Loading suppliers...";
   const sellerEmpty = isRetailer
-    ? "Belum ada distributor partner. Tambahkan partner di halaman Distributors terlebih dahulu."
-    : "Belum ada supplier partner. Tambahkan partner di halaman Suppliers terlebih dahulu.";
+    ? "No distributor partners yet. Add partners on the Distributors page first."
+    : "No supplier partners yet. Add partners on the Suppliers page first.";
 
   useEffect(() => {
     if (!open) return;
@@ -156,21 +156,21 @@ export function OrderFormDialog({ open, onClose, prefill }: Props) {
       setStep("success");
       setTimeout(() => onClose(), 1800);
     } catch {
-      setError("Gagal membuat order. Coba lagi.");
+      setError("Failed to create order. Please try again.");
       setStep("form");
     }
   }
 
   if (step === "success") {
     return (
-      <Dialog open={open} onClose={onClose} title="Order Berhasil Dibuat">
+      <Dialog open={open} onClose={onClose} title="Order Successfully Created">
         <div className="flex flex-col items-center gap-4 py-6 text-center">
           <div className="rounded-full bg-[#F0FDF4] p-4">
             <CheckCircle2 className="h-10 w-10 text-[#16A34A]" />
           </div>
           <div>
-            <p className="text-base font-semibold text-[#0F172A]">Pesanan & payment proof berhasil</p>
-            <p className="mt-1 text-sm text-[#64748B]">Transaksi dicatat on-chain via Solana Devnet.</p>
+            <p className="text-base font-semibold text-[#0F172A]">Order & payment proof submitted</p>
+            <p className="mt-1 text-sm text-[#64748B]">Transaction recorded on-chain via Solana Devnet.</p>
           </div>
         </div>
       </Dialog>
@@ -183,16 +183,16 @@ export function OrderFormDialog({ open, onClose, prefill }: Props) {
       0,
     );
     return (
-      <Dialog open={open} onClose={() => { setStep("form"); setError(null); }} title="Konfirmasi Payment">
+      <Dialog open={open} onClose={() => { setStep("form"); setError(null); }} title="Confirm Payment">
         <div className="space-y-5">
           <div className="rounded-xl border border-[#DDD6FE] bg-[#F5F3FF] p-4 space-y-3">
             <div className="flex items-center gap-2">
               <CreditCard className="h-4 w-4 text-[#7C3AED]" />
-              <span className="text-sm font-semibold text-[#7C3AED]">Simulasi Payment</span>
+              <span className="text-sm font-semibold text-[#7C3AED]">Payment Simulation</span>
             </div>
             <p className="text-xs text-[#64748B]">
-              Backend akan mencatat bukti pembayaran on-chain via Solana Memo Program (Devnet).
-              Tidak ada transfer token nyata — ini simulasi escrow.
+              Backend will record payment proof on-chain via Solana Memo Program (Devnet).
+              No real token transfer — this is an escrow simulation.
             </p>
             <div className="rounded-lg bg-white px-4 py-3 border border-[#E9D5FF]">
               <p className="text-xs text-[#64748B] uppercase tracking-[0.12em]">Total Amount</p>
@@ -202,11 +202,11 @@ export function OrderFormDialog({ open, onClose, prefill }: Props) {
             </div>
             <div className="space-y-1.5 text-xs text-[#64748B]">
               <div className="flex justify-between">
-                <span>Ke</span>
+                <span>To</span>
                 <span className="font-medium text-[#0F172A]">{pendingPayload.seller_name || pendingPayload.seller_id.slice(0, 12) + "…"}</span>
               </div>
               <div className="flex justify-between">
-                <span>Dari</span>
+                <span>From</span>
                 <span className="font-medium text-[#0F172A]">{pendingPayload.buyer_name}</span>
               </div>
               <div className="flex justify-between">
@@ -225,13 +225,13 @@ export function OrderFormDialog({ open, onClose, prefill }: Props) {
 
           <div className="flex justify-end gap-2">
             <Button type="button" variant="secondary" onClick={() => { setStep("form"); setError(null); }} disabled={isLoading}>
-              Kembali
+              Back
             </Button>
             <Button type="button" onClick={handleConfirmPayment} disabled={isLoading}>
               {isLoading ? (
-                <><Loader2 className="mr-1.5 h-4 w-4 animate-spin" />Memproses…</>
+                <><Loader2 className="mr-1.5 h-4 w-4 animate-spin" />Processing…</>
               ) : (
-                "Konfirmasi & Bayar"
+                "Confirm & Pay"
               )}
             </Button>
           </div>
@@ -244,8 +244,8 @@ export function OrderFormDialog({ open, onClose, prefill }: Props) {
     <Dialog
       open={open}
       onClose={onClose}
-      title="Buat Order Baru"
-      description={`Pilih ${sellerLabel.toLowerCase()} dan isi detail item yang ingin dipesan.`}
+      title="Create New Order"
+      description={`Select ${sellerLabel.toLowerCase()} and enter the item details you want to order.`}
     >
       <form onSubmit={handleSubmit} className="space-y-5">
         {/* Seller */}
@@ -259,7 +259,7 @@ export function OrderFormDialog({ open, onClose, prefill }: Props) {
             required
           >
             <option value="">
-              {partnersLoading ? sellerLoading : `Pilih ${isRetailer ? "distributor" : "supplier"}`}
+              {partnersLoading ? sellerLoading : `Select ${isRetailer ? "distributor" : "supplier"}`}
             </option>
             {partners.map((p) => {
               const id = "distributor_id" in p ? p.distributor_id : p.supplier_id;
@@ -280,7 +280,7 @@ export function OrderFormDialog({ open, onClose, prefill }: Props) {
         {/* Items */}
         <div className="space-y-3">
           <div className="flex items-center justify-between">
-            <label className="text-sm font-medium text-[#0F172A]">Item yang dipesan</label>
+            <label className="text-sm font-medium text-[#0F172A]">Items ordered</label>
             <Button
               type="button"
               variant="secondary"
@@ -289,7 +289,7 @@ export function OrderFormDialog({ open, onClose, prefill }: Props) {
               disabled={isLoading}
             >
               <Plus className="h-3 w-3" />
-              Tambah item
+              Add item
             </Button>
           </div>
 
@@ -317,13 +317,13 @@ export function OrderFormDialog({ open, onClose, prefill }: Props) {
 
                 {/* Item dropdown from seller inventory */}
                 <div className="space-y-1">
-                  <label className="text-xs text-[#64748B]">Nama item</label>
+                  <label className="text-xs text-[#64748B]">Item name</label>
                   {!sellerId ? (
-                    <p className="text-xs text-[#94A3B8]">Pilih supplier dulu untuk melihat item tersedia.</p>
+                    <p className="text-xs text-[#94A3B8]">Select a supplier first to see available items.</p>
                   ) : inventoryLoading ? (
-                    <p className="text-xs text-[#94A3B8]">Memuat item supplier...</p>
+                    <p className="text-xs text-[#94A3B8]">Loading supplier items...</p>
                   ) : sellerInventory.length === 0 ? (
-                    <p className="text-xs text-[#94A3B8]">Supplier belum punya item di inventory.</p>
+                    <p className="text-xs text-[#94A3B8]">Supplier has no items in inventory.</p>
                   ) : (
                     <select
                       className="h-11 w-full rounded-lg border border-[#E2E8F0] bg-white px-3 text-sm text-[#0F172A] outline-none focus:border-[#3B82F6] focus:ring-2 focus:ring-[#BFDBFE] disabled:opacity-50"
@@ -345,10 +345,10 @@ export function OrderFormDialog({ open, onClose, prefill }: Props) {
                       disabled={isLoading}
                       required
                     >
-                      <option value="">Pilih item</option>
+                      <option value="">Select item</option>
                       {sellerInventory.map((inv) => (
                         <option key={inv.id} value={inv.name}>
-                          {inv.name} ({inv.unit}) — stok: {inv.stock}
+                          {inv.name} ({inv.unit}) — stock: {inv.stock}
                         </option>
                       ))}
                     </select>
@@ -390,7 +390,7 @@ export function OrderFormDialog({ open, onClose, prefill }: Props) {
                     </div>
                   </div>
                   <div className="space-y-1">
-                    <label className="text-xs text-[#64748B]">Harga/unit</label>
+                    <label className="text-xs text-[#64748B]">Price/unit</label>
                     <div className="flex h-11 items-center rounded-lg border border-[#E2E8F0] bg-slate-100 px-3 text-sm font-medium text-[#0F172A]">
                       {item.price_per_unit > 0 ? formatCurrency(item.price_per_unit) : "—"}
                     </div>
@@ -420,7 +420,7 @@ export function OrderFormDialog({ open, onClose, prefill }: Props) {
 
         {/* Delivery Address */}
         <div className="space-y-1.5">
-          <label className="text-sm font-medium text-[#0F172A]">Alamat pengiriman</label>
+          <label className="text-sm font-medium text-[#0F172A]">Delivery address</label>
           <Input
             placeholder="Jl. Merdeka No.10, Jakarta Pusat"
             value={deliveryAddress}
@@ -433,12 +433,12 @@ export function OrderFormDialog({ open, onClose, prefill }: Props) {
         {/* Notes */}
         <div className="space-y-1.5">
           <label className="text-sm font-medium text-[#0F172A]">
-            Catatan{" "}
-            <span className="font-normal text-[#94A3B8]">(opsional)</span>
+            Notes{" "}
+            <span className="font-normal text-[#94A3B8]">(optional)</span>
           </label>
           <textarea
             className="min-h-[80px] w-full resize-none rounded-lg border border-[#E2E8F0] bg-white px-3 py-2.5 text-sm text-[#0F172A] placeholder:text-[#94A3B8] outline-none focus:border-[#3B82F6] focus:ring-2 focus:ring-[#BFDBFE] disabled:opacity-50"
-            placeholder="Tolong dikemas rapi, urgent, dll."
+            placeholder="Please pack neatly, urgent, etc."
             value={notes}
             onChange={(e) => setNotes(e.target.value)}
             disabled={isLoading}
@@ -454,10 +454,10 @@ export function OrderFormDialog({ open, onClose, prefill }: Props) {
 
         <div className="flex justify-end gap-2 pt-1">
           <Button type="button" variant="secondary" onClick={onClose} disabled={isLoading}>
-            Batal
+            Cancel
           </Button>
           <Button type="submit" disabled={isLoading || !isFormValid}>
-            {isLoading ? "Membuat order..." : "Buat Order"}
+            {isLoading ? "Creating order..." : "Create Order"}
           </Button>
         </div>
       </form>

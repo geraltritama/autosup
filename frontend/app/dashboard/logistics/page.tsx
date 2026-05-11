@@ -44,8 +44,8 @@ export default function LogisticsPage() {
     return (
       <main className="flex h-[80vh] items-center justify-center p-8">
         <div className="text-center">
-          <h2 className="text-xl font-semibold text-[#0F172A]">Akses Ditolak</h2>
-          <p className="mt-2 text-sm text-[#64748B]">Halaman Logistics khusus untuk Distributor.</p>
+          <h2 className="text-xl font-semibold text-[#0F172A]">Access Denied</h2>
+          <p className="mt-2 text-sm text-[#64748B]">Logistics page is for Distributors only.</p>
         </div>
       </main>
     );
@@ -63,7 +63,7 @@ export default function LogisticsPage() {
           <div className="space-y-2">
             <h1 className="text-3xl font-semibold tracking-tight text-[#0F172A]">Logistics</h1>
             <p className="max-w-3xl text-sm leading-7 text-[#64748B]">
-              Pantau pengiriman aktif, cek rute operasional, dan kelola logistics partner untuk efisiensi distribusi.
+              Monitor active shipments, check operational routes, and manage logistics partners for distribution efficiency.
             </p>
           </div>
         </div>
@@ -75,21 +75,21 @@ export default function LogisticsPage() {
           <KpiCard
             label="Active Shipments"
             value={String(data.active_shipments)}
-            meta="Dalam pengiriman saat ini"
+            meta="Currently in transit"
             tone="info"
             icon={Truck}
           />
           <KpiCard
             label="Delivered Today"
             value={String(data.delivered_today)}
-            meta="Pesanan selesai hari ini"
+            meta="Orders completed today"
             tone="success"
             icon={PackageCheck}
           />
           <KpiCard
             label="Delayed Shipments"
             value={String(data.delayed_shipments)}
-            meta="Perlu perhatian"
+            meta="Needs attention"
             tone="danger"
             icon={AlertCircle}
           />
@@ -106,10 +106,10 @@ export default function LogisticsPage() {
               <Loader2 className="h-5 w-5 animate-spin text-[#94A3B8]" />
             </div>
           ) : isError ? (
-            <PageErrorState message="Gagal memuat data logistik" onRetry={() => refetch()} />
+            <PageErrorState message="Failed to load logistics data" onRetry={() => refetch()} />
           ) : shipments.length === 0 ? (
             <div className="flex h-32 flex-col items-center justify-center rounded-2xl border border-[#E2E8F0] bg-white">
-              <span className="text-sm font-medium text-[#0F172A]">Belum ada pengiriman aktif</span>
+              <span className="text-sm font-medium text-[#0F172A]">No active shipments</span>
             </div>
           ) : (
             <div className="grid gap-4">
@@ -135,7 +135,7 @@ export default function LogisticsPage() {
                     <div className="text-right space-y-2">
                       <Badge tone={statusTone[shipment.status]}>{statusLabel[shipment.status]}</Badge>
                       <p className="text-xs text-[#64748B]">
-                        ETA: {new Intl.DateTimeFormat("id-ID", { hour: "2-digit", minute: "2-digit", day: "numeric", month: "short" }).format(new Date(shipment.eta))}
+                        ETA: {new Intl.DateTimeFormat("en-US", { hour: "2-digit", minute: "2-digit", day: "numeric", month: "short" }).format(new Date(shipment.eta))}
                       </p>
                       {shipment.status === "delayed" && (
                         <Button
@@ -166,7 +166,7 @@ export default function LogisticsPage() {
           <Card className="rounded-2xl">
             <CardHeader className="space-y-1">
               <CardTitle className="text-base">Logistics Partners</CardTitle>
-              <p className="text-sm text-[#64748B]">Performa penyedia layanan kurir</p>
+              <p className="text-sm text-[#64748B]">Courier service provider performance</p>
             </CardHeader>
             <CardContent>
               {isLoading ? (
@@ -174,14 +174,14 @@ export default function LogisticsPage() {
                   <Loader2 className="h-5 w-5 animate-spin text-[#94A3B8]" />
                 </div>
               ) : partners.length === 0 ? (
-                <p className="text-sm text-[#64748B] text-center">Belum ada partner terdaftar.</p>
+                <p className="text-sm text-[#64748B] text-center">No registered partners.</p>
               ) : (
                 <div className="space-y-4">
                   {partners.map((partner) => (
                     <div key={partner.id} className="flex items-center justify-between border-b border-[#E2E8F0] pb-3 last:border-0 last:pb-0">
                       <div>
                         <p className="text-sm font-semibold text-[#0F172A]">{partner.name}</p>
-                        <p className="mt-0.5 text-xs text-[#64748B]">{partner.active_shipments} pengiriman aktif</p>
+                        <p className="mt-0.5 text-xs text-[#64748B]">{partner.active_shipments} active shipments</p>
                       </div>
                       <div className="text-right">
                         <p className="text-xs uppercase tracking-wider text-[#64748B]">Reliability</p>

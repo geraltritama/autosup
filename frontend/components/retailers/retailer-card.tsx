@@ -1,6 +1,7 @@
 "use client";
 
-import { Building2, ShoppingBag, TrendingUp, AlertTriangle } from "lucide-react";
+import { Building2, ShoppingBag, TrendingUp, AlertTriangle, Trash2 } from "lucide-react";
+import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import type { Retailer } from "@/hooks/useRetailers";
@@ -30,7 +31,7 @@ const statusTone: Record<Retailer["status"], "success" | "neutral" | "danger"> =
 };
 
 function formatCurrency(amount: number) {
-  return new Intl.NumberFormat("id-ID", {
+  return new Intl.NumberFormat("en-US", {
     style: "currency",
     currency: "IDR",
     maximumFractionDigits: 0,
@@ -41,9 +42,12 @@ function formatCurrency(amount: number) {
 type Props = {
   retailer: Retailer;
   onViewDetail?: (retailer: Retailer) => void;
+  onDeletePartnership?: (retailer: Retailer) => void;
 };
 
-export function RetailerCard({ retailer, onViewDetail }: Props) {
+export function RetailerCard({ retailer, onViewDetail, onDeletePartnership }: Props) {
+  const isPartner = retailer.partnership_status === "partner";
+
   return (
     <Card className="rounded-2xl">
       <CardHeader className="space-y-4 border-b border-[#E2E8F0] pb-4">
@@ -59,6 +63,11 @@ export function RetailerCard({ retailer, onViewDetail }: Props) {
               </div>
             </div>
             <div className="flex flex-wrap gap-2">
+              {retailer.partnership_status && (
+                <Badge tone={isPartner ? "success" : retailer.partnership_status === "pending" ? "warning" : "neutral"}>
+                  {isPartner ? "Partner" : retailer.partnership_status === "pending" ? "Pending" : "Available"}
+                </Badge>
+              )}
               <Badge tone={segmentTone[retailer.segment]}>{segmentLabel[retailer.segment]}</Badge>
               <Badge tone={statusTone[retailer.status]}>{statusLabel[retailer.status]}</Badge>
             </div>
@@ -73,17 +82,17 @@ export function RetailerCard({ retailer, onViewDetail }: Props) {
       <CardContent className="space-y-4 p-5">
         <div className="grid gap-3 sm:grid-cols-3">
           <div className="rounded-xl bg-slate-50 p-4">
-            <p className="text-xs uppercase tracking-[0.18em] text-[#64748B]">Order/bulan</p>
+            <p className="text-xs uppercase tracking-[0.18em] text-[#64748B]">Orders/month</p>
             <p className="mt-2 text-lg font-semibold text-[#0F172A]">{retailer.monthly_order_volume}</p>
           </div>
           <div className="rounded-xl bg-slate-50 p-4">
-            <p className="text-xs uppercase tracking-[0.18em] text-[#64748B]">Total pembelian</p>
+            <p className="text-xs uppercase tracking-[0.18em] text-[#64748B]">Total purchases</p>
             <p className="mt-2 text-lg font-semibold text-[#0F172A]">{formatCurrency(retailer.total_purchase_amount)}</p>
           </div>
           <div className="rounded-xl bg-slate-50 p-4">
-            <p className="text-xs uppercase tracking-[0.18em] text-[#64748B]">Terakhir order</p>
+            <p className="text-xs uppercase tracking-[0.18em] text-[#64748B]">Last order</p>
             <p className="mt-2 text-sm font-semibold text-[#0F172A]">
-              {new Date(retailer.last_order_at).toLocaleDateString("id-ID", { day: "numeric", month: "short", year: "numeric" })}
+              {new Date(retailer.last_order_at).toLocaleDateString("en-US", { day: "numeric", month: "short", year: "numeric" })}
             </p>
           </div>
         </div>
@@ -100,8 +109,19 @@ export function RetailerCard({ retailer, onViewDetail }: Props) {
             onClick={() => onViewDetail(retailer)}
             className="text-sm font-medium text-[#3B82F6] hover:underline"
           >
-            Lihat detail →
+            View details →
           </button>
+        )}
+
+        {isPartner && onDeletePartnership && (
+          <Button
+            variant="ghost"
+            className="gap-2 text-red-500 hover:text-red-600 hover:bg-red-50"
+            onClick={() => onDeletePartnership(retailer)}
+          >
+            <Trash2 className="h-4 w-4" />
+            End Partnership
+          </Button>
         )}
       </CardContent>
     </Card>

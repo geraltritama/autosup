@@ -14,10 +14,10 @@ export function InventoryErrorState({ onRetry }: Props) {
           </div>
           <div>
             <p className="text-sm font-semibold text-[#0F172A]">
-              Gagal memuat inventory
+              Failed to load inventory
             </p>
             <p className="mt-1 text-sm leading-6 text-[#64748B]">
-              Terjadi kesalahan saat mengambil data. Coba lagi atau hubungi tim jika masalah berlanjut.
+              An error occurred while fetching data. Try again or contact the team if the problem persists.
             </p>
           </div>
         </div>

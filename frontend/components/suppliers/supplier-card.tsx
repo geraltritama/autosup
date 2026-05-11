@@ -108,7 +108,7 @@ export function SupplierCard({ supplier, onRequestPartnership, isRequesting, isR
                   onClick={() => onDeletePartnership(supplier)}
                 >
                   <Trash2 className="h-4 w-4" />
-                  Putus Kemitraan
+                  End Partnership
                 </Button>
               )}
             </>
@@ -125,7 +125,7 @@ export function SupplierCard({ supplier, onRequestPartnership, isRequesting, isR
                   onClick={() => onDeletePartnership(supplier)}
                 >
                   <X className="h-4 w-4" />
-                  Batalkan
+                  Cancel
                 </Button>
               )}
             </>

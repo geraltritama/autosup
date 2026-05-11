@@ -1,4 +1,4 @@
-import { Eye, MapPin, Truck } from "lucide-react";
+import { CheckCircle, Eye, MapPin, Truck, XCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { OrderProgress } from "@/components/orders/order-progress";
@@ -32,7 +32,7 @@ export interface OrderCardData {
 }
 
 function formatCurrency(amount: number) {
-  return new Intl.NumberFormat("id-ID", {
+  return new Intl.NumberFormat("en-US", {
     style: "currency",
     currency: "IDR",
     maximumFractionDigits: 0,
@@ -44,9 +44,11 @@ interface OrderCardProps {
   userRole?: "distributor" | "supplier" | "retailer";
   onViewDetail?: (orderId: string) => void;
   onShip?: (orderId: string) => void;
+  onApprove?: (orderId: string) => void;
+  onReject?: (orderId: string) => void;
 }
 
-export function OrderCard({ order, userRole, onViewDetail, onShip }: OrderCardProps) {
+export function OrderCard({ order, userRole, onViewDetail, onShip, onApprove, onReject }: OrderCardProps) {
   const previewItems = order.items
     .slice(0, 2)
     .map((item) => `${item.item_name} (${item.qty} ${item.unit})`)
@@ -132,26 +134,47 @@ export function OrderCard({ order, userRole, onViewDetail, onShip }: OrderCardPr
             View Details
           </Button>
 
-          {/* Seller: Kirim barang (input tracking info) */}
+          {/* Seller: Approve / Reject for pending orders */}
+          {isSeller && order.status === "pending" && (
+            <>
+              <Button
+                variant="secondary"
+                className="gap-2 border-red-200 text-red-600 hover:bg-red-50"
+                onClick={() => onReject?.(order.order_id)}
+              >
+                <XCircle className="h-4 w-4" />
+                Reject
+              </Button>
+              <Button
+                className="gap-2"
+                onClick={() => onApprove?.(order.order_id)}
+              >
+                <CheckCircle className="h-4 w-4" />
+                Approve
+              </Button>
+            </>
+          )}
+
+          {/* Seller: Ship (input tracking info) */}
           {isSeller && order.status === "processing" && (
             <Button
               className="gap-2"
               onClick={() => onShip?.(order.order_id)}
             >
               <Truck className="h-4 w-4" />
-              Kirim
+              Ship
             </Button>
           )}
 
-          {/* Delivered: tampilkan info escrow */}
+          {/* Delivered: show escrow info */}
           {order.status === "delivered" && (
             <Button variant="secondary" className="gap-2 text-[#22C55E]" disabled>
               <Truck className="h-4 w-4" />
-              Pembayaran selesai
+              Payment Complete
             </Button>
           )}
 
-          {/* Buyer (distributor / retailer): track delivery untuk order aktif */}
+          {/* Buyer: track delivery */}
           {(userRole === "distributor" || userRole === "retailer") && !isTerminal && (
             <Button className="gap-2" onClick={() => onViewDetail?.(order.order_id)}>
               <Truck className="h-4 w-4" />

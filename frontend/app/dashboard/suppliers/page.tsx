@@ -61,8 +61,8 @@ export default function SuppliersPage() {
             <h1 className="text-3xl font-semibold tracking-tight text-[#0F172A]">Suppliers</h1>
             <p className="max-w-3xl text-sm leading-7 text-[#64748B]">
               {role === "distributor"
-                ? "Kelola supplier partner, evaluasi supplier discover, dan kirim permintaan kemitraan baru."
-                : "Pantau kemitraan aktif dan kelola permintaan partnership masuk dari distributor."}
+                ? "Manage supplier partners, evaluate supplier discover, and send new partnership requests."
+                : "Monitor active partnerships and manage incoming partnership requests from distributors."}
             </p>
           </div>
         </div>
@@ -132,7 +132,7 @@ export default function SuppliersPage() {
                   isRequested={requestedIds.has(supplier.supplier_id)}
                   onRequestPartnership={role === "distributor" ? handleRequestPartnership : undefined}
                   onViewStock={(s) => { setStockSupplier(s); setStockDialogOpen(true); }}
-                  onDeletePartnership={role === "distributor" ? (s) => setDeleteTarget(s) : undefined}
+                  onDeletePartnership={(s) => setDeleteTarget(s)}
                 />
               ))}
             </div>
@@ -178,13 +178,13 @@ export default function SuppliersPage() {
             onSuccess: () => setDeleteTarget(null),
           });
         }}
-        title={deleteTarget?.type === "partner" ? "Putus Kemitraan" : "Batalkan Permintaan"}
+        title={deleteTarget?.type === "partner" ? "End Partnership" : "Cancel Request"}
         description={
           deleteTarget?.type === "partner"
-            ? `Apakah Anda yakin ingin memutus kemitraan dengan ${deleteTarget?.name}? Tindakan ini tidak dapat dibatalkan.`
-            : `Apakah Anda yakin ingin membatalkan permintaan kemitraan dengan ${deleteTarget?.name}?`
+            ? `Are you sure you want to end the partnership with ${deleteTarget?.name}? This action cannot be undone.`
+            : `Are you sure you want to cancel the partnership request with ${deleteTarget?.name}?`
         }
-        confirmLabel={deleteTarget?.type === "partner" ? "Putus Kemitraan" : "Batalkan Permintaan"}
+        confirmLabel={deleteTarget?.type === "partner" ? "End Partnership" : "Cancel Request"}
         isLoading={deletePartnership.isPending}
       />
     </main>

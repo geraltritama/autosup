@@ -23,6 +23,8 @@ import {
   useDistributorAnalytics,
   useSupplierAnalytics,
   useProductInsights,
+  useSupplierRegional,
+  useDistributorRegional,
   type DistributorPerformance,
 } from "@/hooks/useAnalytics";
 import { useAuthStore } from "@/store/useAuthStore";
@@ -75,7 +77,7 @@ function SupplierAnalytics() {
     return Math.max(...activeTrend.map((t) => t.value));
   }, [activeTrend]);
 
-  const trendLabel = activeTab === "Revenue" ? "Pendapatan" : activeTab === "Demand" ? "Permintaan" : activeTab === "Orders" ? "Pesanan" : "Fulfillment";
+  const trendLabel = activeTab === "Revenue" ? "Revenue" : activeTab === "Demand" ? "Demand" : activeTab === "Orders" ? "Orders" : "Fulfillment";
 
   const topSelling = insights?.top_selling ?? [];
   const declining = insights?.declining ?? [];
@@ -85,7 +87,7 @@ function SupplierAnalytics() {
     <>
       {isError && !isLoading && (
         <section>
-          <PageErrorState message="Gagal memuat data analytics" onRetry={() => refetch()} />
+          <PageErrorState message="Failed to load data analytics" onRetry={() => refetch()} />
         </section>
       )}
 
@@ -94,28 +96,28 @@ function SupplierAnalytics() {
           <KpiCard
             label="Total Revenue"
             value={formatCurrency(summary.total_revenue ?? 0)}
-            meta="Pendapatan kotor"
+            meta="Gross revenue"
             tone="success"
             icon={LineChart}
           />
           <KpiCard
             label="Demand Growth"
-            value={`+${summary.demand_growth_pct ?? 0}%`}
-            meta="Pertumbuhan permintaan"
+            value={`${(summary.demand_growth_pct ?? 0) >= 0 ? "+" : ""}${summary.demand_growth_pct ?? 0}%`}
+            meta="Demand growth"
             tone="info"
             icon={TrendingUp}
           />
           <KpiCard
             label="Fulfillment Rate"
             value={`${Math.round((summary.fulfillment_rate ?? 0) * (summary.fulfillment_rate != null && summary.fulfillment_rate <= 1 ? 100 : 1))}%`}
-            meta="Pesanan terkirim penuh"
+            meta="Fully delivered orders"
             tone="success"
             icon={Target}
           />
           <KpiCard
             label="Distributor Contribution"
             value={`${summary.active_distributor_contribution_pct ?? 0}%`}
-            meta="Kontribusi distributor aktif"
+            meta="Active distributor contribution"
             tone="info"
             icon={Users}
           />
@@ -148,7 +150,7 @@ function SupplierAnalytics() {
 
               <Card className="rounded-2xl">
                 <CardHeader className="pb-2">
-                  <CardTitle className="text-base">{trendLabel} (4 Minggu Terakhir)</CardTitle>
+                  <CardTitle className="text-base">{trendLabel} (Last 4 Weeks)</CardTitle>
                 </CardHeader>
                 <CardContent>
                   {isLoading ? (
@@ -157,7 +159,7 @@ function SupplierAnalytics() {
                     </div>
                   ) : activeTrend.length === 0 ? (
                     <div className="flex h-64 items-center justify-center">
-                      <span className="text-sm text-[#64748B]">Belum ada data.</span>
+                      <span className="text-sm text-[#64748B]">No data yet.</span>
                     </div>
                   ) : (
                     <div className="relative h-64 w-full">
@@ -302,7 +304,36 @@ function SupplierAnalytics() {
           )}
         </>
       )}
+
+    <SupplierRegionalSection />
+
     </>
+  );
+}
+
+function SupplierRegionalSection() {
+  const { data, isLoading } = useSupplierRegional();
+  const regions = data?.regional_demand ?? [];
+  if (isLoading || regions.length === 0) return null;
+  return (
+    <section className="space-y-4">
+      <h2 className="text-lg font-semibold text-[#0F172A]">Regional Demand</h2>
+      <Card className="rounded-2xl">
+        <CardContent className="pt-6">
+          <div className="grid grid-cols-2 gap-3 md:grid-cols-3">
+            {regions.slice(0, 6).map((r) => (
+              <div key={r.region} className="rounded-xl border border-[#E2E8F0] bg-[#F8FAFC] p-3">
+                <p className="text-sm font-semibold text-[#0F172A]">{r.region}</p>
+                <p className="mt-1 text-xs text-[#64748B]">Demand: {Math.round(r.demand)} units</p>
+                <Badge tone={r.growth_pct >= 0 ? "success" : "warning"} className="mt-1">
+                  {r.growth_pct >= 0 ? "+" : ""}{r.growth_pct}%
+                </Badge>
+              </div>
+            ))}
+          </div>
+        </CardContent>
+      </Card>
+    </section>
   );
 }
 
@@ -352,7 +383,7 @@ function DistributorAnalytics() {
     <>
       {isError && !isLoading && (
         <section>
-          <PageErrorState message="Gagal memuat data analytics" onRetry={() => refetch()} />
+          <PageErrorState message="Failed to load data analytics" onRetry={() => refetch()} />
         </section>
       )}
 
@@ -360,36 +391,36 @@ function DistributorAnalytics() {
         <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
           <KpiCard
             label="Revenue Growth"
-            value={`+${summary.revenue_growth}%`}
-            meta="Dibanding bulan lalu"
+            value={`${summary.revenue_growth >= 0 ? "+" : ""}${summary.revenue_growth}%`}
+            meta="Compared to last month"
             tone="success"
             icon={LineChart}
           />
           <KpiCard
             label="Inventory Turnover"
             value={`${summary.inventory_turnover}x`}
-            meta="Rata-rata perputaran stok"
+            meta="Average stock turnover"
             tone="info"
             icon={Boxes}
           />
           <KpiCard
             label="Fulfillment Rate"
             value={`${summary.order_fulfillment_rate}%`}
-            meta="Pesanan terkirim penuh"
+            meta="Fully delivered orders"
             tone="success"
             icon={Target}
           />
           <KpiCard
             label="Supplier Perf."
             value={`${summary.partner_performance}/100`}
-            meta="Indeks kinerja supplier"
+            meta="Supplier performance index"
             tone="success"
             icon={BarChart3}
           />
           <KpiCard
-            label="Forecast Accuracy"
+            label="Demand Stability"
             value={`${summary.forecast_accuracy}%`}
-            meta="Akurasi prediksi demand"
+            meta="Delivered demand consistency"
             tone="warning"
             icon={Target}
           />
@@ -458,7 +489,7 @@ function DistributorAnalytics() {
                 {insightsLoading ? (
                   <div className="flex justify-center py-4"><Loader2 className="h-5 w-5 animate-spin text-[#94A3B8]" /></div>
                 ) : topSelling.length === 0 ? (
-                  <p className="text-sm text-[#64748B] text-center">Belum ada data.</p>
+                  <p className="text-sm text-[#64748B] text-center">No data yet.</p>
                 ) : (
                   <div className="space-y-4">
                     {topSelling.map((p) => (
@@ -479,7 +510,35 @@ function DistributorAnalytics() {
           </div>
         </section>
       )}
+
+      <DistributorRegionalSection />
     </>
+  );
+}
+
+function DistributorRegionalSection() {
+  const { data, isLoading } = useDistributorRegional();
+  const regions = data?.regional_demand ?? [];
+  if (isLoading || regions.length === 0) return null;
+  return (
+    <section className="space-y-4">
+      <h2 className="text-lg font-semibold text-[#0F172A]">Regional Demand</h2>
+      <Card className="rounded-2xl">
+        <CardContent className="pt-6">
+          <div className="grid grid-cols-2 gap-3 md:grid-cols-3">
+            {regions.slice(0, 6).map((r) => (
+              <div key={r.region} className="rounded-xl border border-[#E2E8F0] bg-[#F8FAFC] p-3">
+                <p className="text-sm font-semibold text-[#0F172A]">{r.region}</p>
+                <p className="mt-1 text-xs text-[#64748B]">Demand: {Math.round(r.demand)} units</p>
+                <Badge tone={r.growth_pct >= 0 ? "success" : "warning"} className="mt-1">
+                  {r.growth_pct >= 0 ? "+" : ""}{r.growth_pct}%
+                </Badge>
+              </div>
+            ))}
+          </div>
+        </CardContent>
+      </Card>
+    </section>
   );
 }
 
@@ -500,17 +559,17 @@ function RetailerAnalytics() {
     <>
       {isError && !isLoading && (
         <section>
-          <PageErrorState message="Gagal memuat data analytics" onRetry={() => refetch()} />
+          <PageErrorState message="Failed to load data analytics" onRetry={() => refetch()} />
         </section>
       )}
 
       {summary && (
         <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
-          <KpiCard label="Revenue Growth" value={`+${summary.revenue_growth}%`} meta="Dibanding bulan lalu" tone="success" icon={LineChart} />
-          <KpiCard label="Inventory Turnover" value={`${summary.inventory_turnover}x`} meta="Rata-rata perputaran stok" tone="info" icon={Boxes} />
-          <KpiCard label="Fulfillment Rate" value={`${summary.order_fulfillment_rate}%`} meta="Pesanan terkirim penuh" tone="success" icon={Target} />
-          <KpiCard label="Distributor Perf." value={`${summary.partner_performance}/100`} meta="Indeks kinerja distributor" tone="success" icon={BarChart3} />
-          <KpiCard label="Forecast Accuracy" value={`${summary.forecast_accuracy}%`} meta="Akurasi prediksi demand" tone="warning" icon={Target} />
+          <KpiCard label="Spending Change" value={`${summary.revenue_growth >= 0 ? "+" : ""}${summary.revenue_growth}%`} meta="Compared to last month" tone="success" icon={LineChart} />
+          <KpiCard label="Inventory Turnover" value={`${summary.inventory_turnover}x`} meta="Average stock turnover" tone="info" icon={Boxes} />
+          <KpiCard label="Fulfillment Rate" value={`${summary.order_fulfillment_rate}%`} meta="Fully delivered orders" tone="success" icon={Target} />
+          <KpiCard label="Distributor Perf." value={`${summary.partner_performance}/100`} meta="Distributor performance index" tone="success" icon={BarChart3} />
+          <KpiCard label="Demand Stability" value={`${summary.forecast_accuracy}%`} meta="Delivered demand consistency" tone="warning" icon={Target} />
         </section>
       )}
 
@@ -519,7 +578,7 @@ function RetailerAnalytics() {
           <div className="space-y-4">
             <h2 className="text-lg font-semibold text-[#0F172A]">Business Performance</h2>
             <Card className="rounded-2xl">
-              <CardHeader><CardTitle className="text-base">Revenue vs Spending (6 Bulan Terakhir)</CardTitle></CardHeader>
+              <CardHeader><CardTitle className="text-base">Monthly Spending (Last 6 Months)</CardTitle></CardHeader>
               <CardContent>
                 {isLoading ? (
                   <div className="flex h-64 items-center justify-center"><Loader2 className="h-5 w-5 animate-spin text-[#94A3B8]" /></div>
@@ -535,12 +594,10 @@ function RetailerAnalytics() {
                       </div>
                       {trends.map((t) => {
                         const maxVal = trendMax || 1;
-                        const revPct = Math.max(5, (t.revenue / maxVal) * 100);
                         const spendPct = Math.max(5, (t.spending / maxVal) * 100);
                         return (
                           <div key={t.label} className="relative z-10 flex h-full flex-col justify-end">
                             <div className="flex w-16 items-end justify-center gap-1">
-                              <div className="w-4 rounded-t-sm bg-[#3B82F6] transition-all hover:opacity-80" style={{ height: `${revPct}%` }} title={`Revenue: ${formatCurrency(t.revenue)}`} />
                               <div className="w-4 rounded-t-sm bg-[#F59E0B] transition-all hover:opacity-80" style={{ height: `${spendPct}%` }} title={`Spending: ${formatCurrency(t.spending)}`} />
                             </div>
                             <p className="mt-2 text-center text-xs text-[#64748B]">{t.label}</p>
@@ -549,7 +606,6 @@ function RetailerAnalytics() {
                       })}
                     </div>
                     <div className="absolute -top-2 right-0 flex gap-4 text-xs font-medium text-[#64748B]">
-                      <div className="flex items-center gap-1.5"><div className="h-3 w-3 rounded-full bg-[#3B82F6]" /> Revenue</div>
                       <div className="flex items-center gap-1.5"><div className="h-3 w-3 rounded-full bg-[#F59E0B]" /> Spending</div>
                     </div>
                   </div>
@@ -571,7 +627,7 @@ function RetailerAnalytics() {
                 {insightsLoading ? (
                   <div className="flex justify-center py-4"><Loader2 className="h-5 w-5 animate-spin text-[#94A3B8]" /></div>
                 ) : topSelling.length === 0 ? (
-                  <p className="text-sm text-[#64748B] text-center">Belum ada data.</p>
+                  <p className="text-sm text-[#64748B] text-center">No data yet.</p>
                 ) : (
                   <div className="space-y-4">
                     {topSelling.map((p) => (
@@ -606,17 +662,17 @@ export default function AnalyticsPage() {
       <main className="flex h-[80vh] items-center justify-center p-8">
         <div className="text-center">
           <h2 className="text-xl font-semibold text-[#0F172A]">Akses Ditolak</h2>
-          <p className="mt-2 text-sm text-[#64748B]">Silakan login terlebih dahulu.</p>
+          <p className="mt-2 text-sm text-[#64748B]">Please log in first.</p>
         </div>
       </main>
     );
   }
 
   const headerSubtitle = role === "supplier"
-    ? "Pendapatan, permintaan, fulfillment, dan kontribusi distributor dari waktu ke waktu."
-    : role === "distributor"
-      ? "Pendapatan, perputaran stok, kecepatan pengiriman supplier, dan pertumbuhan dari waktu ke waktu."
-      : "Pendapatan, perputaran stok, kecepatan pengiriman supplier, dan pertumbuhan dari waktu ke waktu.";
+    ? "Revenue, demand, fulfillment, and distributor contributions over time."
+      : role === "distributor"
+      ? "Revenue, stock turnover, supplier delivery speed, and growth over time."
+      : "Revenue, stock turnover, spending from distributors, and growth over time.";
 
   return (
     <main className="space-y-6 px-6 py-6 lg:px-8 lg:py-8">
@@ -636,5 +692,3 @@ export default function AnalyticsPage() {
     </main>
   );
 }
-
-
