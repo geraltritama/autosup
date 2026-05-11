@@ -1659,6 +1659,31 @@ def pay_invoice(invoice_id: str):
     except Exception as e:
         return error_response(str(e))
 
+
+@app.post("/orders/{order_id}/cancel")
+def cancel_order_buyer(order_id: str):
+    """Allow buyer to cancel their own order if still pending or processing."""
+    try:
+        res = supabase.table("orders").select("*").eq("id", order_id).execute()
+        if not res.data:
+            return error_response("Order not found.")
+        order = res.data[0]
+        if order["status"] not in ["pending", "processing"]:
+            return error_response("Order can only be cancelled when pending or processing.")
+        seller_id = order.get("seller_id")
+        items = order.get("items") or []
+        # Restore stock if was already deducted (processing)
+        if order["status"] == "processing" and seller_id and items:
+            try:
+                _adjust_seller_inventory(seller_id, items, "restore")
+            except Exception:
+                pass
+        supabase.table("orders").update({"status": "cancelled", "escrow_status": "refunded", "updated_at": now_iso()}).eq("id", order_id).execute()
+        return success_response(data={"order_id": order_id, "status": "cancelled"}, message="Order cancelled successfully. Escrow refunded.")
+    except Exception as e:
+        return error_response(str(e))
+
+
 # ==========================================
 # 10. RETAILERS
 # ==========================================

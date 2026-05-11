@@ -218,3 +218,19 @@ export function useUpdateOrderStatus() {
     },
   });
 }
+
+export function useCancelOrder() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (orderId: string) => {
+      const { data } = await api.post<ApiResponse>(`/orders/${orderId}/cancel`);
+      if (!data.success) throw new Error(data.message || "Failed to cancel order.");
+      return data.data;
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["orders"] });
+      qc.invalidateQueries({ queryKey: ["orders", "trust-summary"] });
+      qc.invalidateQueries({ queryKey: ["inventory"] });
+    },
+  });
+}

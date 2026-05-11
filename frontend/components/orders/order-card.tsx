@@ -49,9 +49,10 @@ interface OrderCardProps {
   onShip?: (orderId: string) => void;
   onApprove?: (orderId: string) => void;
   onReject?: (orderId: string) => void;
+  onCancel?: (orderId: string) => void;
 }
 
-export function OrderCard({ order, userRole, onViewDetail, onShip, onApprove, onReject }: OrderCardProps) {
+export function OrderCard({ order, userRole, onViewDetail, onShip, onApprove, onReject, onCancel }: OrderCardProps) {
   const previewItems = order.items
     .slice(0, 2)
     .map((item) => `${item.item_name || item.product_name || item.name || "Item"} (${item.qty || item.quantity || 0} ${item.unit || "pcs"})`)
@@ -182,6 +183,18 @@ export function OrderCard({ order, userRole, onViewDetail, onShip, onApprove, on
             <Button className="gap-2" onClick={() => onViewDetail?.(order.order_id)}>
               <Truck className="h-4 w-4" />
               Track Delivery
+            </Button>
+          )}
+
+          {/* Buyer: cancel order if pending/processing */}
+          {!isSeller && (order.status === "pending" || order.status === "processing") && onCancel && (
+            <Button
+              variant="secondary"
+              className="gap-2 border-red-200 text-red-600 hover:bg-red-50"
+              onClick={() => onCancel(order.order_id)}
+            >
+              <XCircle className="h-4 w-4" />
+              Cancel Order
             </Button>
           )}
         </div>
