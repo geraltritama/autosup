@@ -458,7 +458,7 @@ function DistributorAnalytics() {
                         <CartesianGrid strokeDasharray="3 3" stroke="#E2E8F0" />
                         <XAxis dataKey="label" tick={{ fontSize: 11, fill: "#94A3B8" }} />
                         <YAxis tick={{ fontSize: 10, fill: "#94A3B8" }} tickFormatter={(v) => v >= 1000000 ? `${(v/1000000).toFixed(1)}M` : v >= 1000 ? `${(v/1000).toFixed(0)}K` : String(v)} />
-                        <Tooltip formatter={(value: number) => `Rp ${value.toLocaleString("id-ID")}`} />
+                        <Tooltip formatter={(value) => `Rp ${Number(value).toLocaleString("id-ID")}`} />
                         <Legend wrapperStyle={{ fontSize: 11 }} />
                         <Bar dataKey="revenue" name="Revenue" fill="#3B82F6" radius={[4, 4, 0, 0]} />
                         <Bar dataKey="spending" name="Spending" fill="#F59E0B" radius={[4, 4, 0, 0]} />
