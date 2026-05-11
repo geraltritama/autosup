@@ -197,7 +197,13 @@ export function OrderFormDialog({ open, onClose, prefill }: Props) {
       );
       const checkoutData = checkoutRes.data?.data;
       if (checkoutData?.payment_status === "awaiting_payment" && checkoutData.payment_detail?.invoice_url) {
-        window.open(checkoutData.payment_detail.invoice_url, "_blank", "noopener,noreferrer");
+        window.location.assign(checkoutData.payment_detail.invoice_url);
+        return;
+      }
+      if (selectedMethod === "credit_line") {
+        setError("Credit Line diproses internal dan tidak membuka halaman Xendit.");
+        setStep("form");
+        return;
       }
       setStep("success");
       setTimeout(() => onClose(), 1800);
@@ -678,4 +684,3 @@ export function OrderFormDialog({ open, onClose, prefill }: Props) {
     </Dialog>
   );
 }
-
