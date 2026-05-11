@@ -4658,6 +4658,28 @@ def get_suppliers(search: str = "", type: str = "", user_id: Optional[str] = Non
     except Exception:
         pass
 
+    # Calculate real stats from orders (where supplier is seller, current user is buyer)
+    if user_id:
+        try:
+            from collections import Counter
+            orders_res = supabase.table("orders").select("seller_id,status").eq("buyer_id", user_id).execute()
+            seller_total = Counter()
+            seller_delivered = Counter()
+            for o in (orders_res.data or []):
+                sid = o.get("seller_id", "")
+                seller_total[sid] += 1
+                if o.get("status") == "delivered":
+                    seller_delivered[sid] += 1
+            for s in supplier_users:
+                sid = s["supplier_id"]
+                total = seller_total.get(sid, 0)
+                delivered = seller_delivered.get(sid, 0)
+                s["total_transactions"] = total
+                s["on_time_delivery_rate"] = round(delivered / max(total, 1) * 100) if total > 0 else 0
+                s["reputation_score"] = round(delivered / max(total, 1) * 100 * 0.6 + s["on_time_delivery_rate"] * 0.4) if total > 0 else 0
+        except Exception:
+            pass
+
     # Filter by search
     if search:
         q = search.lower()
