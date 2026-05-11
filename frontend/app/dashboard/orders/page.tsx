@@ -164,6 +164,28 @@ export default function OrdersPage() {
         />
       </section>
 
+      {/* ── Fulfillment Insights (Supplier only) ───────────────────── */}
+      {role === "supplier" && data?.fulfillment_metrics && (
+        <section className="grid gap-4 md:grid-cols-4">
+          <div className="rounded-xl border border-[#E2E8F0] bg-white px-4 py-3">
+            <p className="text-[10px] uppercase tracking-wider text-[#64748B]">Avg Processing</p>
+            <p className="mt-1 text-xl font-bold text-[#0F172A]">{data.fulfillment_metrics.avg_processing_hours}h</p>
+          </div>
+          <div className="rounded-xl border border-[#E2E8F0] bg-white px-4 py-3">
+            <p className="text-[10px] uppercase tracking-wider text-[#64748B]">Completion Rate</p>
+            <p className="mt-1 text-xl font-bold text-emerald-600">{data.fulfillment_metrics.completion_rate}%</p>
+          </div>
+          <div className="rounded-xl border border-[#E2E8F0] bg-white px-4 py-3">
+            <p className="text-[10px] uppercase tracking-wider text-[#64748B]">On-Time Rate</p>
+            <p className="mt-1 text-xl font-bold text-[#0F172A]">{data.fulfillment_metrics.on_time_rate}%</p>
+          </div>
+          <div className="rounded-xl border border-[#E2E8F0] bg-white px-4 py-3">
+            <p className="text-[10px] uppercase tracking-wider text-[#64748B]">Delayed</p>
+            <p className={`mt-1 text-xl font-bold ${data.fulfillment_metrics.delayed_count > 0 ? "text-rose-600" : "text-[#0F172A]"}`}>{data.fulfillment_metrics.delayed_count}</p>
+          </div>
+        </section>
+      )}
+
       {/* ── Filter Bar ─────────────────────────────────────────────── */}
       <OrdersFilterBar
         search={search}

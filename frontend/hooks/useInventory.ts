@@ -16,6 +16,7 @@ export type InventoryItem = {
   price: number;
   status: InventoryStatus;
   last_updated: string;
+  demand_level?: "high" | "normal" | "low";
 };
 
 export type InventoryResponse = {
@@ -25,6 +26,7 @@ export type InventoryResponse = {
     low_stock_count: number;
     out_of_stock_count: number;
   };
+  insight?: string;
   pagination: { page: number; limit: number; total: number };
 };
 
@@ -100,14 +102,22 @@ export function useInventory(filters: InventoryFilters = {}) {
   return useQuery({
     queryKey: ["inventory", filters, userId],
     queryFn: async (): Promise<InventoryResponse> => {
-      type BackendItem = { id: string; name: string; stock: number; min_stock: number; category: string; unit: string; price?: number };
-      const params = userId ? `?user_id=${userId}` : "";
-      const { data } = await api.get<ApiResponse<BackendItem[]>>(`/inventory${params}`);
-      const allItems: InventoryItem[] = (data.data ?? []).map((item) => ({
+      type BackendItem = { id: string; name: string; stock: number; min_stock: number; category: string; unit: string; price?: number; demand_level?: string; demand_order_count?: number };
+      const params = new URLSearchParams();
+      if (userId) params.set("user_id", userId);
+      if (filters.search) params.set("search", filters.search);
+      if (filters.category) params.set("category", filters.category);
+      const qs = params.toString();
+      const { data } = await api.get<ApiResponse<{ items: BackendItem[]; insight?: string } | BackendItem[]>>(`/inventory${qs ? `?${qs}` : ""}`);
+      // Handle both old (array) and new (object with items) response shapes
+      const raw = Array.isArray(data.data) ? data.data : (data.data?.items ?? []);
+      const insight = Array.isArray(data.data) ? "" : (data.data?.insight ?? "");
+      const allItems: InventoryItem[] = raw.map((item) => ({
         ...item,
         price: item.price ?? 0,
         status: item.stock === 0 ? "out_of_stock" : item.stock < item.min_stock ? "low_stock" : "in_stock",
         last_updated: new Date().toISOString(),
+        demand_level: item.demand_level as "high" | "normal" | "low" | undefined,
       }));
       const filtered = allItems.filter((item) => {
         if (filters.search && !item.name.toLowerCase().includes(filters.search.toLowerCase())) return false;
@@ -123,6 +133,7 @@ export function useInventory(filters: InventoryFilters = {}) {
           low_stock_count: allItems.filter((i) => i.status === "low_stock").length,
           out_of_stock_count: allItems.filter((i) => i.status === "out_of_stock").length,
         },
+        insight,
         pagination: { page: 1, limit: sorted.length, total: sorted.length },
       };
     },

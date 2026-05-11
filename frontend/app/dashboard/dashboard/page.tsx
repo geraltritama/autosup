@@ -2,9 +2,19 @@
 
 import Link from "next/link";
 import {
+  Area,
+  AreaChart,
+  CartesianGrid,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis,
+} from "recharts";
+import {
   AlertCircle,
   Boxes,
   Building2,
+  Check,
   Clock3,
   CreditCard,
   Package,
@@ -16,8 +26,10 @@ import {
   Truck,
   Users,
   Wallet,
+  X,
 } from "lucide-react";
 import { useDashboard, type DashboardSummary } from "@/hooks/useDashboard";
+import { useUpdateOrderStatus } from "@/hooks/useOrders";
 import { InsightCard } from "@/components/dashboard/insight-card";
 import { KpiCard } from "@/components/dashboard/kpi-card";
 import { Badge } from "@/components/ui/badge";
@@ -72,6 +84,7 @@ function DashboardError({ onRetry }: { onRetry: () => void }) {
 // ─── Distributor dashboard ────────────────────────────────────────────────────
 
 function DistributorDashboard({ data }: { data: Extract<DashboardSummary, { role: "distributor" }> }) {
+  const updateStatus = useUpdateOrderStatus();
   const kpis = [
     {
       label: "Total inventory",
@@ -148,6 +161,81 @@ function DistributorDashboard({ data }: { data: Extract<DashboardSummary, { role
       {data.ai_insights.length > 0 && (
         <section>
           <InsightCard insights={data.ai_insights} />
+        </section>
+      )}
+
+      {/* Revenue & Spending */}
+      {data.financials && (
+        <section className="grid gap-4 md:grid-cols-3">
+          <Card className="rounded-2xl">
+            <CardContent className="p-5">
+              <p className="text-[10px] uppercase tracking-wider text-[#64748B]">Revenue (from retailers)</p>
+              <p className="mt-1 text-2xl font-bold text-emerald-600">
+                Rp {(data.financials.revenue || 0).toLocaleString("id-ID")}
+              </p>
+              <p className="mt-1 text-xs text-[#94A3B8]">This month: Rp {(data.financials.monthly_revenue || 0).toLocaleString("id-ID")}</p>
+            </CardContent>
+          </Card>
+          <Card className="rounded-2xl">
+            <CardContent className="p-5">
+              <p className="text-[10px] uppercase tracking-wider text-[#64748B]">Spending (to suppliers)</p>
+              <p className="mt-1 text-2xl font-bold text-[#0F172A]">
+                Rp {(data.financials.spending || 0).toLocaleString("id-ID")}
+              </p>
+            </CardContent>
+          </Card>
+          <Card className="rounded-2xl">
+            <CardContent className="p-5">
+              <p className="text-[10px] uppercase tracking-wider text-[#64748B]">Net Margin</p>
+              <p className={`mt-1 text-2xl font-bold ${(data.financials.net_margin || 0) >= 0 ? "text-emerald-600" : "text-rose-600"}`}>
+                Rp {(data.financials.net_margin || 0).toLocaleString("id-ID")}
+              </p>
+            </CardContent>
+          </Card>
+        </section>
+      )}
+
+      {/* Incoming Orders from Retailers */}
+      {(data.pending_incoming ?? []).length > 0 && (
+        <section>
+          <Card className="rounded-2xl">
+            <CardContent className="p-5">
+              <div className="flex items-center justify-between mb-3">
+                <p className="text-xs uppercase tracking-[0.18em] text-[#64748B]">Incoming Orders (Pending)</p>
+                <Link href="/dashboard/orders?role=seller">
+                  <span className="text-xs font-medium text-[#3B82F6] hover:underline">View all →</span>
+                </Link>
+              </div>
+              <div className="max-h-[240px] overflow-y-auto space-y-2 pr-1">
+                {(data.pending_incoming ?? []).map((o) => (
+                  <div key={o.order_id} className="flex items-center justify-between gap-2 rounded-lg border border-[#E2E8F0] px-3 py-2">
+                    <div className="min-w-0 flex-1">
+                      <p className="text-sm font-medium text-[#0F172A] truncate">{o.buyer_name || "Retailer"}</p>
+                      <p className="text-[10px] text-[#94A3B8]">Rp {o.total.toLocaleString("id-ID")} · {new Date(o.created_at).toLocaleDateString("en-US", { day: "numeric", month: "short" })}</p>
+                    </div>
+                    <div className="flex items-center gap-1 shrink-0">
+                      <button
+                        onClick={() => updateStatus.mutate({ orderId: o.order_id, status: "processing" })}
+                        disabled={updateStatus.isPending}
+                        className="flex h-7 w-7 items-center justify-center rounded-md bg-emerald-50 text-emerald-600 hover:bg-emerald-100 transition"
+                        title="Approve"
+                      >
+                        <Check className="h-3.5 w-3.5" />
+                      </button>
+                      <button
+                        onClick={() => updateStatus.mutate({ orderId: o.order_id, status: "cancelled" })}
+                        disabled={updateStatus.isPending}
+                        className="flex h-7 w-7 items-center justify-center rounded-md bg-rose-50 text-rose-600 hover:bg-rose-100 transition"
+                        title="Reject"
+                      >
+                        <X className="h-3.5 w-3.5" />
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </CardContent>
+          </Card>
         </section>
       )}
 
@@ -237,12 +325,14 @@ function DistributorDashboard({ data }: { data: Extract<DashboardSummary, { role
 // ─── Supplier dashboard ───────────────────────────────────────────────────────
 
 function SupplierDashboard({ data }: { data: Extract<DashboardSummary, { role: "supplier" }> }) {
+  const updateStatus = useUpdateOrderStatus();
+
   const kpis = [
     {
       label: "Active products",
       value: String(data.products.total_active),
-      meta: `${data.products.low_stock_count} low stock`,
-      tone: data.products.low_stock_count > 0 ? ("warning" as const) : ("success" as const),
+      meta: `${data.products.low_stock_count} low stock · ${data.products.out_of_stock_count} out`,
+      tone: data.products.out_of_stock_count > 0 ? ("danger" as const) : data.products.low_stock_count > 0 ? ("warning" as const) : ("success" as const),
       icon: Package,
     },
     {
@@ -253,6 +343,13 @@ function SupplierDashboard({ data }: { data: Extract<DashboardSummary, { role: "
       icon: PackageCheck,
     },
     {
+      label: "Demand growth",
+      value: `${(data.demand_growth ?? 0) >= 0 ? "+" : ""}${data.demand_growth ?? 0}%`,
+      meta: "vs last week",
+      tone: (data.demand_growth ?? 0) > 0 ? ("success" as const) : (data.demand_growth ?? 0) < 0 ? ("danger" as const) : ("info" as const),
+      icon: Target,
+    },
+    {
       label: "Distributor partner",
       value: String(data.partners.distributor_count),
       meta:
@@ -261,13 +358,6 @@ function SupplierDashboard({ data }: { data: Extract<DashboardSummary, { role: "
           : "All active",
       tone: data.partners.pending_requests > 0 ? ("warning" as const) : ("success" as const),
       icon: Users,
-    },
-    {
-      label: "Completed this month",
-      value: String(data.orders.completed_this_month),
-      meta: "order fulfilled",
-      tone: "success" as const,
-      icon: Clock3,
     },
   ];
 
@@ -333,6 +423,124 @@ function SupplierDashboard({ data }: { data: Extract<DashboardSummary, { role: "
           </Card>
         </section>
       )}
+
+      {/* Top Products + Recent Orders */}
+      <section className="grid gap-6 lg:grid-cols-2">
+        {/* Top Products */}
+        <Card className="rounded-2xl">
+          <CardContent className="p-5">
+            <p className="text-xs uppercase tracking-[0.18em] text-[#64748B]">Top Products by Demand</p>
+            {(data.top_products ?? []).length > 0 ? (
+              <div className="mt-3 space-y-2">
+                {(data.top_products ?? []).map((p, i) => (
+                  <div key={p.name} className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs font-medium text-[#94A3B8]">{i + 1}</span>
+                      <span className="text-sm font-medium text-[#0F172A]">{p.name}</span>
+                    </div>
+                    <Badge tone={i === 0 ? "success" : "info"} className="text-[10px]">
+                      {p.volume} units
+                    </Badge>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="mt-3 text-sm text-[#94A3B8]">No order data yet</p>
+            )}
+          </CardContent>
+        </Card>
+
+        {/* Recent Incoming Orders */}
+        <Card className="rounded-2xl">
+          <CardContent className="p-5">
+            <div className="flex items-center justify-between">
+              <p className="text-xs uppercase tracking-[0.18em] text-[#64748B]">Incoming Orders</p>
+              <Link href="/dashboard/orders">
+                <span className="text-xs font-medium text-[#3B82F6] hover:underline">View all →</span>
+              </Link>
+            </div>
+            {(data.recent_orders ?? []).length > 0 ? (
+              <div className="mt-3 max-h-[280px] overflow-y-auto space-y-2 pr-1">
+                {(data.recent_orders ?? []).map((o) => (
+                  <div key={o.order_id} className="flex items-center justify-between gap-2 rounded-lg border border-[#E2E8F0] px-3 py-2">
+                    <div className="min-w-0 flex-1">
+                      <p className="text-sm font-medium text-[#0F172A] truncate">{o.buyer_name || "Distributor"}</p>
+                      <p className="text-[10px] text-[#94A3B8]">{new Date(o.created_at).toLocaleDateString("en-US", { day: "numeric", month: "short" })}</p>
+                    </div>
+                    <div className="flex items-center gap-1 shrink-0">
+                      <button
+                        onClick={() => updateStatus.mutate({ orderId: o.order_id, status: "processing" })}
+                        disabled={updateStatus.isPending}
+                        className="flex h-7 w-7 items-center justify-center rounded-md bg-emerald-50 text-emerald-600 hover:bg-emerald-100 transition"
+                        title="Approve"
+                      >
+                        <Check className="h-3.5 w-3.5" />
+                      </button>
+                      <button
+                        onClick={() => updateStatus.mutate({ orderId: o.order_id, status: "cancelled" })}
+                        disabled={updateStatus.isPending}
+                        className="flex h-7 w-7 items-center justify-center rounded-md bg-rose-50 text-rose-600 hover:bg-rose-100 transition"
+                        title="Reject"
+                      >
+                        <X className="h-3.5 w-3.5" />
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="mt-3 text-sm text-[#94A3B8]">No pending orders</p>
+            )}
+          </CardContent>
+        </Card>
+      </section>
+
+      {/* Demand Trend + Distributor Activity */}
+      <section className="grid gap-6 lg:grid-cols-[2fr_1fr]">
+        {/* Demand Trend Chart */}
+        <Card className="rounded-2xl">
+          <CardContent className="p-5">
+            <p className="text-xs uppercase tracking-[0.18em] text-[#64748B]">Demand Trend (Weekly)</p>
+            {(data.demand_trend_chart ?? []).length > 0 ? (
+              <div className="mt-3 h-[200px] min-h-[200px]">
+                <ResponsiveContainer width="100%" height="100%" minWidth={100} minHeight={100}>
+                  <AreaChart data={data.demand_trend_chart}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#E2E8F0" />
+                    <XAxis dataKey="period" tick={{ fontSize: 11, fill: "#94A3B8" }} />
+                    <YAxis tick={{ fontSize: 11, fill: "#94A3B8" }} />
+                    <Tooltip />
+                    <Area type="monotone" dataKey="value" stroke="#3B82F6" fill="#DBEAFE" strokeWidth={2} name="Orders" />
+                  </AreaChart>
+                </ResponsiveContainer>
+              </div>
+            ) : (
+              <p className="mt-3 text-sm text-[#94A3B8]">Not enough data for trend chart</p>
+            )}
+          </CardContent>
+        </Card>
+
+        {/* Distributor Activity Feed */}
+        <Card className="rounded-2xl">
+          <CardContent className="p-5">
+            <p className="text-xs uppercase tracking-[0.18em] text-[#64748B]">Distributor Activity</p>
+            {(data.distributor_activity ?? []).length > 0 ? (
+              <div className="mt-3 space-y-3">
+                {(data.distributor_activity ?? []).map((a, i) => (
+                  <div key={i} className="relative pl-4 border-l-2 border-[#E2E8F0]">
+                    <div className="absolute -left-[5px] top-1.5 h-2 w-2 rounded-full bg-[#3B82F6]" />
+                    <p className="text-xs text-[#0F172A]">{a.event}</p>
+                    <p className="text-[10px] text-[#94A3B8]">
+                      {a.timestamp ? new Date(a.timestamp).toLocaleDateString("en-US", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }) : ""}
+                    </p>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="mt-3 text-sm text-[#94A3B8]">No recent activity</p>
+            )}
+          </CardContent>
+        </Card>
+      </section>
 
       {/* Stats grid */}
       <section className="grid gap-4 md:grid-cols-3">

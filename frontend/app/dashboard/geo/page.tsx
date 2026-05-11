@@ -51,8 +51,8 @@ export default function GeoMappingPage() {
     if (!items) return [];
     const seen = new Map<string, { id: string; name: string }>();
     for (const item of items) {
-      if (!seen.has(item.id)) {
-        seen.set(item.id, { id: item.id, name: item.name });
+      if (!seen.has(item.name)) {
+        seen.set(item.name, { id: item.name, name: item.name });
       }
     }
     return Array.from(seen.values());
@@ -252,6 +252,25 @@ export default function GeoMappingPage() {
                       Data based on orders from partner distributors.
                     </p>
                   </div>
+                  {selectedRegionData.distributor_count != null && (
+                    <div>
+                      <p className="text-xs text-[#64748B]">Active Distributors</p>
+                      <p className="text-lg font-semibold text-[#0F172A]">{selectedRegionData.distributor_count}</p>
+                    </div>
+                  )}
+                  {(selectedRegionData.top_products ?? []).length > 0 && (
+                    <div>
+                      <p className="text-xs text-[#64748B] mb-1">Top Products</p>
+                      <div className="space-y-1">
+                        {(selectedRegionData.top_products ?? []).map((p) => (
+                          <div key={p.name} className="flex items-center justify-between text-xs">
+                            <span className="text-[#0F172A]">{p.name}</span>
+                            <span className="text-[#64748B]">{p.qty} units</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
                 </CardContent>
               </Card>
             ) : (

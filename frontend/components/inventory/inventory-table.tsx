@@ -10,8 +10,9 @@ type Props = {
   items: InventoryItem[];
   onEdit: (item: InventoryItem) => void;
   onDelete: (item: InventoryItem) => void;
-  onRestock: (item: InventoryItem) => void;
+  onRestock?: (item: InventoryItem) => void;
   showPrice?: boolean;
+  showDemand?: boolean;
 };
 
 function formatDate(iso: string) {
@@ -28,7 +29,7 @@ function formatDate(iso: string) {
   }
 }
 
-export function InventoryTable({ items, onEdit, onDelete, onRestock, showPrice = false }: Props) {
+export function InventoryTable({ items, onEdit, onDelete, onRestock, showPrice = false, showDemand = false }: Props) {
   return (
     <Card className="rounded-2xl">
       <CardHeader className="border-b border-[#E2E8F0] pb-4">
@@ -39,7 +40,7 @@ export function InventoryTable({ items, onEdit, onDelete, onRestock, showPrice =
           <table className="min-w-full border-collapse">
             <thead>
               <tr className="border-b border-[#E2E8F0] bg-slate-50/70 text-left">
-                {["Item Name", "Category", "Stock", "Min Stock", "Unit", ...(showPrice ? ["Price"] : []), "Status", "Last Updated", "Actions"].map(
+                {["Item Name", "Category", "Stock", "Min Stock", "Unit", ...(showPrice ? ["Price"] : []), "Status", ...(showDemand ? ["Demand"] : []), "Last Updated", "Actions"].map(
                   (col) => (
                     <th
                       key={col}
@@ -72,9 +73,21 @@ export function InventoryTable({ items, onEdit, onDelete, onRestock, showPrice =
                   <td className="px-5 py-4">
                     <InventoryStatusBadge status={item.status} />
                   </td>
+                  {showDemand && (
+                    <td className="px-5 py-4">
+                      <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-medium ${
+                        item.demand_level === "high" ? "bg-orange-100 text-orange-700" :
+                        item.demand_level === "low" ? "bg-slate-100 text-slate-500" :
+                        "bg-blue-50 text-blue-600"
+                      }`}>
+                        {item.demand_level === "high" ? "🔥 High" : item.demand_level === "low" ? "↓ Low" : "● Normal"}
+                      </span>
+                    </td>
+                  )}
                   <td className="px-5 py-4 text-sm text-[#475569]">{formatDate(item.last_updated)}</td>
                   <td className="px-5 py-4">
                     <div className="flex items-center gap-2">
+                      {onRestock && (
                       <button
                         onClick={() => onRestock(item)}
                         title="AI Restock Recommendation"
@@ -82,6 +95,7 @@ export function InventoryTable({ items, onEdit, onDelete, onRestock, showPrice =
                       >
                         <Sparkles className="h-4 w-4" />
                       </button>
+                      )}
                       <button
                         onClick={() => onEdit(item)}
                         title="Edit"

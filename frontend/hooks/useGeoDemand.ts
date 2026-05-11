@@ -8,6 +8,10 @@ export type RegionData = {
   region: string;
   demand_score: number;
   growth_pct: number;
+  lat?: number;
+  lng?: number;
+  distributor_count?: number;
+  top_products?: { name: string; qty: number }[];
 };
 
 export type GeoDemandResponse = {

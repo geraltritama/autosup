@@ -40,12 +40,12 @@ export default function LogisticsPage() {
   const { data, isLoading, isError, refetch } = useLogistics();
   const optimizeMutation = useOptimizeRoute();
 
-  if (role !== "distributor") {
+  if (role !== "distributor" && role !== "supplier") {
     return (
       <main className="flex h-[80vh] items-center justify-center p-8">
         <div className="text-center">
           <h2 className="text-xl font-semibold text-[#0F172A]">Access Denied</h2>
-          <p className="mt-2 text-sm text-[#64748B]">Logistics page is for Distributors only.</p>
+          <p className="mt-2 text-sm text-[#64748B]">Logistics page is for Distributors and Suppliers only.</p>
         </div>
       </main>
     );

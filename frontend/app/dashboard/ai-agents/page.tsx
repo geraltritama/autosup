@@ -224,12 +224,11 @@ export default function AiAgentsPage() {
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [runError, setRunError] = useState<string | null>(null);
 
-  // Auto-tick all active agents every 2 minutes
+  // Auto-tick all active agents every 10 minutes (to avoid burning free-tier quota)
   useEffect(() => {
     const interval = setInterval(() => {
       autoTick.mutate();
-    }, 2 * 60 * 1000);
-    autoTick.mutate();
+    }, 10 * 60 * 1000);
     return () => clearInterval(interval);
   }, []);
 

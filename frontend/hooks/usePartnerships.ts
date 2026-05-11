@@ -64,13 +64,16 @@ export function usePartnershipNFT(supplierId: string | null) {
 
 export function useDistributorPartnershipNFT(distributorId: string | null) {
   const userId = useAuthStore((s) => s.user?.user_id ?? "me");
+  const role = useAuthStore((s) => s.user?.role);
   return useQuery({
     queryKey: ["partnership-nft", "distributor", distributorId],
     enabled: !!distributorId,
     queryFn: async (): Promise<DistributorPartnershipNFT | null> => {
-      const { data } = await api.get<ApiResponse<DistributorPartnershipNFT>>(
-        `/blockchain/partnership-nft/retailer/${userId}/${distributorId}`,
-      );
+      // Supplier viewing distributor partner vs retailer viewing distributor partner
+      const path = role === "supplier"
+        ? `/blockchain/partnership-nft/supplier/${userId}/${distributorId}`
+        : `/blockchain/partnership-nft/retailer/${userId}/${distributorId}`;
+      const { data } = await api.get<ApiResponse<DistributorPartnershipNFT>>(path);
       return data.data;
     },
     staleTime: 5 * 60 * 1000,
