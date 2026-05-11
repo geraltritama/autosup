@@ -319,7 +319,10 @@ def auth_users_by_role(role: str) -> list[dict]:
             if len(users) < per_page:
                 break
             page += 1
-            return results
+        # Deduplicate by user ID
+        seen = set()
+        results = [r for r in results if r["id"] not in seen and not seen.add(r["id"])]
+        return results
     except Exception:
         pass
 
