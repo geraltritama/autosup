@@ -1569,9 +1569,9 @@ def get_retailers(search: Optional[str] = None, segment: Optional[str] = None,
 
         # Mark partnership status
         try:
-            p_rows = supabase.table("partnerships").select("retailer_name,status,partnership_type").eq("distributor_id", uid).execute().data or []
-            partner_ids = {p.get("retailer_name", "") for p in p_rows if p.get("status") in ["approved", "accepted"] and p.get("partnership_type") == "retailer"}
-            pending_ids = {p.get("retailer_name", "") for p in p_rows if p.get("status") == "pending" and p.get("partnership_type") == "retailer"}
+            p_rows = supabase.table("partnerships").select("requester_id,status,type").eq("approver_id", uid).eq("type", "distributor_retailer").execute().data or []
+            partner_ids = {p.get("requester_id", "") for p in p_rows if p.get("status") == "accepted"}
+            pending_ids = {p.get("requester_id", "") for p in p_rows if p.get("status") == "pending"}
             for r in retailers:
                 rid = r["retailer_id"]
                 if rid in partner_ids:
@@ -1759,43 +1759,27 @@ def get_distributors(search: Optional[str] = None, status: Optional[str] = None,
         # Mark partner / pending status for current user (supplier or retailer)
         if user_id:
             try:
-                p_rows = supabase.table("partnerships").select("id,distributor_id,retailer_name,status,partnership_type").or_(
-                    f"supplier_id.eq.{user_id},supplier_name.eq.{user_id},retailer_name.eq.{user_id}"
+                # New partnership table: requester_id/approver_id structure
+                p_rows = supabase.table("partnerships").select("requester_id,approver_id,status,type").or_(
+                    f"requester_id.eq.{user_id},approver_id.eq.{user_id}"
                 ).execute().data or []
-                if role == "supplier":
-                    p_rows = [
-                        p for p in p_rows
-                        if p.get("partnership_type") in ("supplier", "distributor_supplier")
-                    ]
-                elif role == "retailer":
-                    p_rows = [p for p in p_rows if p.get("partnership_type") == "retailer"]
 
-                orphan_ids = [
-                    p.get("id") for p in p_rows
-                    if p.get("distributor_id")
-                    and p.get("distributor_id") not in active_distributor_ids
-                    and p.get("status") in ["approved", "accepted", "pending"]
-                ]
-                for pid in orphan_ids:
-                    if pid:
-                        try:
-                            supabase.table("partnerships").update({"status": "terminated"}).eq("id", pid).execute()
-                        except Exception:
-                            pass
+                # For supplier: distributors are requesters in supplier_distributor type
+                # For retailer: distributors are approvers in distributor_retailer type
+                partner_ids = set()
+                pending_ids = set()
+                for p in p_rows:
+                    if role == "supplier" and p.get("type") == "supplier_distributor" and p.get("approver_id") == user_id:
+                        dist_id = p.get("requester_id", "")
+                    elif role == "retailer" and p.get("type") == "distributor_retailer" and p.get("requester_id") == user_id:
+                        dist_id = p.get("approver_id", "")
+                    else:
+                        continue
+                    if p.get("status") == "accepted":
+                        partner_ids.add(dist_id)
+                    elif p.get("status") == "pending":
+                        pending_ids.add(dist_id)
 
-                p_rows = [
-                    p for p in p_rows
-                    if p.get("distributor_id") in active_distributor_ids
-                    and p.get("status") != "terminated"
-                ]
-                partner_ids = {
-                    p.get("distributor_id", "") for p in p_rows
-                    if p.get("status") in ["approved", "accepted"]
-                }
-                pending_ids = {
-                    p.get("distributor_id", "") for p in p_rows
-                    if p.get("status") == "pending"
-                }
                 for d in distributors:
                     did = d["distributor_id"] or ""
                     if did in partner_ids:
@@ -1912,24 +1896,39 @@ def _resolve_retailer_name(requester_id: str) -> str:
 @app.get("/distributors/partnership-requests")
 def get_distributor_requests(user_id: Optional[str] = None, page: int = 1, limit: int = 20):
     try:
+        # For supplier: show pending requests from distributors (type=supplier_distributor, approver=supplier)
+        # For distributor: show pending requests from retailers (type=distributor_retailer, approver=distributor)
         query = supabase.table("partnerships").select("*").eq("status", "pending")
         if user_id:
-            query = query.eq("distributor_id", user_id)
-            # Exclude supplier-type partnerships (distributor→supplier requests)
-            # Those are fetched via GET /suppliers/partnership-requests
-            query = query.or_("supplier_id.is.null,partnership_type.neq.supplier")
+            query = query.eq("approver_id", user_id)
         res = query.execute()
+
+        # Resolve requester names
+        name_map = {}
+        req_ids = {r.get("requester_id", "") for r in (res.data or [])}
+        for role_name in ("distributor", "retailer"):
+            for u in auth_users_by_role(role_name):
+                if u["id"] in req_ids:
+                    name_map[u["id"]] = u.get("business_name", u.get("full_name", ""))
 
         requests = [
             {
                 "request_id": p.get("id"),
-                "distributor_id": p.get("retailer_name", ""),
-                "distributor_name": p.get("retailer_display_name")
-                    or _resolve_retailer_name(p.get("retailer_name", "")),
+                "requester_id": p.get("requester_id", ""),
+                "distributor_id": p.get("requester_id", ""),
+                "distributor_name": name_map.get(p.get("requester_id", ""), "Unknown"),
+                "distributor": {
+                    "id": p.get("requester_id", ""),
+                    "name": name_map.get(p.get("requester_id", ""), "Unknown"),
+                    "business_name": name_map.get(p.get("requester_id", ""), "Unknown"),
+                },
+                "type": p.get("type", ""),
                 "city": "",
                 "reliability_score": 0,
                 "status": p.get("status", "pending"),
-                "created_at": p.get("created_at", now_iso()),
+                "created_at": p.get("created_at", ""),
+                "mou_terms": p.get("mou_terms", ""),
+                "mou_region": p.get("mou_region", ""),
             }
             for p in (res.data or [])
         ]
@@ -2082,72 +2081,37 @@ def request_partnership(data: PartnershipRequestReq):
 
 @app.put("/distributors/partnership-request/{request_id}")
 def update_partnership_request(request_id: str, data: UpdatePartnershipReq):
+    """Accept or reject a partnership request. Mints NFT on accept. Uses new table structure."""
     try:
-        new_status = "approved" if data.action == "accept" else "rejected"
-        supabase.table("partnerships").update({"status": new_status}).eq("id", request_id).execute()
+        new_status = "accepted" if data.action == "accept" else "rejected"
+        update_payload = {"status": new_status, "updated_at": now_iso()}
 
+        # Mint NFT on accept
+        nft_data = None
         if data.action == "accept":
             p_res = supabase.table("partnerships").select("*").eq("id", request_id).execute()
-            if p_res.data:
+            if p_res.data and bc:
                 p = p_res.data[0]
-                distributor_id = p.get("distributor_id", "")
-                retailer_id = p.get("retailer_name", "")
-                terms = p.get("terms", "") or "AUTOSUP Retailer Partnership"
-                legal_hash = p.get("legal_contract_hash", "") or ("0" * 64)
-                valid_until = p.get("valid_until", 0) or 0
-                distribution_region = p.get("distribution_region", "") or ""
-
-                # Find supplier from parent partnership
-                supplier_id = None
                 try:
-                    sup_res = supabase.table("partnerships").select("supplier_id").eq("distributor_id", distributor_id).eq("status", "accepted").execute()
-                    if sup_res.data:
-                        supplier_id = sup_res.data[0].get("supplier_id", "")
+                    wallet_approver = bc.get_or_create_wallet(supabase, p.get("approver_id", ""))
+                    wallet_requester = bc.get_or_create_wallet(supabase, p.get("requester_id", ""))
+                    result = bc.mint_partnership_nft(
+                        distributor_pubkey_str=wallet_requester["pubkey"],
+                        supplier_pubkey_str=wallet_approver["pubkey"],
+                        terms=f"Partnership {request_id[:8]}",
+                        legal_contract_hash=p.get("mou_hash", "0" * 64),
+                        distribution_region=p.get("mou_region", ""),
+                    )
+                    mint_addr = result.get("mint") or result.get("mint_address", "")
+                    update_payload["nft_mint_address"] = mint_addr
+                    update_payload["nft_token_name"] = f"Partnership #{request_id[:8].upper()}"
+                    update_payload["nft_explorer_url"] = f"https://explorer.solana.com/address/{mint_addr}?cluster=devnet"
+                    nft_data = {"mint_address": mint_addr, "explorer_url": update_payload["nft_explorer_url"]}
                 except Exception:
                     pass
 
-                try:
-                    if bc and distributor_id and retailer_id:
-                        d_wallet = bc.get_or_create_wallet(supabase, distributor_id)
-                        r_wallet = bc.get_or_create_wallet(supabase, retailer_id)
-                        s_pubkey = ""
-                        if supplier_id:
-                            s_wallet = bc.get_or_create_wallet(supabase, supplier_id)
-                            s_pubkey = s_wallet["pubkey"]
-                        nft_result = bc.mint_retailer_partnership_nft(
-                            d_wallet["pubkey"],
-                            r_wallet["pubkey"],
-                            s_pubkey or d_wallet["pubkey"],  # fallback: use distributor as supplier pubkey
-                            terms=terms[:256],
-                            legal_contract_hash=legal_hash[:64],
-                            valid_until=valid_until,
-                            distribution_region=distribution_region[:64],
-                            tier=0,  # default Bronze
-                        )
-                        mint_address = nft_result["mint_address"]
-                        explorer_url = nft_result.get("mint_explorer_url", nft_result["explorer_url"])
-                        token_name = f"AUTOSUP Retailer Partnership: {distributor_id[:8]} → {retailer_id[:8]}"
-
-                        try:
-                            existing = supabase.table("partnership_nfts").select("id").eq("distributor_id", distributor_id).eq("retailer_id", retailer_id).execute()
-                            if not existing.data:
-                                supabase.table("partnership_nfts").insert({
-                                    "id": str(uuid.uuid4()),
-                                    "distributor_id": distributor_id,
-                                    "supplier_id": supplier_id or "",
-                                    "retailer_id": retailer_id,
-                                    "mint_address": mint_address,
-                                    "explorer_url": explorer_url,
-                                    "token_name": token_name,
-                                    "issued_at": now_iso(),
-                                }).execute()
-                        except Exception:
-                            pass
-                except Exception as mint_err:
-                    print(f"[partnership] retailer NFT mint error: {mint_err}")
-                    # Non-critical — partnership already approved
-
-        return success_response(data={"request_id": request_id, "action": data.action}, message=f"Partnership {data.action}ed")
+        supabase.table("partnerships").update(update_payload).eq("id", request_id).execute()
+        return success_response(data={"request_id": request_id, "action": data.action, "nft": nft_data}, message=f"Partnership {data.action}ed")
     except Exception as e:
         return error_response(str(e))
 
@@ -4542,32 +4506,17 @@ def get_suppliers(search: str = "", type: str = "", user_id: Optional[str] = Non
         for u in auth_users_by_role("supplier")
     ]
 
-    # Load partnerships to mark partnered suppliers — filter by current distributor
+    # Load partnerships to mark partnered suppliers — new table structure
     try:
-        p_query = supabase.table("partnerships").select("supplier_name,supplier_id").in_("status", ["accepted", "approved"])
         if user_id:
-            try:
-                p_query = p_query.or_(f"distributor_id.eq.{user_id},retailer_name.eq.{user_id}")
-            except Exception:
-                pass
-        accepted = p_query.execute().data or []
-        partner_ids = {p.get("supplier_id", p.get("supplier_name", "")) for p in accepted}
-        for s in supplier_users:
-            if s["supplier_id"] in partner_ids:
-                s["type"] = "partner"
-    except Exception:
-        pass
-
-    # Mark suppliers with pending requests from current distributor
-    try:
-        pq2 = supabase.table("partnerships").select("supplier_id,supplier_name").eq("status", "pending")
-        if user_id:
-            pq2 = pq2.or_(f"distributor_id.eq.{user_id},retailer_name.eq.{user_id}")
-        pending_rows = pq2.execute().data or []
-        pending_ids = {p.get("supplier_id") or p.get("supplier_name", "") for p in pending_rows}
-        for s in supplier_users:
-            if s["type"] != "partner" and s["supplier_id"] in pending_ids:
-                s["type"] = "pending"
+            p_rows = supabase.table("partnerships").select("requester_id,approver_id,status").eq("type", "supplier_distributor").eq("requester_id", user_id).execute().data or []
+            partner_ids = {p.get("approver_id", "") for p in p_rows if p.get("status") == "accepted"}
+            pending_ids = {p.get("approver_id", "") for p in p_rows if p.get("status") == "pending"}
+            for s in supplier_users:
+                if s["supplier_id"] in partner_ids:
+                    s["type"] = "partner"
+                elif s["supplier_id"] in pending_ids:
+                    s["type"] = "pending"
     except Exception:
         pass
 
@@ -4601,35 +4550,40 @@ def get_suppliers(search: str = "", type: str = "", user_id: Optional[str] = Non
 def get_partnership_requests(status: str = "", supplier_id: Optional[str] = None):
     """Get partnership requests (distributor -> supplier). Filter by supplier_id for data isolation."""
     try:
-        query = supabase.table("partnerships").select("*")
-        # Only return supplier-type partnerships (distributor→supplier)
-        query = query.or_("partnership_type.eq.supplier,partnership_type.eq.distributor_supplier")
+        query = supabase.table("partnerships").select("*").eq("type", "supplier_distributor")
         if status:
             query = query.eq("status", status)
         if supplier_id:
-            try:
-                query = query.or_(f"supplier_id.eq.{supplier_id},supplier_name.eq.{supplier_id}")
-            except Exception:
-                query = query.eq("supplier_name", supplier_id)
+            query = query.eq("approver_id", supplier_id)
         res = query.execute()
+
+        # Resolve requester names
+        name_map = {}
+        requester_ids = {r.get("requester_id", "") for r in (res.data or [])}
+        if requester_ids:
+            for u in auth_users_by_role("distributor"):
+                if u["id"] in requester_ids:
+                    name_map[u["id"]] = u.get("business_name", u.get("full_name", ""))
+
         requests = []
         for r in (res.data or []):
+            req_id = r.get("requester_id", "")
             requests.append({
-                "request_id": r.get("id", r.get("request_id", "")),
-                "supplier_id": r.get("supplier_id", r.get("supplier_name", "")),
+                "request_id": r.get("id", ""),
+                "supplier_id": r.get("approver_id", ""),
                 "distributor": {
-                    "id": r.get("distributor_id", r.get("retailer_name", "")),
-                    "name": r.get("distributor_name", r.get("retailer_name", "")),
-                    "business_name": r.get("distributor_name", r.get("retailer_name", "")),
+                    "id": req_id,
+                    "name": name_map.get(req_id, "Unknown"),
+                    "business_name": name_map.get(req_id, "Unknown"),
                 },
                 "status": r.get("status", "pending"),
-                "created_at": r.get("created_at", now_iso()),
-                "terms": r.get("terms", ""),
-                "distribution_region": r.get("distribution_region", ""),
-                "valid_until": r.get("valid_until", 0),
-                "legal_contract_hash": r.get("legal_contract_hash", ""),
-                "mou_document_name": r.get("mou_document_name", ""),
-                "mou_document_data": r.get("mou_document_data", ""),
+                "created_at": r.get("created_at", ""),
+                "terms": r.get("mou_terms", ""),
+                "distribution_region": r.get("mou_region", ""),
+                "valid_until": 0,
+                "legal_contract_hash": r.get("mou_hash", ""),
+                "mou_document_name": "",
+                "mou_document_data": "",
             })
         return success_response(data={
             "requests": requests,

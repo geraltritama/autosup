@@ -69,7 +69,7 @@ export function RegisterForm() {
   }
 
   return (
-    <Card className="w-full max-w-md rounded-2xl">
+    <Card className="w-full max-w-md rounded-2xl max-h-[90vh] overflow-y-auto">
       <CardHeader className="space-y-2 pb-0">
         <div className="inline-flex h-11 w-11 items-center justify-center rounded-xl bg-[#DBEAFE] text-[#2563EB]">
           <ShieldCheck className="h-5 w-5" />
