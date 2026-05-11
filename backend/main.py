@@ -3997,34 +3997,32 @@ AGENT_PROMPTS = {
             "- issue_detected: pick ONE of HIGH_RISK_DETECTED, OVERDUE_ACCOUNT, CREDIT_OVERUTILIZED, or NONE\n"
             "- reason: explain which retailer is risky and why (amounts, percentages)\n"
             "- action_type: pick ONE of REDUCE_LIMIT, SUSPEND_ACCOUNT, INCREASE_LIMIT, or NONE\n\n"
-            "RETURN ONLY THIS JSON (fill in real values):\n"
+            "RETURN ONLY THIS JSON:\n"
             '{"agent_type":"Distributor Agent","urgency_level":"HIGH or MEDIUM or LOW",'
-            '"credit_analysis":{"total_accounts":5,"high_risk_count":1,"overdue_count":0,"total_outstanding_idr":5000000,"risky_retailers":["Retailer X: Rp4.5M/Rp5M (90% utilized)"]},'
-            '"analysis":{"issue_detected":"CREDIT_OVERUTILIZED","reason":"Retailer Maju Jaya using 90% of Rp5M credit limit with 2 late payments in last 30 days.","confidence_score":0.88},'
-            '"recommended_action":{"action_type":"REDUCE_LIMIT","target_retailer_id":"retailer-id","suggested_new_limit":3000000},'
+            '"credit_analysis":{"total_accounts":0,"high_risk_count":0,"overdue_count":0,"total_outstanding_idr":0,"risky_retailers":[]},'
+            '"analysis":{"issue_detected":"HIGH_RISK_DETECTED or OVERDUE_ACCOUNT or CREDIT_OVERUTILIZED or NONE","reason":"YOUR ANALYSIS based on actual data above. If no data, say No credit accounts found.","confidence_score":0.0},'
+            '"recommended_action":{"action_type":"REDUCE_LIMIT or SUSPEND_ACCOUNT or INCREASE_LIMIT or NONE","target_retailer_id":"","suggested_new_limit":0},'
             '"system_flags":{"requires_human_approval":true,"auto_execute_allowed":false}}'
         ),
     },
     "supplier_recommendation": {
         "scope": "distributor",
-        "query": lambda uid, r: supabase.table("partnerships").select("*").or_(f"distributor_id.eq.{uid},distributor_name.eq.{uid}").execute(),
+        "query": lambda uid, r: supabase.table("partnerships").select("approver_id,status,mou_region,created_at").eq("requester_id", uid).eq("type", "supplier_distributor").execute(),
         "prompt": lambda data, uid: (
             "You are a partnership AI for a DISTRIBUTOR. Analyze current supplier partnerships.\n\n"
             f"PARTNERSHIP DATA: {json.dumps(data[:20] if data else [], default=str)}\n\n"
             "YOUR TASK:\n"
-            "1. Evaluate each supplier partnership — fulfillment rate, reliability.\n"
-            "2. Identify underperforming suppliers (late deliveries, rejected orders).\n"
-            "3. Identify product categories not covered by current suppliers.\n"
-            "4. Be SPECIFIC — name suppliers and their performance metrics.\n\n"
-            "RULES:\n"
-            "- issue_detected: pick ONE of SUPPLIER_GAP, UNDERPERFORMER, or NONE\n"
-            "- reason: explain which supplier is underperforming or what category is missing\n"
-            "- action_type: pick ONE of ONBOARD_SUPPLIER, REVIEW_PARTNERSHIP, or NONE\n\n"
-            "RETURN ONLY THIS JSON (fill in real values):\n"
+            "1. Count how many active supplier partnerships exist.\n"
+            "2. If data is empty or only 1 supplier, recommend finding more suppliers.\n"
+            "3. If there are multiple suppliers, evaluate coverage by region.\n"
+            "4. ONLY use information from the data above. DO NOT invent supplier names or statistics.\n"
+            "5. If no issues found, set issue_detected to NONE.\n\n"
+            "CRITICAL: Do NOT copy example values. Analyze the ACTUAL data provided above.\n\n"
+            "RETURN ONLY THIS JSON:\n"
             '{"agent_type":"Distributor Agent","urgency_level":"HIGH or MEDIUM or LOW",'
-            '"partnership_analysis":{"total_suppliers":3,"top_performers":["Supplier A: 98% fulfillment"],"underperformers":["Supplier B: 72% fulfillment, 5 late deliveries"],"product_gaps":["No dairy supplier currently"]},'
-            '"analysis":{"issue_detected":"UNDERPERFORMER","reason":"Supplier B has 72% fulfillment rate with 5 late deliveries this month. Consider reviewing terms or finding alternative.","confidence_score":0.78},'
-            '"recommended_action":{"action_type":"REVIEW_PARTNERSHIP","recommended_category":"dairy","expected_benefit":"Reduce stockouts for milk products by 40%"},'
+            '"partnership_analysis":{"total_suppliers":0,"top_performers":[],"underperformers":[],"product_gaps":[]},'
+            '"analysis":{"issue_detected":"SUPPLIER_GAP or UNDERPERFORMER or NONE","reason":"YOUR ANALYSIS HERE based on actual data","confidence_score":0.0},'
+            '"recommended_action":{"action_type":"ONBOARD_SUPPLIER or REVIEW_PARTNERSHIP or NONE","recommended_category":"","expected_benefit":""},'
             '"system_flags":{"requires_human_approval":true,"auto_execute_allowed":false}}'
         ),
     },
@@ -4043,11 +4041,11 @@ AGENT_PROMPTS = {
             "- issue_detected: pick ONE of NEGATIVE_CASHFLOW, OVERDUE_RISK, or NONE\n"
             "- reason: explain the cash flow situation with numbers (e.g. 'Rp8M payable due in 3 days but only Rp3M receivable collected')\n"
             "- action_type: pick ONE of PRIORITIZE_PAYMENT, DELAY_PAYMENT, COLLECT_RECEIVABLE, or NONE\n\n"
-            "RETURN ONLY THIS JSON (fill in real values):\n"
+            "RETURN ONLY THIS JSON:\n"
             '{"agent_type":"Distributor Agent","urgency_level":"HIGH or MEDIUM or LOW",'
-            '"cashflow_analysis":{"total_payable":8000000,"total_receivable":12000000,"overdue_payable":2000000,"overdue_receivable":3500000,"net_cash_position":4000000},'
-            '"analysis":{"issue_detected":"OVERDUE_RISK","reason":"Rp3.5M receivable overdue from 2 retailers. Rp2M payment to Supplier X due in 3 days. Need to collect before paying.","confidence_score":0.85},'
-            '"recommended_action":{"action_type":"COLLECT_RECEIVABLE","target_invoice_id":"inv-123","estimated_cashflow_impact_idr":3500000},'
+            '"cashflow_analysis":{"total_payable":0,"total_receivable":0,"overdue_payable":0,"overdue_receivable":0,"net_cash_position":0},'
+            '"analysis":{"issue_detected":"NEGATIVE_CASHFLOW or OVERDUE_RISK or NONE","reason":"YOUR ANALYSIS based on actual invoice data above. If no data, say No invoices found.","confidence_score":0.0},'
+            '"recommended_action":{"action_type":"PRIORITIZE_PAYMENT or DELAY_PAYMENT or COLLECT_RECEIVABLE or NONE","target_invoice_id":"","estimated_cashflow_impact_idr":0},'
             '"system_flags":{"requires_human_approval":true,"auto_execute_allowed":false}}'
         ),
     },
@@ -4148,7 +4146,7 @@ def _execute_agent(agent_key: str, agent: dict, role: str, user_id: str) -> dict
     if not OPENROUTER_KEY and not GEMINI_KEY and not GROQ_KEY:
         raise RuntimeError("No AI API keys configured")
     ai_text = _call_ai(
-        prompt + "\n\nIMPORTANT: Return ONLY the JSON object. No markdown code blocks, no backticks, no explanatory text. Start with { and end with }. For action_type and issue_detected, pick EXACTLY ONE option from the choices — do NOT return multiple options separated by |."
+        prompt + "\n\nIMPORTANT: Return ONLY the JSON object. No markdown code blocks, no backticks, no explanatory text. Start with { and end with }. For action_type and issue_detected, pick EXACTLY ONE option from the choices — do NOT return multiple options separated by |. CRITICAL: Only reference data that actually exists in the DATA section above. Do NOT invent names, numbers, or statistics. If data is empty, set issue_detected to NONE."
     ).strip()
 
     # 4. Parse JSON — strip markdown if present
