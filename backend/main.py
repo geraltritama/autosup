@@ -1838,6 +1838,9 @@ def get_distributors(search: Optional[str] = None, status: Optional[str] = None,
             except Exception:
                 pass
 
+        # Save full list for summary before filtering
+        all_distributors = list(distributors)
+
         if search:
             distributors = [d for d in distributors if search.lower() in d["name"].lower()]
         if status and status != "all":
@@ -1849,10 +1852,10 @@ def get_distributors(search: Optional[str] = None, status: Optional[str] = None,
 
         total = len(distributors)
         start = (page - 1) * limit
-        # Summary always from partners only (not affected by tab filter)
-        all_partners = [d for d in distributors if d["partnership_status"] == "partner"]
+        # Summary always from full list (not affected by tab filter)
+        all_partners = [d for d in all_distributors if d["partnership_status"] == "partner"]
         partner_count = len(all_partners)
-        pending_count = sum(1 for d in distributors if d["partnership_status"] == "pending")
+        pending_count = sum(1 for d in all_distributors if d["partnership_status"] == "pending")
         return success_response(
             data={
                 "distributors": distributors[start: start + limit],
@@ -2058,13 +2061,28 @@ def request_partnership(data: PartnershipRequestReq):
         else:
             p_type = "distributor_retailer"
 
-        # Dedup check
-        existing = supabase.table("partnerships").select("id,status").eq("requester_id", requester_id).eq("approver_id", approver_id).eq("type", p_type).in_("status", ["pending", "accepted"]).execute().data or []
-        if existing:
-            return success_response(
-                data={"request_id": existing[0]["id"], "status": existing[0]["status"]},
-                message="Partnership request already exists",
-            )
+        # Dedup check — also reactivate terminated partnerships
+        existing = supabase.table("partnerships").select("id,status").eq("requester_id", requester_id).eq("approver_id", approver_id).eq("type", p_type).execute().data or []
+        for ex in existing:
+            if ex["status"] in ("pending", "accepted"):
+                return success_response(
+                    data={"request_id": ex["id"], "status": ex["status"]},
+                    message="Partnership request already exists",
+                )
+            if ex["status"] in ("terminated", "rejected"):
+                # Reactivate — update existing record instead of creating new
+                mou_hash_val = hashlib.sha256((data.terms or "").encode()).hexdigest() if data.terms else ""
+                supabase.table("partnerships").update({
+                    "status": "pending",
+                    "mou_terms": data.terms or "",
+                    "mou_region": data.distribution_region or "",
+                    "mou_hash": mou_hash_val,
+                    "updated_at": now_iso(),
+                }).eq("id", ex["id"]).execute()
+                return success_response(
+                    data={"request_id": ex["id"], "status": "pending", "mou_hash": mou_hash_val},
+                    message="Partnership request re-submitted",
+                )
 
         request_id = str(uuid.uuid4())
         mou_terms = data.terms or ""
@@ -4650,11 +4668,16 @@ def create_supplier_partnership_request(body: dict):
     if not supplier_id or not distributor_id:
         return error_response("supplier_id and distributor_id are required")
 
-    # Dedup
+    # Dedup — also reactivate terminated/rejected
     try:
-        existing = supabase.table("partnerships").select("id,status").eq("requester_id", distributor_id).eq("approver_id", supplier_id).eq("type", "supplier_distributor").in_("status", ["pending", "accepted"]).execute().data or []
-        if existing:
-            return success_response(data={"request_id": existing[0]["id"], "status": existing[0]["status"]}, message="Partnership already exists")
+        existing = supabase.table("partnerships").select("id,status").eq("requester_id", distributor_id).eq("approver_id", supplier_id).eq("type", "supplier_distributor").execute().data or []
+        for ex in existing:
+            if ex["status"] in ("pending", "accepted"):
+                return success_response(data={"request_id": ex["id"], "status": ex["status"]}, message="Partnership already exists")
+            if ex["status"] in ("terminated", "rejected"):
+                mou_hash_val = hashlib.sha256(terms.encode()).hexdigest() if terms else ""
+                supabase.table("partnerships").update({"status": "pending", "mou_terms": terms, "mou_region": distribution_region, "mou_hash": mou_hash_val, "updated_at": now_iso()}).eq("id", ex["id"]).execute()
+                return success_response(data={"request_id": ex["id"], "status": "pending", "mou_hash": mou_hash_val}, message="Partnership request re-submitted")
     except Exception:
         pass
 
