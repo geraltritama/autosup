@@ -1250,26 +1250,18 @@ def get_dashboard_summary(x_user_role: Optional[str] = Header(default=None),
         pending_supplier_requests = 0
         pending_retailer_requests = 0
         try:
-            p_query = supabase.table("partnerships").select("*")
-            if role == "supplier":
-                try:
-                    p_query = p_query.or_(f"supplier_id.eq.{uid},supplier_name.eq.{uid}")
-                except Exception:
-                    p_query = p_query.eq("supplier_name", uid)
-            elif role == "distributor":
-                p_query = p_query.eq("distributor_id", uid)
-            elif role == "retailer":
-                p_query = p_query.eq("retailer_name", uid)
+            p_query = supabase.table("partnerships").select("type,status,requester_id,approver_id").or_(f"requester_id.eq.{uid},approver_id.eq.{uid}")
             partnerships = p_query.execute().data or []
-            active_partnerships = [p for p in partnerships if p.get("status") in ["accepted", "approved", "partner"]]
+            active_partnerships = [p for p in partnerships if p.get("status") == "accepted"]
             pending_partnerships = [p for p in partnerships if p.get("status") == "pending"]
-            # Only count partners that are actual active distributor users
-            active_dist_ids = {u["id"] for u in auth_users_by_role("distributor") if u.get("is_active", True)}
-            supplier_partnerships = [p for p in active_partnerships if p.get("partnership_type") in ("supplier", "distributor_supplier")]
-            supplier_partner_count = len(set(p.get("distributor_id", "") for p in supplier_partnerships if p.get("distributor_id") in active_dist_ids))
-            retailer_partner_count = len([p for p in active_partnerships if p.get("partnership_type") == "retailer"])
-            pending_supplier_requests = len([p for p in pending_partnerships if p.get("partnership_type") in ("supplier", "distributor_supplier")])
-            pending_retailer_requests = len([p for p in pending_partnerships if p.get("partnership_type") == "retailer"])
+
+            # Supplier: count distributor partners (type=supplier_distributor, approver=supplier)
+            supplier_partner_count = len([p for p in active_partnerships if p["type"] == "supplier_distributor"])
+            # Retailer partners (type=distributor_retailer)
+            retailer_partner_count = len([p for p in active_partnerships if p["type"] == "distributor_retailer"])
+            # Pending requests where current user is approver
+            pending_supplier_requests = len([p for p in pending_partnerships if p["type"] == "supplier_distributor" and p.get("approver_id") == uid])
+            pending_retailer_requests = len([p for p in pending_partnerships if p["type"] == "distributor_retailer" and p.get("approver_id") == uid])
         except Exception:
             pass
 
@@ -2142,76 +2134,19 @@ def get_partnerships_summary(user_id: Optional[str] = None, partner_type: Option
                              current_user: AuthenticatedUser = Depends(get_current_user)):
     try:
         uid = current_user.user_id
-        normalized_partner_type = (partner_type or "").strip().lower()
-        if normalized_partner_type and normalized_partner_type not in ("supplier", "retailer"):
-            return error_response("partner_type must be 'supplier' or 'retailer'")
-
-        query = supabase.table("partnerships").select("*")
-        try:
-            query = query.or_(f"supplier_id.eq.{uid},supplier_name.eq.{uid},distributor_id.eq.{uid},retailer_name.eq.{uid}")
-        except Exception:
-            pass
-        res = query.execute()
+        res = supabase.table("partnerships").select("*").or_(f"requester_id.eq.{uid},approver_id.eq.{uid}").execute()
         ps = res.data or []
-        if normalized_partner_type == "supplier":
-            ps = [p for p in ps if p.get("partnership_type") in ("supplier", "distributor_supplier")]
-            active_distributor_ids = {
-                u["id"] for u in auth_users_by_role("distributor")
-                if u.get("id") and u.get("is_active", True) is not False
-            }
-            orphan_ids = [
-                p.get("id") for p in ps
-                if p.get("distributor_id")
-                and p.get("distributor_id") not in active_distributor_ids
-                and p.get("status") in ["approved", "accepted", "pending"]
-            ]
-            for pid in orphan_ids:
-                if pid:
-                    try:
-                        supabase.table("partnerships").update({"status": "terminated"}).eq("id", pid).execute()
-                    except Exception:
-                        pass
-            ps = [
-                p for p in ps
-                if p.get("distributor_id") in active_distributor_ids
-                and p.get("status") != "terminated"
-            ]
-        elif normalized_partner_type == "retailer":
-            ps = [p for p in ps if p.get("partnership_type") == "retailer"]
-        active = sum(1 for p in ps if p.get("status") in ("approved", "accepted"))
+
+        # Filter by type if requested
+        if partner_type == "supplier":
+            ps = [p for p in ps if p.get("type") == "supplier_distributor"]
+        elif partner_type == "retailer":
+            ps = [p for p in ps if p.get("type") == "distributor_retailer"]
+
+        active = sum(1 for p in ps if p.get("status") == "accepted")
         pending = sum(1 for p in ps if p.get("status") == "pending")
-        rejected = sum(1 for p in ps if p.get("status") in ("rejected", "terminated"))
-        total_closed = active + rejected
-        renewal_rate = round(active / max(total_closed, 1) * 100) if total_closed > 0 else 100
-
-        # Real NFT count
-        nft_count = 0
-        try:
-            if user_id:
-                nft_res = supabase.table("partnership_nfts").select("id,supplier_id,retailer_id").or_(
-                    f"distributor_id.eq.{user_id},supplier_id.eq.{user_id},retailer_id.eq.{user_id}"
-                ).execute()
-            else:
-                nft_res = supabase.table("partnership_nfts").select("id,supplier_id,retailer_id").execute()
-            nft_rows = nft_res.data or []
-            if normalized_partner_type == "supplier":
-                nft_rows = [n for n in nft_rows if (n.get("supplier_id") or "").strip() != ""]
-            elif normalized_partner_type == "retailer":
-                nft_rows = [n for n in nft_rows if (n.get("retailer_id") or "").strip() != ""]
-            nft_count = len(nft_rows)
-        except Exception:
-            nft_count = active
-
-        # Network growth: partnerships in last 30d vs previous 30d
-        now = datetime.utcnow()
-        cutoff_30 = now - timedelta(days=30)
-        cutoff_60 = now - timedelta(days=60)
-        recent_new = sum(1 for p in ps if p.get("created_at") and _parse_ts(p["created_at"]) and _parse_ts(p["created_at"]) >= cutoff_30)
-        prev_new   = sum(1 for p in ps if p.get("created_at") and _parse_ts(p["created_at"]) and cutoff_60 <= _parse_ts(p["created_at"]) < cutoff_30)
-        network_growth = round(((recent_new - prev_new) / max(prev_new, 1)) * 100) if prev_new > 0 else (10 if recent_new > 0 else 0)
-
-        # Trust score: average reputation of partners
-        trust_score = 87  # baseline; can be derived from reputation data if needed
+        nft_count = sum(1 for p in ps if p.get("status") == "accepted" and p.get("nft_mint_address"))
+        trust_score = 87
 
         insights = []
         if pending > 0:
@@ -2224,9 +2159,9 @@ def get_partnerships_summary(user_id: Optional[str] = None, partner_type: Option
                 "summary": {
                     "active_partnerships": active,
                     "pending_agreements": pending,
-                    "contract_renewal_rate": renewal_rate,
+                    "contract_renewal_rate": 100 if active > 0 else 0,
                     "trust_score": trust_score,
-                    "network_growth": network_growth,
+                    "network_growth": 0,
                     "nft_issued": nft_count,
                 },
                 "insights": insights,
@@ -2449,6 +2384,191 @@ def get_escrow_details(order_id: str):
             "explorer_url": explorer_url,
             "events": events,
         }, message="Escrow details retrieved")
+    except Exception as e:
+        return error_response(str(e))
+
+
+# ==========================================
+# NEW PARTNERSHIP SYSTEM (clean structure)
+# ==========================================
+
+@app.post("/partnerships/request")
+def create_partnership_request(body: dict, current_user: AuthenticatedUser = Depends(get_current_user)):
+    """Create a new partnership request with MOU terms."""
+    try:
+        uid = current_user.user_id
+        p_type = body.get("type", "")
+        approver_id = body.get("approver_id", "")
+        mou_terms = body.get("mou_terms", "")
+        mou_region = body.get("mou_region", "")
+        mou_valid_until = body.get("mou_valid_until")
+
+        if p_type not in ("supplier_distributor", "distributor_retailer"):
+            return error_response("type must be 'supplier_distributor' or 'distributor_retailer'")
+        if not approver_id:
+            return error_response("approver_id is required")
+        if not mou_terms or len(mou_terms) < 10:
+            return error_response("MOU terms must be at least 10 characters")
+
+        # Check no existing active/pending partnership
+        existing = supabase.table("partnerships").select("id,status").eq("requester_id", uid).eq("approver_id", approver_id).eq("type", p_type).in_("status", ["pending", "accepted"]).execute()
+        if existing.data:
+            return error_response("Partnership already exists or pending between these parties")
+
+        mou_hash = hashlib.sha256(mou_terms.encode()).hexdigest()
+        pid = str(uuid.uuid4())
+        row = {
+            "id": pid,
+            "type": p_type,
+            "requester_id": uid,
+            "approver_id": approver_id,
+            "status": "pending",
+            "mou_terms": mou_terms,
+            "mou_region": mou_region,
+            "mou_valid_until": mou_valid_until,
+            "mou_hash": mou_hash,
+            "created_at": now_iso(),
+            "updated_at": now_iso(),
+        }
+        supabase.table("partnerships").insert(row).execute()
+        return success_response(data={"partnership_id": pid, "mou_hash": mou_hash}, message="Partnership request submitted")
+    except Exception as e:
+        return error_response(str(e))
+
+
+@app.put("/partnerships/{partnership_id}/respond")
+def respond_partnership(partnership_id: str, body: dict, current_user: AuthenticatedUser = Depends(get_current_user)):
+    """Approve or reject a partnership request. Mints NFT on approve."""
+    try:
+        uid = current_user.user_id
+        action = body.get("action", "reject")
+
+        # Fetch partnership
+        res = supabase.table("partnerships").select("*").eq("id", partnership_id).execute()
+        if not res.data:
+            return error_response("Partnership not found")
+        p = res.data[0]
+
+        if p.get("approver_id") != uid:
+            return error_response("Only the approver can respond to this request")
+        if p.get("status") != "pending":
+            return error_response("Partnership is not pending")
+
+        new_status = "accepted" if action == "accept" else "rejected"
+        update = {"status": new_status, "updated_at": now_iso()}
+
+        # Mint NFT on accept
+        nft_data = None
+        if action == "accept" and bc:
+            try:
+                wallet_approver = bc.get_or_create_wallet(supabase, uid)
+                wallet_requester = bc.get_or_create_wallet(supabase, p["requester_id"])
+                result = bc.mint_partnership_nft(
+                    distributor_pubkey_str=wallet_requester["pubkey"],
+                    supplier_pubkey_str=wallet_approver["pubkey"],
+                    terms=f"Partnership {partnership_id[:8]}",
+                    legal_contract_hash=p.get("mou_hash", "0" * 64),
+                    distribution_region=p.get("mou_region", ""),
+                )
+                mint_addr = result.get("mint") or result.get("mint_address", "")
+                update["nft_mint_address"] = mint_addr
+                update["nft_token_name"] = f"Partnership #{partnership_id[:8].upper()}"
+                update["nft_explorer_url"] = f"https://explorer.solana.com/address/{mint_addr}?cluster=devnet"
+                nft_data = {"mint_address": mint_addr, "explorer_url": update["nft_explorer_url"]}
+            except Exception as nft_err:
+                # Non-critical — partnership still accepted even if NFT fails
+                nft_data = {"error": str(nft_err)[:100]}
+
+        supabase.table("partnerships").update(update).eq("id", partnership_id).execute()
+        return success_response(data={"partnership_id": partnership_id, "action": action, "nft": nft_data}, message=f"Partnership {action}ed")
+    except Exception as e:
+        return error_response(str(e))
+
+
+@app.get("/partnerships/list")
+def list_partnerships(current_user: AuthenticatedUser = Depends(get_current_user)):
+    """List all partnerships for the current user (as requester or approver)."""
+    try:
+        uid = current_user.user_id
+        role = current_user.role
+        res = supabase.table("partnerships").select("*").or_(f"requester_id.eq.{uid},approver_id.eq.{uid}").order("created_at", desc=True).execute()
+        partnerships = res.data or []
+
+        # Enrich with partner names
+        all_user_ids = set()
+        for p in partnerships:
+            all_user_ids.add(p.get("requester_id", ""))
+            all_user_ids.add(p.get("approver_id", ""))
+        all_user_ids.discard("")
+
+        # Build name lookup
+        name_map = {}
+        try:
+            headers = {"apikey": os.getenv("SUPABASE_KEY", ""), "Authorization": f"Bearer {os.getenv('SUPABASE_KEY', '')}"}
+            resp = requests.get(f"{os.getenv('SUPABASE_URL')}/auth/v1/admin/users", headers=headers, timeout=10)
+            if resp.status_code == 200:
+                for u in resp.json().get("users", []):
+                    if u["id"] in all_user_ids:
+                        meta = u.get("user_metadata", {}) or {}
+                        name_map[u["id"]] = meta.get("business_name") or meta.get("full_name") or u.get("email", "")
+        except Exception:
+            pass
+
+        result = []
+        for p in partnerships:
+            partner_id = p["approver_id"] if p["requester_id"] == uid else p["requester_id"]
+            result.append({
+                "id": p["id"],
+                "type": p["type"],
+                "status": p["status"],
+                "partner_id": partner_id,
+                "partner_name": name_map.get(partner_id, "Unknown"),
+                "is_requester": p["requester_id"] == uid,
+                "mou_terms": p.get("mou_terms", ""),
+                "mou_region": p.get("mou_region", ""),
+                "mou_valid_until": p.get("mou_valid_until"),
+                "mou_hash": p.get("mou_hash", ""),
+                "nft_mint_address": p.get("nft_mint_address"),
+                "nft_token_name": p.get("nft_token_name"),
+                "nft_explorer_url": p.get("nft_explorer_url"),
+                "created_at": p.get("created_at", ""),
+            })
+
+        # Summary
+        accepted = [p for p in result if p["status"] == "accepted"]
+        pending = [p for p in result if p["status"] == "pending"]
+        supplier_partners = len([p for p in accepted if p["type"] == "supplier_distributor"])
+        retailer_partners = len([p for p in accepted if p["type"] == "distributor_retailer"])
+
+        return success_response(data={
+            "partnerships": result,
+            "summary": {
+                "total_active": len(accepted),
+                "total_pending": len(pending),
+                "supplier_partners": supplier_partners,
+                "retailer_partners": retailer_partners,
+                "nft_count": sum(1 for p in accepted if p.get("nft_mint_address")),
+            },
+        }, message="Partnerships retrieved")
+    except Exception as e:
+        return error_response(str(e))
+
+
+@app.post("/partnerships/{partnership_id}/terminate")
+def terminate_partnership(partnership_id: str, current_user: AuthenticatedUser = Depends(get_current_user)):
+    """Terminate an active partnership."""
+    try:
+        uid = current_user.user_id
+        res = supabase.table("partnerships").select("*").eq("id", partnership_id).execute()
+        if not res.data:
+            return error_response("Partnership not found")
+        p = res.data[0]
+        if uid not in (p.get("requester_id"), p.get("approver_id")):
+            return error_response("Not authorized to terminate this partnership")
+        if p.get("status") != "accepted":
+            return error_response("Only active partnerships can be terminated")
+        supabase.table("partnerships").update({"status": "terminated", "updated_at": now_iso()}).eq("id", partnership_id).execute()
+        return success_response(data={"partnership_id": partnership_id}, message="Partnership terminated")
     except Exception as e:
         return error_response(str(e))
 
