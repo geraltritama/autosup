@@ -10,6 +10,7 @@ import { DistributorCard } from "@/components/distributors/distributor-card";
 import { DistributorStockDialog } from "@/components/distributors/distributor-stock-dialog";
 import { SupplierStockDialog } from "@/components/suppliers/supplier-stock-dialog";
 import { DistributorDetailDialog } from "@/components/distributors/distributor-detail-dialog";
+import { PartnershipDetailDialog } from "@/components/shared/partnership-detail-dialog";
 import { SuppliersTrustPanel } from "@/components/suppliers/suppliers-trust-panel";
 import { PageErrorState } from "@/components/dashboard/page-error-state";
 import { Badge } from "@/components/ui/badge";
@@ -213,6 +214,7 @@ export default function PartnershipsPage() {
   const [supplierStockDialogOpen, setSupplierStockDialogOpen] = useState(false);
   const [selectedSupplierForStock, setSelectedSupplierForStock] = useState<Supplier | null>(null);
   const [distributorDetailOpen, setDistributorDetailOpen] = useState(false);
+  const [detailPartner, setDetailPartner] = useState<{ id: string; name: string; role: "supplier" | "retailer"; info?: Record<string, number> } | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<{
     id: string;
     name: string;
@@ -460,6 +462,7 @@ export default function PartnershipsPage() {
                   <SupplierCard
                     supplier={supplier}
                     onViewStock={(s) => { setSelectedSupplierForStock(s); setSupplierStockDialogOpen(true); }}
+                    onViewDetail={(s) => setDetailPartner({ id: s.supplier_id, name: s.name, role: "supplier", info: { order_volume: s.total_transactions, punctuality: s.on_time_delivery_rate, reputation: s.reputation_score } })}
                     onDeletePartnership={(s) => setDeleteTarget({ id: s.supplier_id, name: s.name, type: "supplier", isPartner: s.type === "partner" })}
                   />
                   <SupplierNFTBadge supplierId={supplier.supplier_id} />
@@ -482,6 +485,7 @@ export default function PartnershipsPage() {
                 <div key={retailer.retailer_id} className="space-y-2">
                   <RetailerCard
                     retailer={retailer}
+                    onViewDetail={(r) => setDetailPartner({ id: r.retailer_id, name: r.name, role: "retailer", info: { order_volume: r.monthly_order_volume, punctuality: 0, transactions: r.monthly_order_volume } })}
                     onDeletePartnership={(r) => setDeleteTarget({ id: r.retailer_id, name: r.name, type: "retailer", isPartner: true })}
                   />
                   <RetailerNFTBadge retailerId={retailer.retailer_id} />
@@ -557,6 +561,15 @@ export default function PartnershipsPage() {
         }
         confirmLabel={deleteTarget?.isPartner ? "End Partnership" : "Cancel Request"}
         isLoading={deleteSupplierP.isPending || deleteDistributorP.isPending || deleteRetailerP.isPending}
+      />
+
+      <PartnershipDetailDialog
+        open={!!detailPartner}
+        onClose={() => setDetailPartner(null)}
+        partnerId={detailPartner?.id ?? null}
+        partnerName={detailPartner?.name ?? ""}
+        partnerRole={detailPartner?.role ?? "supplier"}
+        partnerInfo={detailPartner?.info as Record<string, number> | undefined}
       />
     </main>
   );
