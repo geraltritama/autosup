@@ -35,6 +35,11 @@ function tryParseJson(text: string | undefined): Record<string, unknown> | null 
   try { return JSON.parse(text); } catch { return null; }
 }
 
+/** Strip raw [TAG] prefixes from legacy AI output and humanize */
+function cleanAiText(text: string): string {
+  return text.replace(/^\[[\w|_]+\]\s*/, "").replace(/_/g, " ");
+}
+
 function ExpandedResult({ fullResult }: { fullResult: string }) {
   const parsed = tryParseJson(fullResult);
   if (!parsed) {
@@ -450,8 +455,8 @@ export default function AiAgentsPage() {
                                 {new Intl.DateTimeFormat("en-US", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }).format(new Date(act.timestamp))}
                               </span>
                             </div>
-                            <p className="text-xs text-[#64748B] line-clamp-2">{act.action}</p>
-                            <p className="text-[10px] text-[#94A3B8] line-clamp-1">{act.impact}</p>
+                            <p className="text-xs text-[#64748B] line-clamp-2">{cleanAiText(act.action)}</p>
+                            <p className="text-[10px] text-[#94A3B8] line-clamp-1">{cleanAiText(act.impact)}</p>
 
                             {isExpanded && act.full_result && (
                               <ExpandedResult fullResult={act.full_result} />

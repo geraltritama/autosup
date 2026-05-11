@@ -3576,8 +3576,10 @@ def run_ai_agent(agent_key: str,
         action_type = action.get("action_type", "NONE")
         confidence = analysis.get("confidence_score", 0)
 
-        impact_summary = f"[{issue}] {reason}" if issue not in ("NONE", "PARSE_ERROR") else "No critical issues detected."
-        recent_action = f"{action_type}: {impact_summary[:100]}"
+        issue_label = issue.replace("_", " ").title() if issue not in ("NONE", "PARSE_ERROR") else ""
+        action_label = action_type.replace("_", " ").title() if action_type != "NONE" else "No Action"
+        impact_summary = f"{issue_label}: {reason}" if issue_label else "No critical issues detected."
+        recent_action = f"{action_label} — {reason[:80]}" if issue_label else "No issues detected."
 
         now = now_iso()
         activity_id = str(uuid.uuid4())
@@ -3585,7 +3587,7 @@ def run_ai_agent(agent_key: str,
         supabase.table("ai_activities").insert({
             "id": activity_id,
             "agent_name": agent.get("name", agent_key),
-            "action": f"{action_type} (confidence: {confidence:.0%})",
+            "action": f"{action_label} (confidence: {confidence:.0%})",
             "impact": impact_summary[:200],
             "full_result": json.dumps(result, ensure_ascii=False),
             "timestamp": now,
@@ -3642,7 +3644,9 @@ def auto_tick_agents(x_user_role: Optional[str] = Header(default=None),
                 has_finding = issue not in ("NONE", "PARSE_ERROR") and action_type != "NONE"
 
                 now = now_iso()
-                recent_action = f"{action_type}: {reason[:100]}" if has_finding else f"No issues — last check {now[:16]}"
+                issue_label = issue.replace("_", " ").title() if issue not in ("NONE", "PARSE_ERROR") else ""
+                action_label = action_type.replace("_", " ").title() if action_type != "NONE" else "No Action"
+                recent_action = f"{action_label} — {reason[:80]}" if has_finding else f"No issues — last check {now[:16]}"
                 supabase.table("ai_agents").update({
                     "recent_action": recent_action[:120],
                     "last_active": now,
@@ -3651,11 +3655,11 @@ def auto_tick_agents(x_user_role: Optional[str] = Header(default=None),
                 # Only log activity when there's a real finding
                 if has_finding:
                     activity_id = str(uuid.uuid4())
-                    impact_summary = f"[{issue}] {reason}" if issue not in ("NONE",) else "No issues."
+                    impact_summary = f"{issue_label}: {reason}" if issue_label else "No issues."
                     supabase.table("ai_activities").insert({
                         "id": activity_id,
                         "agent_name": agent.get("name", agent_key),
-                        "action": f"Auto-run: {action_type} (confidence: {confidence:.0%})",
+                        "action": f"Auto-run: {action_label} (confidence: {confidence:.0%})",
                         "impact": impact_summary[:200],
                         "full_result": json.dumps(result, ensure_ascii=False),
                         "timestamp": now,
