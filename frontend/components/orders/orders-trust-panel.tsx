@@ -27,8 +27,14 @@ export function OrdersTrustPanel({ view }: { view?: "outgoing" | "incoming" }) {
   const reputationLabel = role === "supplier"
     ? "Supplier reputation"
     : view === "outgoing"
-      ? "Your reliability score (as buyer)"
+      ? "Payment reliability (as buyer)"
       : "Your reputation (as seller)";
+
+  // For outgoing view, calculate payment reliability from escrow data
+  const displayScore = view === "outgoing"
+    ? (escrowReleased + escrowRefunded > 0 ? Math.round((escrowReleased / Math.max(escrowReleased + escrowHeld, 1)) * 100) : 0)
+    : reputationScore;
+  const scoreLabel = view === "outgoing" ? "%" : "reputation points";
 
   return (
     <Card className="rounded-2xl">
@@ -93,8 +99,8 @@ export function OrdersTrustPanel({ view }: { view?: "outgoing" | "incoming" }) {
               <div className="mt-2 h-4 w-24 animate-pulse rounded bg-slate-200" />
             ) : (
               <div className="mt-3 inline-flex items-center gap-2 rounded-lg bg-[#F0FDF4] px-3 py-1.5">
-                <span className="text-2xl font-bold text-[#16A34A]">{reputationScore}</span>
-                <span className="text-xs text-[#64748B]">reputation points</span>
+                <span className="text-2xl font-bold text-[#16A34A]">{displayScore}</span>
+                <span className="text-xs text-[#64748B]">{scoreLabel}</span>
               </div>
             )}
           </div>
