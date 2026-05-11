@@ -10,11 +10,14 @@ export interface OrderCardData {
   buyer: { id: string; name: string; role: string };
   seller: { id: string; name: string; role: string };
   items: Array<{
-    item_name: string;
-    qty: number;
-    unit: string;
-    price_per_unit: number;
-    subtotal: number;
+    item_name?: string;
+    product_name?: string;
+    name?: string;
+    qty?: number;
+    quantity?: number;
+    unit?: string;
+    price_per_unit?: number;
+    subtotal?: number;
   }>;
   total_amount: number;
   status: OrderStatus;
@@ -51,7 +54,7 @@ interface OrderCardProps {
 export function OrderCard({ order, userRole, onViewDetail, onShip, onApprove, onReject }: OrderCardProps) {
   const previewItems = order.items
     .slice(0, 2)
-    .map((item) => `${item.item_name} (${item.qty} ${item.unit})`)
+    .map((item) => `${item.item_name || item.product_name || item.name || "Item"} (${item.qty || item.quantity || 0} ${item.unit || "pcs"})`)
     .join(", ");
 
   const isTerminal = order.status === "delivered" || order.status === "cancelled";
