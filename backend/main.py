@@ -927,6 +927,20 @@ def create_order(data: CreateOrderReqV2, background_tasks: BackgroundTasks):
             "Retailer cannot place order directly with Supplier. "
             "Please order through a Distributor."
         )
+
+    # Validate active partnership between buyer and seller
+    try:
+        if data.seller_type == "supplier":
+            p_type = "supplier_distributor"
+            p_check = supabase.table("partnerships").select("id").eq("type", p_type).eq("requester_id", data.buyer_id).eq("approver_id", data.seller_id).eq("status", "accepted").execute()
+        else:
+            p_type = "distributor_retailer"
+            p_check = supabase.table("partnerships").select("id").eq("type", p_type).eq("requester_id", data.buyer_id).eq("approver_id", data.seller_id).eq("status", "accepted").execute()
+        if not p_check.data:
+            return error_response("Cannot create order: no active partnership with this seller. Request partnership first.")
+    except Exception:
+        pass  # Allow order if partnership check fails (table might not exist yet)
+
     try:
         order_id = str(uuid.uuid4())
         order_number = f"ORD-{order_id[:8].upper()}"
@@ -1588,6 +1602,18 @@ def get_retailers(search: Optional[str] = None, segment: Optional[str] = None,
                 r["last_order_at"] = buyer_last_order.get(rid)
         except Exception:
             pass
+
+        # Auto-calculate segment: premium / regular / new
+        for r in retailers:
+            purchase = r["total_purchase_amount"]
+            orders = r["monthly_order_volume"]
+            is_partner = r["partnership_status"] == "partner"
+            if purchase >= 10_000_000 and orders >= 5 and is_partner:
+                r["segment"] = "premium"
+            elif purchase >= 2_000_000 or orders >= 2:
+                r["segment"] = "regular"
+            else:
+                r["segment"] = "new"
 
         # Filters
         if type == "partner":
@@ -3568,19 +3594,24 @@ def add_repayment(account_id: str, data: dict):
 
 
 @app.post("/credit/accounts")
-def open_credit(data: OpenCreditReq):
+def open_credit(data: OpenCreditReq, current_user: AuthenticatedUser = Depends(get_current_user)):
     try:
+        uid = current_user.user_id
+        # Validate: must have active distributor_retailer partnership
+        p_res = supabase.table("partnerships").select("id").eq("type", "distributor_retailer").eq("approver_id", uid).eq("requester_id", data.retailer_id).eq("status", "accepted").execute()
+        if not p_res.data:
+            return error_response("Cannot grant credit: no active partnership with this retailer. Approve partnership first.")
+        partnership_id = p_res.data[0]["id"]
+
         account_id = str(uuid.uuid4())
-        # Generate account number: CRD-XXXX
         count_res = supabase.table("credit_accounts").select("id", count="exact").execute()
         acc_num = f"CRD-{str((count_res.count or 0) + 1).zfill(4)}"
         billing_end = (datetime.utcnow() + timedelta(days=data.billing_cycle_days)).isoformat() + "Z"
-        payload = {"id": account_id, "retailer_id": data.retailer_id, "credit_limit": data.credit_limit,
+        payload = {"id": account_id, "retailer_id": data.retailer_id, "distributor_id": uid,
+                   "partnership_id": partnership_id, "credit_limit": data.credit_limit,
                    "credit_account_number": acc_num, "billing_cycle_days": data.billing_cycle_days,
                    "utilized_amount": 0, "status": "active", "risk_level": "medium", "opened_at": now_iso(),
                    "next_due_date": billing_end, "next_due_amount": 0}
-        if data.distributor_id:
-            payload["distributor_id"] = data.distributor_id
         supabase.table("credit_accounts").insert(payload).execute()
         return success_response(
             data={**payload, "credit_account_id": account_id, "retailer": {"retailer_id": data.retailer_id, "name": ""},

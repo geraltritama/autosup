@@ -202,3 +202,90 @@ export function useVerifyPartnership(
     staleTime: 30 * 1000,
   });
 }
+
+
+// ─── NEW PARTNERSHIP SYSTEM ───────────────────────────────────────────────────
+
+export type Partnership = {
+  id: string;
+  type: "supplier_distributor" | "distributor_retailer";
+  status: "pending" | "accepted" | "rejected" | "terminated";
+  partner_id: string;
+  partner_name: string;
+  is_requester: boolean;
+  mou_terms: string;
+  mou_region: string;
+  mou_valid_until: string | null;
+  mou_hash: string;
+  nft_mint_address: string | null;
+  nft_token_name: string | null;
+  nft_explorer_url: string | null;
+  created_at: string;
+};
+
+export type PartnershipListResponse = {
+  partnerships: Partnership[];
+  summary: {
+    total_active: number;
+    total_pending: number;
+    supplier_partners: number;
+    retailer_partners: number;
+    nft_count: number;
+  };
+};
+
+export function usePartnershipList() {
+  return useQuery({
+    queryKey: ["partnerships", "list"],
+    queryFn: async (): Promise<PartnershipListResponse> => {
+      const { data } = await api.get<ApiResponse<PartnershipListResponse>>("/partnerships/list");
+      return data.data;
+    },
+    staleTime: 30 * 1000,
+  });
+}
+
+export function useRequestPartnership() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (payload: {
+      type: "supplier_distributor" | "distributor_retailer";
+      approver_id: string;
+      mou_terms: string;
+      mou_region: string;
+      mou_valid_until?: string;
+    }) => {
+      const { data } = await api.post<ApiResponse<{ partnership_id: string; mou_hash: string }>>("/partnerships/request", payload);
+      return data.data;
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["partnerships"] });
+    },
+  });
+}
+
+export function useRespondPartnership() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ partnershipId, action }: { partnershipId: string; action: "accept" | "reject" }) => {
+      const { data } = await api.put<ApiResponse<{ partnership_id: string; action: string; nft: unknown }>>(`/partnerships/${partnershipId}/respond`, { action });
+      return data.data;
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["partnerships"] });
+    },
+  });
+}
+
+export function useTerminatePartnership() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (partnershipId: string) => {
+      const { data } = await api.post<ApiResponse>(`/partnerships/${partnershipId}/terminate`);
+      return data;
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["partnerships"] });
+    },
+  });
+}
