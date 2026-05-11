@@ -1824,7 +1824,9 @@ def get_distributors(search: Optional[str] = None, status: Optional[str] = None,
 
         total = len(distributors)
         start = (page - 1) * limit
-        partner_count = sum(1 for d in distributors if d["partnership_status"] == "partner")
+        # Summary always from partners only (not affected by tab filter)
+        all_partners = [d for d in distributors if d["partnership_status"] == "partner"]
+        partner_count = len(all_partners)
         pending_count = sum(1 for d in distributors if d["partnership_status"] == "pending")
         return success_response(
             data={
@@ -1832,9 +1834,9 @@ def get_distributors(search: Optional[str] = None, status: Optional[str] = None,
                 "summary": {
                     "partner_count": partner_count,
                     "pending_count": pending_count,
-                    "total_order_volume": sum(d.get("order_volume", 0) for d in distributors),
-                    "avg_punctuality": sum(d.get("payment_punctuality", 0) for d in distributors) // max(total, 1),
-                    "avg_delivery_days": sum(d.get("avg_delivery_days", 0) for d in distributors) // max(total, 1),
+                    "total_order_volume": sum(d.get("order_volume", 0) for d in all_partners),
+                    "avg_punctuality": sum(d.get("payment_punctuality", 0) for d in all_partners) // max(len(all_partners), 1),
+                    "avg_delivery_days": sum(d.get("avg_delivery_days", 0) for d in all_partners) // max(len(all_partners), 1),
                 },
                 "pagination": {"page": page, "limit": limit, "total": total},
             },
