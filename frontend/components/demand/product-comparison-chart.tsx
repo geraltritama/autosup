@@ -1,6 +1,6 @@
 "use client";
 
-import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
+import { Bar, BarChart, CartesianGrid, Cell, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import type { ProductDemand } from "@/hooks/useDemand";
 
 type Props = {
@@ -56,14 +56,14 @@ export function ProductComparisonChart({ rising, declining }: Props) {
             formatter={(value) => {
               const entry = combinedData.find((d) => d.demand === value);
               return [
-                `${new Intl.NumberFormat("id-ID").format(Number(value))} (${entry?.growth && entry.growth > 0 ? "+" : ""}${entry?.growth}%)`,
+                `${new Intl.NumberFormat("en-US").format(Number(value))} (${entry?.growth && entry.growth > 0 ? "+" : ""}${entry?.growth}%)`,
                 "Demand",
               ];
             }}
           />
           <Bar dataKey="demand" radius={[4, 4, 0, 0]}>
             {combinedData.map((entry, index) => (
-              <Bar key={`bar-${index}`} fill={entry.type === "rising" ? "#22C55E" : "#EF4444"} />
+              <Cell key={`cell-${index}`} fill={entry.type === "rising" ? "#22C55E" : "#EF4444"} />
             ))}
           </Bar>
         </BarChart>

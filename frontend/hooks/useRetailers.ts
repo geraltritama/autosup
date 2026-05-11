@@ -21,6 +21,7 @@ export type Retailer = {
   monthly_order_volume: number;
   total_purchase_amount: number;
   last_order_at: string;
+  partnership_status?: "partner" | "pending" | "none";
 };
 
 export type RetailerDetail = Retailer & {
@@ -142,6 +143,27 @@ export function useUpdateRetailer() {
     onSuccess: (_data, { retailerId }) => {
       qc.invalidateQueries({ queryKey: ["retailers"] });
       qc.invalidateQueries({ queryKey: ["retailers", retailerId] });
+    },
+  });
+}
+
+export function useDeleteRetailerPartnership() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (retailerId: string) => {
+      const uid = useAuthStore.getState().user?.user_id;
+      if (!uid) throw new Error("Not authenticated");
+      const { data } = await api.delete<ApiResponse<{ terminated: number }>>(
+        `/partnerships/between/${retailerId}?user_id=${uid}`,
+      );
+      return data.data;
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["retailers"] });
+      qc.invalidateQueries({ queryKey: ["partnerships"] });
+    },
+    onError: () => {
+      qc.invalidateQueries({ queryKey: ["retailers"] });
     },
   });
 }

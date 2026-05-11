@@ -24,14 +24,14 @@ export function SuppliersTrustPanel() {
           <div className="flex-1">
             <p className="text-sm font-medium text-[#0F172A]">Partnership NFT on-chain</p>
             <p className="mt-1 text-sm text-[#64748B]">
-              NFT Soulbound diterbitkan saat kemitraan disetujui — dicatat on-chain di Solana Devnet.
+              Soulbound NFTs are issued when partnerships are approved — recorded on-chain on Solana Devnet.
             </p>
             {isLoading ? (
               <div className="mt-2 h-4 w-24 animate-pulse rounded bg-slate-200" />
             ) : (
               <div className="mt-3 inline-flex items-center gap-2 rounded-lg bg-[#EDE9FE] px-3 py-1.5">
                 <span className="text-xl font-bold text-[#7C3AED]">{summary?.nft_issued ?? 0}</span>
-                <span className="text-xs text-[#6D28D9]">NFT diterbitkan</span>
+                <span className="text-xs text-[#6D28D9]">NFTs issued</span>
               </div>
             )}
           </div>
@@ -43,7 +43,7 @@ export function SuppliersTrustPanel() {
           <div className="flex-1">
             <p className="text-sm font-medium text-[#0F172A]">Backend-driven verification</p>
             <p className="mt-1 text-sm text-[#64748B]">
-              Trust layer dikelola backend — UI menampilkan mint address & explorer link tanpa wallet flow di browser.
+              Trust layer managed by backend — UI displays mint address & explorer link without browser wallet flow.
             </p>
             {isLoading ? (
               <div className="mt-2 h-4 w-32 animate-pulse rounded bg-slate-200" />
@@ -72,7 +72,7 @@ export function SuppliersTrustPanel() {
           <div className="flex-1">
             <p className="text-sm font-medium text-[#0F172A]">Renewal & network growth</p>
             <p className="mt-1 text-sm text-[#64748B]">
-              Renewal rate dan pertumbuhan jaringan dihitung dari data kemitraan aktual.
+              Renewal rate and network growth are calculated from actual partnership data.
             </p>
             {isLoading ? (
               <div className="mt-2 h-4 w-24 animate-pulse rounded bg-slate-200" />
@@ -97,7 +97,7 @@ export function SuppliersTrustPanel() {
           <div>
             <p className="text-sm font-medium text-[#0F172A]">Operational trust signal</p>
             <p className="mt-1 text-sm text-[#64748B]">
-              Setiap NFT partnership punya mint address dan explorer link Solana Devnet — klik ikon Explorer di card partner untuk lihat.
+              Each partnership NFT has a mint address and Solana Devnet explorer link — click the Explorer icon on the partner card to view.
             </p>
             <a
               href="https://explorer.solana.com/?cluster=devnet"

@@ -9,13 +9,13 @@ export const mockDistributorSummary: DashboardSummary = {
   ai_insights: [
     {
       type: "restock_alert",
-      message: "Tepung Terigu hampir habis. Disarankan restock 100 kg dari CV Maju Bersama.",
+      message: "Wheat Flour is almost out of stock. Recommended restock 100 kg from CV Maju Bersama.",
       urgency: "high",
       item_id: "item-uuid-001",
     },
     {
       type: "demand_forecast",
-      message: "Permintaan Gula Pasir diprediksi naik 20% minggu depan.",
+      message: "Sugar demand predicted to increase 20% next week.",
       urgency: "medium",
       item_id: "item-uuid-002",
     },
@@ -30,7 +30,7 @@ export const mockSupplierSummary: DashboardSummary = {
   ai_insights: [
     {
       type: "demand_alert",
-      message: "Permintaan Tepung Terigu meningkat 20% minggu ini dari distributor partner.",
+      message: "Wheat Flour demand increased 20% this week from partner distributors.",
       urgency: "medium",
       item_id: "item-uuid-001",
     },
@@ -64,19 +64,19 @@ export const mockRetailerSummary: DashboardSummary = {
   ai_insights: [
     {
       type: "restock_alert",
-      message: "Kopi Arabika tinggal 2 kg, di bawah minimum 10 kg. Restock segera dari Distributor Nusantara.",
+      message: "Arabica Coffee only 2 kg left, below minimum 10 kg. Restock immediately from Distributor Nusantara.",
       urgency: "high",
       item_id: "item-uuid-r01",
     },
     {
       type: "purchasing_optimization",
-      message: "Gabungkan order detergen + minuman ke satu PO untuk hemat ongkir ~12%.",
+      message: "Combine detergent + beverage order into one PO to save ~12% shipping costs.",
       urgency: "medium",
       item_id: "item-uuid-r02",
     },
     {
       type: "cash_flow_recommendation",
-      message: "Tunda pembayaran invoice non-essential 3 hari untuk jaga cash flow minggu ini.",
+      message: "Delay non-essential invoice payments by 3 days to maintain cash flow this week.",
       urgency: "low",
       item_id: "item-uuid-r03",
     },

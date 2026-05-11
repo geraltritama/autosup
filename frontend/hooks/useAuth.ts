@@ -44,7 +44,7 @@ export function useLogin() {
     try {
       const { data: res } = await api.post<ApiResponse<LoginResponseData>>("/auth/login", payload);
       if (!res.success || !res.data) {
-        setError(res.message ?? "Login gagal. Periksa email dan password kamu.");
+        setError(res.message ?? "Login failed. Please check your email and password.");
         return;
       }
       const { access_token, refresh_token, ...user } = res.data;
@@ -55,9 +55,9 @@ export function useLogin() {
       const code = apiError.response?.data?.error_code;
       const msg = apiError.response?.data?.message;
       if (code === "CAPTCHA_FAILED" || code === "CAPTCHA_MISSING") {
-        setError("Verifikasi gagal, coba lagi.");
+        setError("Verification failed, please try again.");
       } else {
-        setError(msg ?? "Login gagal. Periksa email dan password kamu.");
+        setError(msg ?? "Login failed. Please check your email and password.");
       }
     } finally {
       setIsLoading(false);
@@ -81,12 +81,12 @@ export function useRegister() {
     try {
       const { data: res } = await api.post<ApiResponse<RegisterResponseData>>("/auth/register", payload);
       if (!res.success) {
-        setError(res.message ?? "Registrasi gagal. Coba lagi.");
+        setError(res.message ?? "Registration failed. Please try again.");
         return;
       }
       if (!res.data?.access_token) {
         // No auto-login token — email confirmation required
-        setSuccessMessage("Registrasi berhasil! Silakan login dengan akun yang sudah dibuat.");
+        setSuccessMessage("Registration successful! Please log in with your created account.");
         return;
       }
       // Auto-login on register
@@ -104,7 +104,7 @@ export function useRegister() {
       router.push("/dashboard/dashboard");
     } catch (err: unknown) {
       const apiError = err as { response?: { data?: ApiResponse } };
-      setError(apiError.response?.data?.message ?? "Registrasi gagal. Periksa koneksi atau coba lagi.");
+      setError(apiError.response?.data?.message ?? "Registration failed. Please check your connection or try again.");
     } finally {
       setIsLoading(false);
     }

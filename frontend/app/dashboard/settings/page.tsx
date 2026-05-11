@@ -52,16 +52,16 @@ import { useAuthStore } from "@/store/useAuthStore";
 type Tab = "profile" | "business" | "notifications" | "security" | "integrations" | "wallet";
 
 const tabs: { id: Tab; label: string; icon: React.ElementType }[] = [
-  { id: "profile", label: "Profil", icon: User },
-  { id: "business", label: "Bisnis", icon: Building2 },
-  { id: "notifications", label: "Notifikasi", icon: Bell },
-  { id: "security", label: "Keamanan", icon: Shield },
-  { id: "integrations", label: "Integrasi", icon: Plug },
+  { id: "profile", label: "Profile", icon: User },
+  { id: "business", label: "Business", icon: Building2 },
+  { id: "notifications", label: "Notifications", icon: Bell },
+  { id: "security", label: "Security", icon: Shield },
+  { id: "integrations", label: "Integrations", icon: Plug },
   { id: "wallet", label: "Wallet", icon: Wallet },
 ];
 
 function formatDate(iso: string) {
-  return new Intl.DateTimeFormat("id-ID", {
+  return new Intl.DateTimeFormat("en-US", {
     day: "numeric",
     month: "short",
     year: "numeric",
@@ -86,7 +86,7 @@ function ProfileTab() {
   }, [data]);
 
   if (isError) {
-    return <PageErrorState message="Gagal memuat data profil" onRetry={() => refetch()} />;
+    return <PageErrorState message="Failed to load profile data" onRetry={() => refetch()} />;
   }
 
   if (isLoading || !data) {
@@ -124,7 +124,7 @@ function ProfileTab() {
     <form onSubmit={handleSave} className="space-y-6">
       <Card className="rounded-2xl">
         <CardHeader>
-          <CardTitle className="text-base">Informasi Profil</CardTitle>
+          <CardTitle className="text-base">Profile Informatione</CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="flex items-center gap-4">
@@ -142,27 +142,27 @@ function ProfileTab() {
 
           <div className="grid gap-4 sm:grid-cols-2">
             <div className="space-y-1.5">
-              <Label htmlFor="full_name">Nama Lengkap</Label>
+              <Label htmlFor="full_name">Full Name</Label>
               <Input
                 id="full_name"
                 value={form.full_name}
                 onChange={(e) => setForm((f) => ({ ...f, full_name: e.target.value }))}
-                placeholder="Masukkan nama lengkap"
+                placeholder="Enter full name"
               />
             </div>
             <div className="space-y-1.5">
-              <Label htmlFor="phone">No. Telepon</Label>
+              <Label htmlFor="phone">Phone Number</Label>
               <Input
                 id="phone"
                 value={form.phone}
                 onChange={(e) => setForm((f) => ({ ...f, phone: e.target.value }))}
-                placeholder="Masukkan no. telepon"
+                placeholder="Enter phone number"
               />
             </div>
             <div className="space-y-1.5">
               <Label htmlFor="email">Email</Label>
               <Input id="email" value={displayEmail} disabled className="text-[#94A3B8]" />
-              <p className="text-xs text-[#94A3B8]">Email tidak dapat diubah.</p>
+              <p className="text-xs text-[#94A3B8]">Email cannot be changed.</p>
             </div>
           </div>
         </CardContent>
@@ -175,10 +175,10 @@ function ProfileTab() {
           ) : (
             <Save className="h-4 w-4" />
           )}
-          Simpan Perubahan
+          Save Changes
         </Button>
         {saved && (
-          <span className="text-sm text-[#22C55E]">Profil berhasil diperbarui.</span>
+          <span className="text-sm text-[#22C55E]">Profile updated successfully.</span>
         )}
       </div>
     </form>
@@ -209,7 +209,7 @@ function BusinessTab() {
   }, [data]);
 
   if (isError) {
-    return <PageErrorState message="Gagal memuat data bisnis" onRetry={() => refetch()} />;
+    return <PageErrorState message="Failed to load business data" onRetry={() => refetch()} />;
   }
 
   if (isLoading || !data) {
@@ -234,40 +234,40 @@ function BusinessTab() {
     <form onSubmit={handleSave} className="space-y-6">
       <Card className="rounded-2xl">
         <CardHeader>
-          <CardTitle className="text-base">Informasi Bisnis</CardTitle>
+          <CardTitle className="text-base">Business Information</CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="grid gap-4 sm:grid-cols-2">
             <div className="space-y-1.5">
-              <Label htmlFor="business_name">Nama Bisnis</Label>
+              <Label htmlFor="business_name">Business Name</Label>
               <Input
                 id="business_name"
                 value={form.business_name}
                 onChange={(e) => setForm((f) => ({ ...f, business_name: e.target.value }))}
-                placeholder="Masukkan nama bisnis"
+                placeholder="Enter business name"
               />
             </div>
             <div className="space-y-1.5">
-              <Label htmlFor="business_type">Jenis Bisnis</Label>
+              <Label htmlFor="business_type">Business Type</Label>
               <Input
                 id="business_type"
                 value={form.business_type}
                 onChange={(e) => setForm((f) => ({ ...f, business_type: e.target.value }))}
-                placeholder="Masukkan jenis bisnis"
+                placeholder="Enter business type"
               />
             </div>
             <div className="space-y-1.5">
-              <Label htmlFor="tax_id">NPWP</Label>
+              <Label htmlFor="tax_id">Tax ID</Label>
               <Input
                 id="tax_id"
                 value={form.tax_id}
                 onChange={(e) => setForm((f) => ({ ...f, tax_id: e.target.value }))}
-                placeholder="Masukkan NPWP"
+                placeholder="Masukkan Tax ID"
               />
             </div>
             {data.preferred_currency && (
               <div className="space-y-1.5">
-                <Label>Mata Uang</Label>
+                <Label>Currency</Label>
                 <Input defaultValue={data.preferred_currency} readOnly className="bg-[#F8FAFC]" />
               </div>
             )}
@@ -281,7 +281,7 @@ function BusinessTab() {
 
           {data.warehouse_locations && data.warehouse_locations.length > 0 && (
             <div className="space-y-2 pt-2">
-              <Label>Lokasi Gudang</Label>
+              <Label>Warehouse Locations</Label>
               <div className="space-y-2">
                 {data.warehouse_locations.map((wh) => (
                   <div
@@ -298,7 +298,7 @@ function BusinessTab() {
 
           {data.service_regions && data.service_regions.length > 0 && (
             <div className="space-y-2 pt-2">
-              <Label>Area Layanan</Label>
+              <Label>Service Areas</Label>
               <div className="flex flex-wrap gap-2">
                 {data.service_regions.map((r) => (
                   <Badge key={r} tone="info">
@@ -311,7 +311,7 @@ function BusinessTab() {
 
           {data.branch_locations && data.branch_locations.length > 0 && (
             <div className="space-y-2 pt-2">
-              <Label>Lokasi Cabang</Label>
+              <Label>Branch Locations</Label>
               <div className="space-y-2">
                 {data.branch_locations.map((br) => (
                   <div
@@ -328,20 +328,20 @@ function BusinessTab() {
 
           {data.billing_subscription && (
             <div className="space-y-2 pt-2">
-              <Label>Langganan</Label>
+              <Label>Subscription</Label>
               <div className="rounded-xl border border-[#E2E8F0] bg-[#F8FAFC] px-4 py-3 space-y-1.5">
                 <div className="flex justify-between text-sm">
                   <span className="text-[#64748B]">Plan</span>
                   <Badge tone="success">{data.billing_subscription.current_plan}</Badge>
                 </div>
                 <div className="flex justify-between text-sm">
-                  <span className="text-[#64748B]">Perpanjangan</span>
+                  <span className="text-[#64748B]">Renewal</span>
                   <span className="font-medium text-[#0F172A]">
                     {data.billing_subscription.next_renewal}
                   </span>
                 </div>
                 <div className="flex justify-between text-sm">
-                  <span className="text-[#64748B]">Metode Bayar</span>
+                  <span className="text-[#64748B]">Payment Method</span>
                   <span className="font-medium text-[#0F172A]">
                     {data.billing_subscription.payment_method}
                   </span>
@@ -359,9 +359,9 @@ function BusinessTab() {
           ) : (
             <Save className="h-4 w-4" />
           )}
-          Simpan
+          Save
         </Button>
-        {saved && <span className="text-sm text-[#22C55E]">Tersimpan.</span>}
+        {saved && <span className="text-sm text-[#22C55E]">Saved.</span>}
       </div>
     </form>
   );
@@ -375,7 +375,7 @@ function NotificationsTab() {
   const [saved, setSaved] = useState(false);
 
   if (isError) {
-    return <PageErrorState message="Gagal memuat pengaturan notifikasi" onRetry={() => refetch()} />;
+    return <PageErrorState message="Failed to load notification settings" onRetry={() => refetch()} />;
   }
 
   if (isLoading || !data) {
@@ -393,13 +393,13 @@ function NotificationsTab() {
   };
 
   const prefLabels: Record<keyof typeof data.preferences, string> = {
-    low_stock_alerts: "Alert Stok Rendah",
-    new_order_alerts: "Pesanan Baru",
+    low_stock_alerts: "Low Stock Alerts",
+    new_order_alerts: "New Orders",
     partnership_request_alerts: "Request Partnership",
-    payment_confirmation: "Konfirmasi Pembayaran",
-    overdue_payment_reminder: "Pengingat Jatuh Tempo",
-    ai_recommendation_alerts: "Rekomendasi AI",
-    weekly_analytics_report: "Laporan Mingguan",
+    payment_confirmation: "Payment Confirmation",
+    overdue_payment_reminder: "Overdue Payment Reminder",
+    ai_recommendation_alerts: "AI Recommendations",
+    weekly_analytics_report: "Weekly Report",
   };
 
   type ChannelKey = "email" | "in_app" | "sms";
@@ -437,13 +437,13 @@ function NotificationsTab() {
     <div className="space-y-6">
       {saved && (
         <div className="rounded-xl border border-green-200 bg-green-50 px-4 py-3 text-sm text-[#22C55E]">
-          Pengaturan notifikasi disimpan.
+          Notification settings saved.
         </div>
       )}
 
       <Card className="rounded-2xl">
         <CardHeader>
-          <CardTitle className="text-base">Saluran Notifikasi</CardTitle>
+          <CardTitle className="text-base">Notification Channels</CardTitle>
         </CardHeader>
         <CardContent className="space-y-3">
           {(Object.keys(notifData.channels) as ChannelKey[]).map((key) => (
@@ -461,7 +461,7 @@ function NotificationsTab() {
 
       <Card className="rounded-2xl">
         <CardHeader>
-          <CardTitle className="text-base">Preferensi Notifikasi</CardTitle>
+          <CardTitle className="text-base">Notification Preferences</CardTitle>
         </CardHeader>
         <CardContent className="space-y-3">
           {(Object.keys(notifData.preferences) as PrefKey[]).map(
@@ -538,14 +538,14 @@ function SecurityTab() {
           {verified2FA && (
             <div className="flex items-center gap-2 rounded-xl border border-green-200 bg-green-50 px-4 py-3 text-sm text-[#22C55E]">
               <Check className="h-4 w-4" />
-              2FA berhasil diverifikasi dan diaktifkan!
+              2FA successfully verified and enabled!
             </div>
           )}
 
           {!qrData ? (
             <div className="flex items-center justify-between">
               <p className="text-sm text-[#64748B]">
-                Tambahkan lapisan keamanan dengan TOTP authenticator (Google Authenticator,
+                Add a security layer with a TOTP authenticator (Google Authenticator,
                 Authy, dll).
               </p>
               <Button
@@ -559,14 +559,14 @@ function SecurityTab() {
                 ) : (
                   <Lock className="mr-2 h-4 w-4" />
                 )}
-                Aktifkan 2FA
+                Enable 2FA
               </Button>
             </div>
           ) : (
             <div className="space-y-4">
               <div className="rounded-xl border border-[#E2E8F0] bg-[#F8FAFC] p-4 space-y-3">
                 <p className="text-sm font-medium text-[#0F172A]">
-                  Scan QR code ini dengan aplikasi authenticator Anda:
+                  Scan this QR code with your authenticator app:
                 </p>
                 <div className="flex h-48 w-48 items-center justify-center rounded-xl border border-[#E2E8F0] bg-white mx-auto">
                   <QRCodeSVG value={qrData.qr_code_url} size={176} />
@@ -582,7 +582,7 @@ function SecurityTab() {
                 <Input
                   value={totpCode}
                   onChange={(e) => setTotpCode(e.target.value)}
-                  placeholder="Masukkan kode TOTP dari authenticator"
+                  placeholder="Enter TOTP code from authenticator"
                   className="flex-1"
                 />
                 <Button
@@ -595,7 +595,7 @@ function SecurityTab() {
                   ) : (
                     <Check className="h-4 w-4" />
                   )}
-                  Verifikasi
+                  Verify
                 </Button>
               </form>
               <form onSubmit={handleDisable}>
@@ -605,7 +605,7 @@ function SecurityTab() {
                   disabled={disable2FA.isPending}
                   className="text-[#94A3B8] hover:text-[#EF4444]"
                 >
-                  Batal & Nonaktifkan
+                  Cancel & Disable
                 </Button>
               </form>
             </div>
@@ -618,7 +618,7 @@ function SecurityTab() {
         <CardHeader>
           <div className="flex items-center gap-2">
             <Monitor className="h-4 w-4 text-[#3B82F6]" />
-            <CardTitle className="text-base">Sesi Aktif</CardTitle>
+            <CardTitle className="text-base">Active Sessions</CardTitle>
           </div>
         </CardHeader>
         <CardContent>
@@ -627,7 +627,7 @@ function SecurityTab() {
               <Loader2 className="h-5 w-5 animate-spin text-[#94A3B8]" />
             </div>
           ) : isSessionsError ? (
-            <PageErrorState message="Gagal memuat data sesi" onRetry={() => refetchSessions()} />
+            <PageErrorState message="Failed to load session data" onRetry={() => refetchSessions()} />
           ) : (
             <div className="space-y-3">
               {sessions?.map((s) => (
@@ -640,7 +640,7 @@ function SecurityTab() {
                       <p className="text-sm font-medium text-[#0F172A]">{s.device}</p>
                       {s.is_current && (
                         <Badge tone="success" className="text-[10px]">
-                          Sesi Ini
+                          Current Session
                         </Badge>
                       )}
                     </div>
@@ -729,8 +729,8 @@ function Web3WalletCard() {
             </div>
             <p className="text-xs text-[#64748B]">
               {isBrowser
-                ? "Pubkey disimpan di backend — transaksi on-chain ditandatangani authority keypair backend."
-                : "Wallet di-generate otomatis. Hubungkan Phantom atau MetaMask untuk pakai wallet sendiri."}
+                ? "Pubkey stored in backend — on-chain transactions are signed by the backend authority keypair."
+                : "Wallet is auto-generated. Connect Phantom or MetaMask to use your own wallet."}
             </p>
             {isBrowser && (
               <Button
@@ -740,7 +740,7 @@ function Web3WalletCard() {
                 disabled={disconnect.isPending}
                 onClick={() => disconnect.mutate(wType)}
               >
-                {disconnect.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : `Lepas ${wLabel}`}
+                {disconnect.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : `Disconnect ${wLabel}`}
               </Button>
             )}
           </div>
@@ -752,7 +752,7 @@ function Web3WalletCard() {
           {isBrowser && wType === "phantom" ? (
             <div className="flex items-center gap-2 rounded-xl border border-[#BBF7D0] bg-[#F0FDF4] px-4 py-2.5">
               <span className="text-base">👻</span>
-              <span className="text-sm font-medium text-[#15803D]">Phantom terhubung</span>
+              <span className="text-sm font-medium text-[#15803D]">Phantom connected</span>
               <Badge tone="success" className="text-[10px] ml-1">Active</Badge>
             </div>
           ) : phantomAvailable ? (
@@ -787,7 +787,7 @@ function Web3WalletCard() {
           {isBrowser && wType === "metamask" ? (
             <div className="flex items-center gap-2 rounded-xl border border-[#BBF7D0] bg-[#F0FDF4] px-4 py-2.5">
               <span className="text-base">🦊</span>
-              <span className="text-sm font-medium text-[#15803D]">MetaMask terhubung</span>
+              <span className="text-sm font-medium text-[#15803D]">MetaMask connected</span>
               <Badge tone="success" className="text-[10px] ml-1">Active</Badge>
             </div>
           ) : metamaskAvailable ? (
@@ -827,7 +827,7 @@ function IntegrationsTab() {
   const { data, isLoading, isError, refetch } = useIntegrationsSettings();
 
   if (isError) {
-    return <PageErrorState message="Gagal memuat data integrasi" onRetry={() => refetch()} />;
+    return <PageErrorState message="Failed to load integration data" onRetry={() => refetch()} />;
   }
 
   if (isLoading || !data) {
@@ -842,19 +842,19 @@ function IntegrationsTab() {
     {
       key: "erp",
       label: "ERP System",
-      desc: "Integrasi dengan sistem ERP untuk sinkronisasi data inventory dan order.",
+      desc: "ERP system integration for syncing inventory and order data.",
       data: data.erp,
     },
     {
       key: "payment_gateway",
       label: "Payment Gateway",
-      desc: "Xendit / Midtrans untuk pemrosesan pembayaran IDR.",
+      desc: "Xendit / Midtrans for IDR payment processing.",
       data: data.payment_gateway,
     },
     {
       key: "logistics",
       label: "Logistics Partner",
-      desc: "Integrasi tracking pengiriman dengan mitra logistik.",
+      desc: "Shipping tracking integration with logistics partners.",
       data: data.logistics,
     },
   ] as const;
@@ -865,7 +865,7 @@ function IntegrationsTab() {
 
       <Card className="rounded-2xl">
         <CardHeader>
-          <CardTitle className="text-base">Sistem Eksternal</CardTitle>
+          <CardTitle className="text-base">External Systems</CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
           {integrations.map((item) => (
@@ -883,11 +883,11 @@ function IntegrationsTab() {
               </div>
               <div className="flex items-center gap-2">
                 <Badge tone={item.data.connected ? "success" : "neutral"}>
-                  {item.data.connected ? "Terhubung" : "Tidak Aktif"}
+                  {item.data.connected ? "Connected" : "Inactive"}
                 </Badge>
                 {!item.data.connected && (
                   <Button variant="outline" size="sm">
-                    Hubungkan
+                    Connect
                   </Button>
                 )}
               </div>
@@ -908,7 +908,7 @@ function IntegrationsTab() {
         </CardHeader>
         <CardContent className="space-y-3">
           {data.api_keys.length === 0 ? (
-            <p className="text-sm text-[#64748B]">Belum ada API key.</p>
+            <p className="text-sm text-[#64748B]">No API keys yet.</p>
           ) : (
             data.api_keys.map((k) => (
               <div
@@ -918,7 +918,7 @@ function IntegrationsTab() {
                 <div>
                   <p className="text-sm font-medium text-[#0F172A]">{k.label}</p>
                   <p className="text-xs text-[#64748B]">
-                    Dibuat {formatDate(k.created_at)} · Terakhir dipakai{" "}
+                    Created {formatDate(k.created_at)} · Last used{" "}
                     {formatDate(k.last_used_at)}
                   </p>
                 </div>
@@ -927,7 +927,7 @@ function IntegrationsTab() {
                   size="sm"
                   className="text-[#EF4444] hover:text-[#EF4444]"
                 >
-                  Hapus
+                  Delete
                 </Button>
               </div>
             ))
@@ -953,7 +953,7 @@ function WalletTab() {
   }
 
   if (isError) {
-    return <PageErrorState message="Gagal memuat data wallet" onRetry={() => refetch()} />;
+    return <PageErrorState message="Failed to load wallet data" onRetry={() => refetch()} />;
   }
 
   return (
@@ -1003,7 +1003,7 @@ function WalletTab() {
                   rel="noopener noreferrer"
                   className="inline-flex items-center gap-1.5 text-xs font-medium text-[#7C3AED] hover:underline"
                 >
-                  Lihat di Solana Explorer <ExternalLink className="h-3 w-3" />
+                  View on Solana Explorer <ExternalLink className="h-3 w-3" />
                 </a>
               </div>
             </>
@@ -1020,7 +1020,7 @@ function WalletTab() {
         </CardHeader>
         <CardContent className="space-y-3">
           <p className="text-sm text-[#64748B]">
-            Minta 2 SOL gratis dari Solana Devnet faucet untuk testing blockchain features.
+            Request 2 free SOL from Solana Devnet faucet for testing blockchain features.
           </p>
           <Button
             onClick={() => airdrop.mutate()}
@@ -1036,11 +1036,11 @@ function WalletTab() {
           </Button>
           {airdrop.isSuccess && (
             <p className="text-xs text-[#16A34A]">
-              {airdrop.data?.success ? "Airdrop berhasil! Balance akan update sebentar." : "Airdrop gagal — coba lagi."}
+              {airdrop.data?.success ? "Airdrop successful! Balance will update shortly." : "Airdrop failed — try again."}
             </p>
           )}
           {airdrop.isError && (
-            <p className="text-xs text-[#DC2626]">Airdrop gagal. Pastikan koneksi ke Solana Devnet aktif.</p>
+            <p className="text-xs text-[#DC2626]">Airdrop failed. Make sure the connection to Solana Devnet is active.</p>
           )}
         </CardContent>
       </Card>
@@ -1057,12 +1057,11 @@ export default function SettingsPage() {
     <main className="space-y-6 px-6 py-6 lg:px-8 lg:py-8">
       <section className="flex flex-col gap-4 rounded-3xl border border-[#E2E8F0] bg-white px-6 py-6 shadow-[0_1px_2px_rgba(15,23,42,0.04)]">
         <div className="space-y-3">
-          <Badge tone="neutral">Pengaturan</Badge>
+          <Badge tone="neutral">Settings</Badge>
           <div className="space-y-2">
             <h1 className="text-3xl font-semibold tracking-tight text-[#0F172A]">Settings</h1>
             <p className="max-w-3xl text-sm leading-7 text-[#64748B]">
-              Kelola profil, informasi bisnis, notifikasi, keamanan akun, dan integrasi sistem
-              Anda.
+              Manage profile, business information, notifications, account security, and system integrations.
             </p>
           </div>
         </div>

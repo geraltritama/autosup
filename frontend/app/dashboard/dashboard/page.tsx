@@ -12,14 +12,12 @@ import {
   RefreshCw,
   ShoppingBag,
   ShoppingCart,
-  Sparkles,
   Target,
   Truck,
   Users,
   Wallet,
 } from "lucide-react";
 import { useDashboard, type DashboardSummary } from "@/hooks/useDashboard";
-import { useAuthStore } from "@/store/useAuthStore";
 import { InsightCard } from "@/components/dashboard/insight-card";
 import { KpiCard } from "@/components/dashboard/kpi-card";
 import { Badge } from "@/components/ui/badge";
@@ -32,7 +30,7 @@ function formatRupiah(amount: number): string {
   if (amount >= 1_000_000) {
     return `Rp ${(amount / 1_000_000).toFixed(1)}jt`;
   }
-  return `Rp ${amount.toLocaleString("id-ID")}`;
+  return `Rp ${amount.toLocaleString("en-US")}`;
 }
 
 // ─── Loading ────────────────────────────────────────────────────────────────
@@ -60,41 +58,13 @@ function DashboardError({ onRetry }: { onRetry: () => void }) {
         <AlertCircle className="h-6 w-6" />
       </div>
       <div className="space-y-1 text-center">
-        <p className="font-semibold text-[#0F172A]">Gagal memuat dashboard</p>
-        <p className="text-sm text-[#64748B]">Cek koneksi kamu dan coba lagi.</p>
+        <p className="font-semibold text-[#0F172A]">Failed to load dashboard</p>
+        <p className="text-sm text-[#64748B]">Check your connection and try again.</p>
       </div>
       <Button variant="secondary" onClick={onRetry} className="gap-2">
         <RefreshCw className="h-4 w-4" />
-        Coba lagi
+        Try again
       </Button>
-    </main>
-  );
-}
-
-// ─── Empty ───────────────────────────────────────────────────────────────────
-
-function DashboardEmpty({ role }: { role: "distributor" | "supplier" | "retailer" }) {
-  const copy = {
-    distributor: { label: "Mulai dengan menambahkan item ke inventory.", cta: "Tambah inventory" },
-    supplier: { label: "Mulai dengan mengelola stok produk kamu.", cta: "Kelola produk" },
-    retailer: { label: "Mulai dengan menambahkan stok operasional kamu.", cta: "Tambah inventory" },
-  }[role];
-
-  return (
-    <main className="flex min-h-[60vh] flex-col items-center justify-center gap-4 px-6">
-      <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-[#EFF6FF] text-[#3B82F6]">
-        <Sparkles className="h-6 w-6" />
-      </div>
-      <div className="space-y-1 text-center">
-        <p className="font-semibold text-[#0F172A]">Dashboard kamu masih kosong</p>
-        <p className="text-sm text-[#64748B]">{copy.label}</p>
-      </div>
-      <Link href="/dashboard/inventory">
-        <Button className="gap-2">
-          <Boxes className="h-4 w-4" />
-          {copy.cta}
-        </Button>
-      </Link>
     </main>
   );
 }
@@ -111,7 +81,7 @@ function DistributorDashboard({ data }: { data: Extract<DashboardSummary, { role
       icon: Boxes,
     },
     {
-      label: "Order aktif",
+      label: "Active orders",
       value: String(data.orders.active_orders),
       meta: `${data.orders.pending_orders} pending`,
       tone: data.orders.pending_orders > 0 ? ("warning" as const) : ("success" as const),
@@ -122,8 +92,8 @@ function DistributorDashboard({ data }: { data: Extract<DashboardSummary, { role
       value: String(data.suppliers.partner_count),
       meta:
         data.suppliers.pending_requests > 0
-          ? `${data.suppliers.pending_requests} request terkirim`
-          : "Semua aktif",
+          ? `${data.suppliers.pending_requests} requests sent`
+          : "All active",
       tone: "info" as const,
       icon: Building2,
     },
@@ -132,8 +102,8 @@ function DistributorDashboard({ data }: { data: Extract<DashboardSummary, { role
       value: String(data.retailers.partner_count),
       meta:
         data.retailers.pending_requests > 0
-          ? `${data.retailers.pending_requests} request masuk`
-          : "Semua aktif",
+          ? `${data.retailers.pending_requests} requests received`
+          : "All active",
       tone: "info" as const,
       icon: Users,
     },
@@ -147,22 +117,22 @@ function DistributorDashboard({ data }: { data: Extract<DashboardSummary, { role
           <Badge tone="info">Distributor dashboard</Badge>
           <div className="space-y-1">
             <h1 className="text-3xl font-semibold tracking-tight text-[#0F172A]">
-              Monitor inventory, orders, dan partner
+              Monitor inventory, orders, and partners
             </h1>
             <p className="max-w-2xl text-sm leading-7 text-[#64748B]">
-              Pantau stok, kelola pesanan ke supplier dan dari retailer, dan ambil keputusan restock lebih cepat dengan AI.
+              Monitor stock, manage orders to suppliers and from retailers, and make faster restock decisions with AI.
             </p>
           </div>
         </div>
         <div className="flex flex-wrap gap-3">
           <Link href="/dashboard/suppliers">
-            <Button variant="secondary">Cari supplier</Button>
+            <Button variant="secondary">Find suppliers</Button>
           </Link>
           <Link href="/dashboard/retailers">
-            <Button variant="secondary">Kelola retailer</Button>
+            <Button variant="secondary">Manage retailers</Button>
           </Link>
           <Link href="/dashboard/orders">
-            <Button>Buat order</Button>
+            <Button>Create Order</Button>
           </Link>
         </div>
       </section>
@@ -190,14 +160,14 @@ function DistributorDashboard({ data }: { data: Extract<DashboardSummary, { role
                 <AlertCircle className="h-5 w-5 text-[#EF4444]" />
                 <div>
                   <p className="text-sm font-semibold text-[#0F172A]">
-                    {data.inventory.out_of_stock_count} item habis stok
+                    {data.inventory.out_of_stock_count} items out of stock
                   </p>
-                  <p className="text-xs text-[#64748B]">Perlu restock segera.</p>
+                  <p className="text-xs text-[#64748B]">Needs restock immediately.</p>
                 </div>
               </div>
               <Link href="/dashboard/inventory?status=out_of_stock">
                 <Button variant="secondary" className="shrink-0 text-[#EF4444]">
-                  Lihat inventory
+                  View inventory
                 </Button>
               </Link>
             </CardContent>
@@ -215,7 +185,7 @@ function DistributorDashboard({ data }: { data: Extract<DashboardSummary, { role
             </p>
             <Link href="/dashboard/inventory?status=low_stock">
               <p className="mt-2 text-xs font-medium text-[#3B82F6] hover:underline">
-                Lihat semua →
+                View all →
               </p>
             </Link>
           </CardContent>
@@ -228,7 +198,7 @@ function DistributorDashboard({ data }: { data: Extract<DashboardSummary, { role
             </p>
             <Link href="/dashboard/orders?status=pending">
               <p className="mt-2 text-xs font-medium text-[#3B82F6] hover:underline">
-                Lihat semua →
+                View all →
               </p>
             </Link>
           </CardContent>
@@ -241,7 +211,7 @@ function DistributorDashboard({ data }: { data: Extract<DashboardSummary, { role
             </p>
             <Link href="/dashboard/suppliers?type=partner">
               <p className="mt-2 text-xs font-medium text-[#3B82F6] hover:underline">
-                Lihat semua →
+                View all →
               </p>
             </Link>
           </CardContent>
@@ -254,7 +224,7 @@ function DistributorDashboard({ data }: { data: Extract<DashboardSummary, { role
             </p>
             <Link href="/dashboard/retailers">
               <p className="mt-2 text-xs font-medium text-[#3B82F6] hover:underline">
-                Lihat semua →
+                View all →
               </p>
             </Link>
           </CardContent>
@@ -269,7 +239,7 @@ function DistributorDashboard({ data }: { data: Extract<DashboardSummary, { role
 function SupplierDashboard({ data }: { data: Extract<DashboardSummary, { role: "supplier" }> }) {
   const kpis = [
     {
-      label: "Produk aktif",
+      label: "Active products",
       value: String(data.products.total_active),
       meta: `${data.products.low_stock_count} low stock`,
       tone: data.products.low_stock_count > 0 ? ("warning" as const) : ("success" as const),
@@ -278,7 +248,7 @@ function SupplierDashboard({ data }: { data: Extract<DashboardSummary, { role: "
     {
       label: "Incoming orders",
       value: String(data.orders.incoming_orders),
-      meta: `${data.orders.processing} sedang diproses`,
+      meta: `${data.orders.processing} processing`,
       tone: data.orders.incoming_orders > 0 ? ("info" as const) : ("success" as const),
       icon: PackageCheck,
     },
@@ -287,13 +257,13 @@ function SupplierDashboard({ data }: { data: Extract<DashboardSummary, { role: "
       value: String(data.partners.distributor_count),
       meta:
         data.partners.pending_requests > 0
-          ? `${data.partners.pending_requests} request masuk`
-          : "Semua aktif",
+          ? `${data.partners.pending_requests} requests received`
+          : "All active",
       tone: data.partners.pending_requests > 0 ? ("warning" as const) : ("success" as const),
       icon: Users,
     },
     {
-      label: "Selesai bulan ini",
+      label: "Completed this month",
       value: String(data.orders.completed_this_month),
       meta: "order fulfilled",
       tone: "success" as const,
@@ -309,10 +279,10 @@ function SupplierDashboard({ data }: { data: Extract<DashboardSummary, { role: "
           <Badge tone="info">Supplier dashboard</Badge>
           <div className="space-y-1">
             <h1 className="text-3xl font-semibold tracking-tight text-[#0F172A]">
-              Monitor produk, orders, dan distributor
+              Monitor products, orders, and distributors
             </h1>
             <p className="max-w-2xl text-sm leading-7 text-[#64748B]">
-              Pantau stok produk, proses incoming order, dan kelola kemitraan dengan distributor.
+              Monitor product stock, process incoming orders, and manage partnerships with distributors.
             </p>
           </div>
         </div>
@@ -321,7 +291,7 @@ function SupplierDashboard({ data }: { data: Extract<DashboardSummary, { role: "
             <Button variant="secondary">Partnership requests</Button>
           </Link>
           <Link href="/dashboard/orders">
-            <Button>Lihat orders</Button>
+            <Button>View orders</Button>
           </Link>
         </div>
       </section>
@@ -349,14 +319,14 @@ function SupplierDashboard({ data }: { data: Extract<DashboardSummary, { role: "
                 <Users className="h-5 w-5 text-[#F59E0B]" />
                 <div>
                   <p className="text-sm font-semibold text-[#0F172A]">
-                    {data.partners.pending_requests} partnership request menunggu
+                    {data.partners.pending_requests} partnership requests pending
                   </p>
-                  <p className="text-xs text-[#64748B]">Tinjau dan respond request dari distributor.</p>
+                  <p className="text-xs text-[#64748B]">Review and respond to requests from distributors.</p>
                 </div>
               </div>
 <Link href="/dashboard/distributors">
                 <Button variant="secondary" className="shrink-0">
-                  Tinjau request
+                  Review requests
                 </Button>
               </Link>
             </CardContent>
@@ -368,24 +338,24 @@ function SupplierDashboard({ data }: { data: Extract<DashboardSummary, { role: "
       <section className="grid gap-4 md:grid-cols-3">
         <Card className="rounded-2xl">
           <CardContent className="p-5">
-            <p className="text-xs uppercase tracking-[0.18em] text-[#64748B]">Low stock produk</p>
+            <p className="text-xs uppercase tracking-[0.18em] text-[#64748B]">Low stock products</p>
             <p className="mt-2 text-3xl font-semibold text-[#0F172A]">
               {data.products.low_stock_count}
             </p>
             <Link href="/dashboard/inventory?status=low_stock">
               <p className="mt-2 text-xs font-medium text-[#3B82F6] hover:underline">
-                Update stok →
+                Update stock →
               </p>
             </Link>
           </CardContent>
         </Card>
         <Card className="rounded-2xl">
           <CardContent className="p-5">
-            <p className="text-xs uppercase tracking-[0.18em] text-[#64748B]">Sedang diproses</p>
+            <p className="text-xs uppercase tracking-[0.18em] text-[#64748B]">Processing</p>
             <p className="mt-2 text-3xl font-semibold text-[#0F172A]">{data.orders.processing}</p>
             <Link href="/dashboard/orders?status=processing">
               <p className="mt-2 text-xs font-medium text-[#3B82F6] hover:underline">
-                Lihat orders →
+                View orders →
               </p>
             </Link>
           </CardContent>
@@ -398,7 +368,7 @@ function SupplierDashboard({ data }: { data: Extract<DashboardSummary, { role: "
             </p>
             <Link href="/dashboard/distributors">
               <p className="mt-2 text-xs font-medium text-[#3B82F6] hover:underline">
-                Lihat semua →
+                View all →
               </p>
             </Link>
           </CardContent>
@@ -420,23 +390,23 @@ function RetailerDashboard({ data }: { data: Extract<DashboardSummary, { role: "
       icon: ShoppingBag,
     },
     {
-      label: "Order aktif",
+      label: "Active orders",
       value: String(data.orders.active_orders),
-      meta: `${data.orders.in_transit} dalam pengiriman`,
+      meta: `${data.orders.in_transit} in transit`,
       tone: data.orders.active_orders > 0 ? ("info" as const) : ("success" as const),
       icon: Truck,
     },
     {
-      label: "Pengeluaran bulan ini",
+      label: "Monthly spending",
       value: formatRupiah(data.spending.monthly_spending),
-      meta: `${formatRupiah(data.spending.available_credit)} credit tersedia`,
+      meta: `${formatRupiah(data.spending.available_credit)} credit available`,
       tone: data.spending.available_credit > 0 ? ("success" as const) : ("danger" as const),
       icon: CreditCard,
     },
     {
-      label: "Forecast accuracy",
+      label: "Demand Stability",
       value: `${data.forecast_accuracy_pct}%`,
-      meta: `${data.distributors.active_partnered} distributor aktif`,
+      meta: `${data.distributors.active_partnered} active distributors`,
       tone: data.forecast_accuracy_pct >= 80 ? ("success" as const) : ("warning" as const),
       icon: Target,
     },
@@ -450,19 +420,19 @@ function RetailerDashboard({ data }: { data: Extract<DashboardSummary, { role: "
           <Badge tone="info">Retailer dashboard</Badge>
           <div className="space-y-1">
             <h1 className="text-3xl font-semibold tracking-tight text-[#0F172A]">
-              Kontrol operasional bisnis kamu
+              Control your business operations
             </h1>
             <p className="max-w-2xl text-sm leading-7 text-[#64748B]">
-              Pantau stok, order ke distributor, spending bulanan, dan rekomendasi AI untuk bisnis yang lebih efisien.
+              Monitor stock, orders to distributors, monthly spending, and AI recommendations for a more efficient business.
             </p>
           </div>
         </div>
         <div className="flex flex-wrap gap-3">
           <Link href="/dashboard/distributors">
-            <Button variant="secondary">Cari distributor</Button>
+            <Button variant="secondary">Find distributors</Button>
           </Link>
           <Link href="/dashboard/orders">
-            <Button>Buat order</Button>
+            <Button>Create Order</Button>
           </Link>
         </div>
       </section>
@@ -491,14 +461,14 @@ function RetailerDashboard({ data }: { data: Extract<DashboardSummary, { role: "
                 <AlertCircle className="h-5 w-5 text-[#EF4444]" />
                 <div>
                   <p className="text-sm font-semibold text-[#0F172A]">
-                    {data.inventory.out_of_stock_count} item habis stok
+                    {data.inventory.out_of_stock_count} items out of stock
                   </p>
-                  <p className="text-xs text-[#64748B]">Stok operasional perlu diisi segera.</p>
+                  <p className="text-xs text-[#64748B]">Operational stock needs to be replenished soon.</p>
                 </div>
               </div>
               <Link href="/dashboard/inventory?status=out_of_stock">
                 <Button variant="secondary" className="shrink-0 text-[#EF4444]">
-                  Lihat inventory
+                  View inventory
                 </Button>
               </Link>
             </CardContent>
@@ -513,7 +483,7 @@ function RetailerDashboard({ data }: { data: Extract<DashboardSummary, { role: "
                 <Wallet className="h-5 w-5 text-[#F59E0B]" />
                 <div>
                   <p className="text-sm font-semibold text-[#0F172A]">
-                    {data.spending.upcoming_due_payments} pembayaran akan jatuh tempo
+                    {data.spending.upcoming_due_payments} payments due soon
                   </p>
                   <p className="text-xs text-[#64748B]">
                     Total outstanding: {formatRupiah(data.spending.total_outstanding)}
@@ -522,7 +492,7 @@ function RetailerDashboard({ data }: { data: Extract<DashboardSummary, { role: "
               </div>
               <Link href="/dashboard/payment">
                 <Button variant="secondary" className="shrink-0">
-                  Lihat payment
+                  View payment
                 </Button>
               </Link>
             </CardContent>
@@ -547,11 +517,11 @@ function RetailerDashboard({ data }: { data: Extract<DashboardSummary, { role: "
         </Card>
         <Card className="rounded-2xl">
           <CardContent className="p-5">
-            <p className="text-xs uppercase tracking-[0.18em] text-[#64748B]">Dalam pengiriman</p>
+            <p className="text-xs uppercase tracking-[0.18em] text-[#64748B]">In transit</p>
             <p className="mt-2 text-3xl font-semibold text-[#0F172A]">{data.orders.in_transit}</p>
             <Link href="/dashboard/orders?status=shipping">
               <p className="mt-2 text-xs font-medium text-[#3B82F6] hover:underline">
-                Lacak →
+                Track →
               </p>
             </Link>
           </CardContent>
@@ -565,7 +535,7 @@ function RetailerDashboard({ data }: { data: Extract<DashboardSummary, { role: "
             </p>
             <Link href="/dashboard/distributors">
               <p className="mt-2 text-xs font-medium text-[#3B82F6] hover:underline">
-                Lihat distributor →
+                View distributors →
               </p>
             </Link>
           </CardContent>
@@ -579,7 +549,7 @@ function RetailerDashboard({ data }: { data: Extract<DashboardSummary, { role: "
             </p>
             <Link href="/dashboard/payment">
               <p className="mt-2 text-xs font-medium text-[#3B82F6] hover:underline">
-                Lihat payment →
+                View payment →
               </p>
             </Link>
           </CardContent>
@@ -595,7 +565,7 @@ function RetailerDashboard({ data }: { data: Extract<DashboardSummary, { role: "
             </p>
             <div className="mt-4 grid gap-4 sm:grid-cols-3">
               <div className="space-y-1">
-                <p className="text-xs text-[#94A3B8]">Pengeluaran bulan ini</p>
+                <p className="text-xs text-[#94A3B8]">Monthly spending</p>
                 <p className="text-xl font-semibold text-[#0F172A]">
                   {formatRupiah(data.spending.monthly_spending)}
                 </p>
@@ -607,7 +577,7 @@ function RetailerDashboard({ data }: { data: Extract<DashboardSummary, { role: "
                 </p>
               </div>
               <div className="space-y-1">
-                <p className="text-xs text-[#94A3B8]">Credit tersedia</p>
+                <p className="text-xs text-[#94A3B8]">Credit available</p>
                 <p className="text-xl font-semibold text-[#22C55E]">
                   {formatRupiah(data.spending.available_credit)}
                 </p>
@@ -624,7 +594,6 @@ function RetailerDashboard({ data }: { data: Extract<DashboardSummary, { role: "
 
 export default function DashboardPage() {
   const { data, isLoading, isError, refetch } = useDashboard();
-  const role = useAuthStore((s) => s.user?.role) ?? "distributor";
 
   if (isLoading) return <DashboardLoading />;
   if (isError) return <DashboardError onRetry={() => refetch()} />;

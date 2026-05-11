@@ -13,8 +13,8 @@ const urgencyTone = {
 } as const;
 
 const urgencyLabel = {
-  high: "Prioritas tinggi",
-  medium: "Perhatikan",
+  high: "High priority",
+  medium: "Attention",
   low: "Info",
 } as const;
 
@@ -196,9 +196,9 @@ export function InsightCard({ insights }: { insights: AiInsight[] }) {
                     {hasDetail && (
                       <p className="text-[10px] text-[#3B82F6] font-medium mt-1.5 flex items-center gap-1">
                         {isExpanded ? (
-                          <><ChevronUp className="h-3 w-3" /> Tutup detail</>
+                          <><ChevronUp className="h-3 w-3" /> Close details</>
                         ) : (
-                          <><ChevronDown className="h-3 w-3" /> Lihat detail</>
+                          <><ChevronDown className="h-3 w-3" /> View details</>
                         )}
                       </p>
                     )}

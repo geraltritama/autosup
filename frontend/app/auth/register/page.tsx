@@ -1,4 +1,4 @@
-import { ShieldEllipsis, Building2, TrendingUp, UserPlus } from "lucide-react";
+import { ShieldEllipsis, Building2, TrendingUp } from "lucide-react";
 import { RegisterForm } from "@/components/auth/register-form";
 
 const highlights = [
@@ -21,24 +21,24 @@ const highlights = [
 
 export default function RegisterPage() {
   return (
-    <main className="min-h-screen bg-gradient-to-br from-[#F8FAFC] via-white to-[#EFF6FF]">
-      <div className="mx-auto grid min-h-screen max-w-7xl items-center gap-16 px-6 py-12 lg:grid-cols-[1fr_448px] lg:px-10">
+    <main className="h-screen overflow-hidden bg-gradient-to-br from-[#F8FAFC] via-white to-[#EFF6FF]">
+      <div className="mx-auto grid h-screen max-w-7xl items-center gap-16 px-6 lg:grid-cols-[1fr_448px] lg:px-10">
         {/* ── Left: Hero + Features ────────────────────────────────────── */}
-        <section className="space-y-14">
+        <section className="space-y-10">
           {/* Headline */}
           <div className="space-y-6">
             <span className="inline-flex items-center gap-2 rounded-full border border-[#BFDBFE] bg-[#EFF6FF] px-4 py-1.5 text-xs font-semibold uppercase tracking-[0.22em] text-[#2563EB]">
-              <UserPlus className="h-3.5 w-3.5" />
+              <span className="h-2 w-2 rounded-full bg-[#3B82F6] animate-pulse" />
               AUTOSUP Operations
             </span>
 
             <div className="max-w-2xl space-y-5">
               <h1 className="text-[2.75rem] font-bold leading-[1.15] tracking-tight text-[#0F172A] md:text-[3.5rem]">
-                Bergabung dan mulai kelola supply chain kamu dengan{" "}
-                <span className="text-[#2563EB]">lebih cerdas</span>.
+                Join and start managing your supply chain{" "}
+                <span className="text-[#2563EB]">smarter</span>.
               </h1>
-              <p className="max-w-xl text-lg leading-8 text-[#64748B]">
-                Daftar sebagai distributor, supplier, atau retailer dan langsung akses workspace yang dirancang untuk operasional harian yang lebih efisien.
+              <p className="max-w-lg text-base leading-7 text-[#64748B]">
+                Sign up as a distributor, supplier, or retailer and get instant access to a workspace designed for efficient daily operations.
               </p>
             </div>
           </div>

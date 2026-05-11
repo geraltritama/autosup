@@ -140,7 +140,7 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
               className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium text-[#64748B] transition hover:bg-red-50 hover:text-[#EF4444]"
             >
               <LogOut className="h-4 w-4" />
-              Keluar
+              Logout
             </button>
           </div>
         </aside>

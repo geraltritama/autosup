@@ -6,6 +6,7 @@ import { LegacyDialog as Dialog } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { useDeleteInventoryItem } from "@/hooks/useInventory";
 import type { InventoryItem } from "@/hooks/useInventory";
+import { CATEGORY_LABELS } from "@/components/inventory/category-labels";
 
 type Props = {
   open: boolean;
@@ -24,18 +25,18 @@ export function DeleteConfirmDialog({ open, onClose, item }: Props) {
       await del.mutateAsync(item.id);
       onClose();
     } catch {
-      setError("Gagal menghapus item. Coba lagi.");
+      setError("Failed to delete item. Please try again.");
     }
   }
 
   return (
-    <Dialog open={open} onClose={onClose} title="Hapus Item" description={`Yakin ingin menghapus "${item?.name}"? Aksi ini tidak bisa dibatalkan.`}>
+    <Dialog open={open} onClose={onClose} title="Delete Item" description={`Are you sure you want to delete "${item?.name}"? This action cannot be undone.`}>
       <div className="space-y-4">
         {item && (
           <div className="rounded-xl border border-[#E2E8F0] bg-slate-50 p-4">
             <p className="text-sm font-semibold text-[#0F172A]">{item.name}</p>
             <p className="mt-1 text-xs text-[#64748B]">
-              Stok: {item.stock} {item.unit} · Kategori: {item.category}
+              Stock: {item.stock} {item.unit} · Category: {CATEGORY_LABELS[item.category] || item.category}
             </p>
           </div>
         )}
@@ -46,7 +47,7 @@ export function DeleteConfirmDialog({ open, onClose, item }: Props) {
 
         <div className="flex justify-end gap-2">
           <Button variant="secondary" onClick={onClose} disabled={del.isPending}>
-            Batal
+            Cancel
           </Button>
           <Button
             onClick={handleDelete}
@@ -54,7 +55,7 @@ export function DeleteConfirmDialog({ open, onClose, item }: Props) {
             className="gap-2 bg-[#EF4444] hover:bg-red-600"
           >
             <Trash2 className="h-4 w-4" />
-            {del.isPending ? "Menghapus..." : "Hapus Item"}
+            {del.isPending ? "Deleting..." : "Delete Item"}
           </Button>
         </div>
       </div>

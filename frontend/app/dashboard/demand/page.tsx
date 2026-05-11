@@ -24,20 +24,20 @@ import { useDemandIntelligence } from "@/hooks/useDemand";
 import { useAuthStore } from "@/store/useAuthStore";
 
 function formatNumber(num: number) {
-  return new Intl.NumberFormat("id-ID").format(num);
+  return new Intl.NumberFormat("en-US").format(num);
 }
 
 export default function DemandPage() {
   const role = useAuthStore((s) => s.user?.role);
-  const [period, setPeriod] = useState<"weekly" | "monthly">("monthly");
+  const [period, setPeriod] = useState<"weekly" | "monthly">("weekly");
   const { data, isLoading, isError, refetch } = useDemandIntelligence(period);
 
   if (role !== "supplier") {
     return (
       <main className="flex h-[80vh] items-center justify-center p-8">
         <div className="text-center">
-          <h2 className="text-xl font-semibold text-[#0F172A]">Akses Ditolak</h2>
-          <p className="mt-2 text-sm text-[#64748B]">Halaman Demand Intelligence khusus untuk Supplier.</p>
+          <h2 className="text-xl font-semibold text-[#0F172A]">Access Denied</h2>
+          <p className="mt-2 text-sm text-[#64748B]">Demand Intelligence page is for Suppliers only.</p>
         </div>
       </main>
     );
@@ -66,7 +66,7 @@ export default function DemandPage() {
           <div className="space-y-2">
             <h1 className="text-3xl font-semibold tracking-tight text-[#0F172A]">Demand Intelligence</h1>
             <p className="max-w-3xl text-sm leading-7 text-[#64748B]">
-              Analisis tren permintaan produk secara keseluruhan untuk membantu perencanaan produksi dan inventory yang lebih efisien.
+              Analyze overall product demand trends to help with more efficient production planning and inventory management.
             </p>
           </div>
         </div>
@@ -100,7 +100,7 @@ export default function DemandPage() {
       {/* Error state */}
       {isError && !isLoading && (
         <section>
-          <PageErrorState message="Gagal memuat data demand intelligence" onRetry={() => refetch()} />
+          <PageErrorState message="Failed to load demand intelligence data" onRetry={() => refetch()} />
         </section>
       )}
 
@@ -127,6 +127,21 @@ export default function DemandPage() {
               </CardContent>
             </Card>
           </div>
+
+          {/* Rising vs Declining Comparison */}
+          {(rising.length > 0 || declining.length > 0) && (
+            <div className="space-y-4">
+              <div className="flex items-center gap-2">
+                <BarChart3 className="h-5 w-5 text-[#2563EB]" />
+                <h2 className="text-lg font-semibold text-[#0F172A]">Rising vs Declining</h2>
+              </div>
+              <Card className="rounded-2xl">
+                <CardContent className="pt-6">
+                  <ProductComparisonChart rising={rising} declining={declining} />
+                </CardContent>
+              </Card>
+            </div>
+          )}
 
           {/* Product Performance by Distributor */}
           <div className="space-y-4">
@@ -172,7 +187,7 @@ export default function DemandPage() {
                   <Loader2 className="h-5 w-5 animate-spin text-[#94A3B8]" />
                 </div>
               ) : rising.length === 0 ? (
-                <p className="text-sm text-[#64748B]">Tidak ada data.</p>
+                <p className="text-sm text-[#64748B]">No data.</p>
               ) : (
                 <div className="space-y-3">
                   {rising.slice(0, 4).map((p) => {
@@ -216,7 +231,7 @@ export default function DemandPage() {
                   <Loader2 className="h-5 w-5 animate-spin text-[#94A3B8]" />
                 </div>
               ) : declining.length === 0 ? (
-                <p className="text-sm text-[#64748B]">Tidak ada data.</p>
+                <p className="text-sm text-[#64748B]">No data.</p>
               ) : (
                 <div className="space-y-3">
                   {declining.slice(0, 4).map((p) => {
@@ -261,7 +276,7 @@ export default function DemandPage() {
                   <Loader2 className="h-5 w-5 animate-spin text-[#94A3B8]" />
                 </div>
               ) : topSelling.length === 0 ? (
-                <p className="text-sm text-[#64748B]">Tidak ada data.</p>
+                <p className="text-sm text-[#64748B]">No data.</p>
               ) : (
                 <div className="space-y-3">
                   {topSelling.map((p, idx) => (

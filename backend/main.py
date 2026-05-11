@@ -7,8 +7,10 @@ import json
 import hashlib
 import requests
 from datetime import datetime, timedelta
+from contextlib import asynccontextmanager
+from dateutil.relativedelta import relativedelta
 from dotenv import load_dotenv
-from fastapi import FastAPI, Header
+from fastapi import FastAPI, Header, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from supabase import create_client, Client
@@ -58,6 +60,10 @@ class NewInventoryItem(BaseModel):
 class UpdateStockReq(BaseModel):
     current_stock: int
     price: Optional[float] = None
+    min_threshold: Optional[int] = None
+    category: Optional[str] = None
+    unit: Optional[str] = None
+    product_name: Optional[str] = None
 
 class CreateOrderReq(BaseModel):
     """Deprecated — use CreateOrderReqV2 inline at POST /orders."""
@@ -89,6 +95,10 @@ class UpdateRetailerReq(BaseModel):
 class PartnershipRequestReq(BaseModel):
     distributor_id: str
     requester_id: Optional[str] = None
+    terms: Optional[str] = None
+    legal_contract_hash: Optional[str] = None
+    valid_until: Optional[int] = None
+    distribution_region: Optional[str] = None
 
 class UpdatePartnershipReq(BaseModel):
     action: str  # "accept" | "reject"
@@ -97,6 +107,8 @@ class OpenCreditReq(BaseModel):
     retailer_id: str
     credit_limit: float
     distributor_id: Optional[str] = None
+    billing_cycle_days: int = 30
+    notes: Optional[str] = None
 
 class UpdateCreditReq(BaseModel):
     credit_limit: Optional[float] = None
@@ -150,10 +162,28 @@ class TeamMemberInvite(BaseModel):
     email: str
 
 # ==========================================
-# 2. SETUP
+# 3. SUPABASE & GEMINI
 # ==========================================
 
-app = FastAPI(title="AUTOSUP Backend API")
+supabase: Client | None = None
+OPENROUTER_KEY = os.getenv("OPENROUTER_API_KEY", "")
+AI_MODEL = os.getenv("AI_MODEL", "google/gemma-2-9b-it:free")
+AI_URL = "https://openrouter.ai/api/v1/chat/completions"
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    global supabase
+    url = os.getenv("SUPABASE_URL")
+    key = os.getenv("SUPABASE_KEY")
+    if url and key:
+        supabase = create_client(url, key)
+    yield
+
+app = FastAPI(title="AUTOSUP Backend API", lifespan=lifespan)
+
+@app.get("/")
+def health_check():
+    return {"status": "ok", "supabase": supabase is not None}
 
 app.add_middleware(
     CORSMiddleware,
@@ -342,9 +372,27 @@ def _call_ai(prompt: str) -> str:
 @app.get("/")
 def home():
     return success_response(
-        data={"status": "AUTOSUP Backend Aktif", "engine": "Gemini Flash"},
+        data={"status": "AUTOSUP Backend Active", "engine": "Gemini Flash"},
         message="Server is running",
     )
+
+def _record_payment_proof_bg(order_id: str, buyer_id: str, seller_id: str, total_amount: int):
+    """Background task: record payment proof on-chain via Solana Memo program."""
+    try:
+        buyer_wallet = bc.get_or_create_wallet(supabase, buyer_id)
+        seller_wallet = bc.get_or_create_wallet(supabase, seller_id)
+        sig = bc.record_payment_proof(
+            order_id,
+            buyer_wallet["pubkey"],
+            seller_wallet["pubkey"],
+            total_amount,
+            action="payment_init",
+        )
+        if sig:
+            supabase.table("orders").update({"payment_proof_sig": sig}).eq("id", order_id).execute()
+    except Exception:
+        pass  # Non-critical — order already persisted
+
 
 # ==========================================
 # 5. AUTH
@@ -353,7 +401,7 @@ def home():
 @app.post("/auth/register")
 def register_user(req: RegisterReq):
     try:
-        # Step 1: Daftarkan ke auth.users
+        # Step 1: Register to auth.users
         res = supabase.auth.sign_up({
             "email": req.email,
             "password": req.password,
@@ -368,7 +416,7 @@ def register_user(req: RegisterReq):
         })
 
         if not res.user:
-            return error_response("Gagal mendaftarkan user.")
+            return error_response("Failed to register user.")
         # Also insert into public.users for queryable supplier/distributor/retailer lists
         try:
             supabase.table("users").upsert({
@@ -386,10 +434,10 @@ def register_user(req: RegisterReq):
                 "role": req.role,
                 "access_token": res.session.access_token if res.session else None,
             },
-            message="Registrasi berhasil",
+            message="Registration successful",
         )
     except Exception as e:
-        return error_response(f"Gagal Register: {str(e)}")
+        return error_response(f"Registration failed: {str(e)}")
 
 
 @app.post("/auth/login")
@@ -406,10 +454,10 @@ def login_user(req: LoginReq):
                 "access_token": res.session.access_token,
                 "refresh_token": res.session.refresh_token,
             },
-            message="Login berhasil",
+            message="Login successful",
         )
     except Exception:
-        return error_response("Login gagal. Cek kembali email dan password Anda.")
+        return error_response("Login failed. Please check your email and password.")
 
 
 @app.post("/auth/forgot-password")
@@ -418,11 +466,11 @@ def forgot_password(body: dict):
     try:
         email = body.get("email", "")
         if not email:
-            return error_response("Email diperlukan.")
+            return error_response("Email is required.")
         supabase.auth.reset_password_email(email)
-        return success_response(message="Link reset password telah dikirim ke email.")
+        return success_response(message="Password reset link has been sent to your email.")
     except Exception as e:
-        return error_response(f"Gagal mengirim reset: {str(e)}")
+        return error_response(f"Failed to send reset: {str(e)}")
 
 
 @app.post("/auth/refresh")
@@ -431,19 +479,19 @@ def refresh_token(req: RefreshReq):
         res = supabase.auth.refresh_session(req.refresh_token)
         return success_response(
             data={"access_token": res.session.access_token, "refresh_token": res.session.refresh_token},
-            message="Token berhasil diperbarui",
+            message="Token refreshed successfully",
         )
     except Exception as e:
-        return error_response(f"Gagal refresh token: {str(e)}")
+        return error_response(f"Failed to refresh token: {str(e)}")
 
 
 @app.post("/auth/logout")
 def logout_user():
     try:
         supabase.auth.sign_out()
-        return success_response(message="Logout berhasil")
+        return success_response(message="Logged out successfully")
     except Exception as e:
-        return error_response(f"Gagal logout: {str(e)}")
+        return error_response(f"Failed to logout: {str(e)}")
 
 # ==========================================
 # 6. INVENTORY
@@ -455,7 +503,7 @@ def _map_inventory_item(i: dict) -> dict:
         "name": i.get("product_name"),
         "stock": i.get("current_stock"),
         "min_stock": i.get("min_threshold", 0),
-        "category": i.get("category", "umum"),
+        "category": i.get("category", "general"),
         "unit": i.get("unit", "pcs"),
         "price": i.get("price", 0) or 0,
     }
@@ -463,12 +511,12 @@ def _map_inventory_item(i: dict) -> dict:
 @app.get("/inventory")
 def get_inventory(user_id: Optional[str] = None):
     try:
-        query = supabase.table("inventories").select("*")
+        query = supabase.table("inventories").select("*").order("product_name")
         if user_id:
             query = query.eq("user_id", user_id)
         res = query.execute()
         items = [_map_inventory_item(i) for i in (res.data or [])]
-        return success_response(data=items, message="Berhasil mengambil data inventory")
+        return success_response(data=items, message="Inventory data retrieved successfully")
     except Exception as e:
         return error_response(str(e))
 
@@ -477,7 +525,7 @@ def get_seller_inventory(seller_id: str):
     try:
         res = supabase.table("inventories").select("*").eq("user_id", seller_id).execute()
         items = [_map_inventory_item(i) for i in (res.data or [])]
-        return success_response(data=items, message="Berhasil mengambil inventory seller")
+        return success_response(data=items, message="Seller inventory retrieved successfully")
     except Exception as e:
         return error_response(str(e))
 
@@ -498,14 +546,14 @@ def add_inventory(data: NewInventoryItem):
     try:
         res = supabase.table("inventories").insert(full_payload).execute()
         i = res.data[0]
-        return success_response(data=_map_inventory_item(i), message="Barang baru berhasil ditambahkan")
+        return success_response(data=_map_inventory_item(i), message="New item added successfully")
     except Exception:
         # Fallback: insert only core columns in case extended columns don't exist yet
         try:
             minimal = {"product_name": data.product_name, "current_stock": data.current_stock}
             res = supabase.table("inventories").insert(minimal).execute()
             i = res.data[0]
-            return success_response(data=_map_inventory_item(i), message="Barang baru berhasil ditambahkan (skema terbatas — jalankan migrasi SQL)")
+            return success_response(data=_map_inventory_item(i), message="New item added (limited schema — run SQL migration)")
         except Exception as e2:
             return error_response(str(e2))
 
@@ -516,13 +564,21 @@ def update_inventory(item_id: str, data: UpdateStockReq):
         update_payload = {"current_stock": data.current_stock}
         if data.price is not None:
             update_payload["price"] = data.price
+        if data.min_threshold is not None:
+            update_payload["min_threshold"] = data.min_threshold
+        if data.category is not None:
+            update_payload["category"] = data.category
+        if data.unit is not None:
+            update_payload["unit"] = data.unit
+        if data.product_name is not None:
+            update_payload["product_name"] = data.product_name
         res = supabase.table("inventories").update(update_payload).eq("id", item_id).execute()
         if not res.data:
-            return error_response("Barang tidak ditemukan.")
+            return error_response("Item not found.")
         i = res.data[0]
         return success_response(
             data=_map_inventory_item(i),
-            message="Stok berhasil diupdate",
+            message="Stock updated successfully",
         )
     except Exception as e:
         return error_response(str(e))
@@ -533,8 +589,8 @@ def delete_inventory(item_id: str):
     try:
         res = supabase.table("inventories").delete().eq("id", item_id).execute()
         if not res.data:
-            return error_response("Barang tidak ditemukan.")
-        return success_response(message="Barang berhasil dihapus")
+            return error_response("Item not found.")
+        return success_response(message="Item deleted successfully")
     except Exception as e:
         return error_response(str(e))
 
@@ -585,7 +641,7 @@ def get_orders(status: Optional[str] = None, search: Optional[str] = None,
                role: Optional[str] = None, user_id: Optional[str] = None,
                page: int = 1, limit: int = 20):
     try:
-        query = supabase.table("orders").select("*")
+        query = supabase.table("orders").select("*").order("created_at", desc=True)
         if status:
             query = query.eq("status", status)
         if user_id and role == "buyer":
@@ -599,6 +655,11 @@ def get_orders(status: Optional[str] = None, search: Optional[str] = None,
             sl = search.lower()
             orders = [o for o in orders if sl in o["order_number"].lower()
                       or sl in o["buyer"]["name"].lower() or sl in o["seller"]["name"].lower()]
+
+        # Bucket cancelled orders to bottom, active orders stay newest-first
+        active_orders = [o for o in orders if o["status"] != "cancelled"]
+        cancelled_orders = [o for o in orders if o["status"] == "cancelled"]
+        orders = active_orders + cancelled_orders
 
         total = len(orders)
         start = (page - 1) * limit
@@ -614,7 +675,7 @@ def get_orders(status: Optional[str] = None, search: Optional[str] = None,
                 },
                 "pagination": {"page": page, "limit": limit, "total": total},
             },
-            message="Berhasil mengambil data orders",
+            message="Order data retrieved successfully",
         )
     except Exception as e:
         return error_response(str(e))
@@ -666,8 +727,8 @@ def get_order_detail(order_id: str):
     try:
         res = supabase.table("orders").select("*").eq("id", order_id).execute()
         if not res.data:
-            return error_response("Pesanan tidak ditemukan.")
-        return success_response(data=_map_order(res.data[0]), message="Detail pesanan ditemukan")
+            return error_response("Order not found.")
+        return success_response(data=_map_order(res.data[0]), message="Order detail found")
     except Exception as e:
         return error_response(str(e))
 
@@ -684,12 +745,12 @@ class CreateOrderReqV2(BaseModel):
     notes: Optional[str] = None
 
 @app.post("/orders")
-def create_order(data: CreateOrderReqV2):
+def create_order(data: CreateOrderReqV2, background_tasks: BackgroundTasks):
     # Enforce supply chain hierarchy: retailer cannot order from supplier
     if data.buyer_role == "retailer" and data.seller_type == "supplier":
         return error_response(
-            "Hierarchy violation: Retailer tidak dapat memesan langsung dari Supplier. "
-            "Pesan melalui Distributor."
+            "Retailer cannot place order directly with Supplier. "
+            "Please order through a Distributor."
         )
     try:
         order_id = str(uuid.uuid4())
@@ -718,25 +779,12 @@ def create_order(data: CreateOrderReqV2):
         res = supabase.table("orders").insert(payload).execute()
         o = res.data[0] if res.data else payload
 
-        # Record payment proof on-chain via Memo program (non-blocking)
-        payment_proof_sig = None
+        # Run blockchain payment proof recording in background (non-blocking)
         if bc:
-            try:
-                buyer_wallet = bc.get_or_create_wallet(supabase, data.buyer_id)
-                seller_wallet = bc.get_or_create_wallet(supabase, data.seller_id)
-                payment_proof_sig = bc.record_payment_proof(
-                    order_id,
-                    buyer_wallet["pubkey"],
-                    seller_wallet["pubkey"],
-                    int(total_amount),
-                    action="payment_init",
-                )
-                try:
-                    supabase.table("orders").update({"payment_proof_sig": payment_proof_sig}).eq("id", order_id).execute()
-                except Exception:
-                    pass
-            except Exception:
-                pass  # Non-critical — order already persisted
+            background_tasks.add_task(
+                _record_payment_proof_bg,
+                order_id, data.buyer_id, data.seller_id, int(total_amount),
+            )
 
         # Auto-create shipment
         try:
@@ -766,25 +814,130 @@ def create_order(data: CreateOrderReqV2):
                 "created_at": o.get("created_at", now_iso()),
                 "payment_proof_sig": payment_proof_sig,
             },
-            message="Pesanan berhasil dibuat",
+            message="Order created successfully",
         )
     except Exception as e:
         return error_response(str(e))
 
 
+def _sync_delivered_to_inventory(user_id: str, items: list):
+    """Auto-add delivered order items to buyer's inventory (upsert)."""
+    for item in items:
+        product_name = item.get("item_name") or item.get("product_name", "")
+        qty = item.get("qty") or item.get("quantity", 0)
+        price = item.get("price_per_unit") or item.get("price", 0)
+        unit = item.get("unit", "pcs")
+
+        if not product_name or qty <= 0:
+            continue
+
+        # Check if buyer already has this product
+        existing = supabase.table("inventories").select("id, current_stock").eq("user_id", user_id).eq("product_name", product_name).execute()
+        if existing.data and len(existing.data) > 0:
+            row = existing.data[0]
+            new_stock = row.get("current_stock", 0) + qty
+            supabase.table("inventories").update({"current_stock": new_stock}).eq("id", row["id"]).execute()
+        else:
+            payload = {
+                "product_name": product_name,
+                "current_stock": qty,
+                "user_id": user_id,
+                "unit": unit,
+            }
+            if price:
+                payload["price"] = price
+            supabase.table("inventories").insert(payload).execute()
+
+
+def _adjust_seller_inventory(user_id: str, items: list, direction: str):
+    """Reserve/release seller stock by product name."""
+    multiplier = -1 if direction == "deduct" else 1
+    for item in items:
+        product_name = item.get("item_name") or item.get("product_name", "")
+        qty = item.get("qty") or item.get("quantity", 0)
+        if not product_name or qty <= 0:
+            continue
+        existing = supabase.table("inventories") \
+            .select("id, current_stock") \
+            .eq("user_id", user_id) \
+            .eq("product_name", product_name) \
+            .execute()
+        if existing.data and len(existing.data) > 0:
+            row = existing.data[0]
+            current_stock = row.get("current_stock", 0) or 0
+            new_stock = max(0, current_stock + (multiplier * qty)) if direction == "deduct" else current_stock + qty
+            supabase.table("inventories") \
+                .update({"current_stock": new_stock}) \
+                .eq("id", row["id"]) \
+                .execute()
+
+
 @app.put("/orders/{order_id}/status")
 def update_order_status(order_id: str, data: UpdateOrderStatusReq):
     try:
-        update_payload: dict = {"status": data.status, "updated_at": now_iso()}
+        full_order_res = supabase.table("orders").select("*").eq("id", order_id).execute()
+        full_order = full_order_res.data[0] if full_order_res.data else None
+        if not full_order:
+            return error_response("Order not found.")
+
+        changed_at = now_iso()
+        previous_status = full_order.get("status", "pending")
+        existing_history = full_order.get("status_history") or [
+            {"status": full_order.get("status", "pending"), "changed_at": full_order.get("created_at", changed_at)}
+        ]
+        if previous_status != data.status:
+            existing_history.append({"status": data.status, "changed_at": changed_at})
+
+        update_payload: dict = {
+            "status": data.status,
+            "updated_at": changed_at,
+            "status_history": existing_history,
+        }
         if data.shipping_info:
             update_payload["shipping_info"] = data.shipping_info
+
+        order_items = full_order.get("items") or []
+        buyer_id = full_order.get("buyer_id")
+        seller_id = full_order.get("seller_id")
+
+        # Reserve seller stock once the order is approved/processing.
+        if data.status == "processing" and previous_status == "pending":
+            if seller_id and order_items:
+                try:
+                    _adjust_seller_inventory(seller_id, order_items, "deduct")
+                except Exception:
+                    pass
+
+        # Cancelled orders should return held funds and restore reserved stock.
+        if data.status == "cancelled":
+            update_payload["escrow_status"] = "refunded"
+            if previous_status in ["processing", "shipping"] and seller_id and order_items:
+                try:
+                    _adjust_seller_inventory(seller_id, order_items, "restore")
+                except Exception:
+                    pass
 
         # Auto-release escrow and bump seller reputation when order delivered
         if data.status == "delivered":
             update_payload["escrow_status"] = "released"
-            order_res = supabase.table("orders").select("seller_id").eq("id", order_id).execute()
-            if order_res.data:
-                seller_id = order_res.data[0].get("seller_id")
+
+            # Auto-add delivered items to buyer inventory (distributor / retailer)
+            if buyer_id and order_items:
+                try:
+                    _sync_delivered_to_inventory(buyer_id, order_items)
+                except Exception:
+                    pass  # Non-critical — don't fail order update
+
+            # Fallback for legacy flows where delivered can happen without prior processing.
+            if previous_status == "pending" and seller_id and order_items:
+                try:
+                    _adjust_seller_inventory(seller_id, order_items, "deduct")
+                except Exception:
+                    pass  # Non-critical — don't fail order update
+
+            # Bump seller reputation
+            if full_order:
+                seller_id = full_order.get("seller_id")
                 if seller_id:
                     raw_seller = _get_auth_user(seller_id)
                     if raw_seller:
@@ -808,18 +961,31 @@ def update_order_status(order_id: str, data: UpdateOrderStatusReq):
                         except Exception:
                             pass
 
-        supabase.table("orders").update(update_payload).eq("id", order_id).execute()
-        return success_response(data={"order_id": order_id, "status": data.status}, message="Status diperbarui")
+        try:
+            supabase.table("orders").update(update_payload).eq("id", order_id).execute()
+        except Exception as update_error:
+            # Backward-compatible fallback for databases that do not have
+            # status_history / updated_at columns yet.
+            fallback_payload = {"status": data.status}
+            if data.shipping_info:
+                fallback_payload["shipping_info"] = data.shipping_info
+            if data.status == "delivered":
+                fallback_payload["escrow_status"] = "released"
+            try:
+                supabase.table("orders").update(fallback_payload).eq("id", order_id).execute()
+            except Exception:
+                raise update_error
+        return success_response(data={"order_id": order_id, "status": data.status}, message="Status updated")
     except Exception as e:
         return error_response(str(e))
 
 
 @app.delete("/orders/{order_id}")
 def delete_order(order_id: str):
-    """Hapus order test/dummy."""
+    """Delete test/dummy order."""
     try:
         supabase.table("orders").delete().eq("id", order_id).execute()
-        return success_response(data={"order_id": order_id}, message="Order dihapus")
+        return success_response(data={"order_id": order_id}, message="Order deleted")
     except Exception as e:
         return error_response(str(e))
 
@@ -832,9 +998,12 @@ def get_dashboard_summary(x_user_role: Optional[str] = Header(default=None),
                           user_id: Optional[str] = None):
     try:
         role = x_user_role or "distributor"
+        now = datetime.utcnow()
+        month_start = _month_start(now)
+        next_due_cutoff = now + timedelta(days=7)
 
         # Orders filtered by user
-        orders_query = supabase.table("orders").select("status,buyer_id,seller_id")
+        orders_query = supabase.table("orders").select("*")
         if user_id:
             if role == "supplier":
                 orders_query = orders_query.eq("seller_id", user_id)
@@ -852,7 +1021,12 @@ def get_dashboard_summary(x_user_role: Optional[str] = Header(default=None),
 
         pending = sum(1 for o in orders if o.get("status") == "pending")
         processing = sum(1 for o in orders if o.get("status") in ["processing", "shipping"])
-        completed = sum(1 for o in orders if o.get("status") == "delivered")
+        in_transit = sum(1 for o in orders if o.get("status") == "shipping")
+        completed = sum(
+            1 for o in orders
+            if o.get("status") == "delivered"
+            and ((_parse_ts(o.get("updated_at", "")) or _parse_ts(o.get("created_at", "")) or now) >= month_start)
+        )
         total_inv = len(inventory)
         low_stock = sum(1 for i in inventory if 0 < i.get("current_stock", 0) < i.get("min_threshold", 0))
         out_of_stock = sum(1 for i in inventory if i.get("current_stock", 0) == 0)
@@ -873,7 +1047,7 @@ def get_dashboard_summary(x_user_role: Optional[str] = Header(default=None),
                         "full_result": a.get("full_result", ""),
                     })
         except Exception:
-            ai_alerts = [{"type": "restock_alert", "message": "AI agents belum menghasilkan insights.", "urgency": "low", "item_id": ""}]
+            ai_alerts = [{"type": "restock_alert", "message": "AI agents have not generated insights yet.", "urgency": "low", "item_id": ""}]
 
         # Partnership counts filtered by user
         supplier_partner_count = 0
@@ -889,20 +1063,34 @@ def get_dashboard_summary(x_user_role: Optional[str] = Header(default=None),
                 except Exception:
                     p_query = p_query.eq("supplier_name", user_id)
             elif user_id and role == "distributor":
-                try:
-                    p_query = p_query.or_(f"distributor_id.eq.{user_id},retailer_name.eq.{user_id}")
-                except Exception:
-                    p_query = p_query.eq("retailer_name", user_id)
+                p_query = p_query.eq("distributor_id", user_id)
+            elif user_id and role == "retailer":
+                p_query = p_query.eq("retailer_name", user_id)
             partnerships = p_query.execute().data or []
             active_partnerships = [p for p in partnerships if p.get("status") in ["accepted", "approved", "partner"]]
             pending_partnerships = [p for p in partnerships if p.get("status") == "pending"]
-            supplier_partner_count = len(active_partnerships)
-            distributor_partner_count = len(active_partnerships)
-            retailer_partner_count = len(active_partnerships)
-            pending_supplier_requests = len(pending_partnerships)
-            pending_retailer_requests = len(pending_partnerships)
+            # Split by direction using partnership_type discriminator
+            supplier_partner_count = len([p for p in active_partnerships if p.get("partnership_type") in ("supplier", "distributor_supplier")])
+            retailer_partner_count = len([p for p in active_partnerships if p.get("partnership_type") == "retailer"])
+            pending_supplier_requests = len([p for p in pending_partnerships if p.get("partnership_type") in ("supplier", "distributor_supplier")])
+            pending_retailer_requests = len([p for p in pending_partnerships if p.get("partnership_type") == "retailer"])
         except Exception:
             pass
+
+        retailer_invoice_rows = []
+        retailer_credit_rows = []
+        if role == "retailer" and user_id:
+            try:
+                retailer_invoice_rows = [row for row in safe_query("invoices") if row.get("buyer_id") == user_id]
+            except Exception:
+                retailer_invoice_rows = []
+            try:
+                retailer_credit_rows = [
+                    row for row in safe_query("credit_accounts")
+                    if row.get("retailer_id") == user_id and row.get("status") != "closed"
+                ]
+            except Exception:
+                retailer_credit_rows = []
 
         if role == "supplier":
             data = {
@@ -913,15 +1101,46 @@ def get_dashboard_summary(x_user_role: Optional[str] = Header(default=None),
                 "ai_insights": ai_alerts,
             }
         elif role == "retailer":
+            delivered_orders = [o for o in orders if o.get("status") == "delivered"]
+            monthly_spending = sum(
+                _order_total(order)
+                for order in delivered_orders
+                if (_parse_ts(order.get("created_at", "")) or now) >= month_start
+            )
+            total_outstanding = sum(
+                float(row.get("amount", 0) or 0)
+                for row in retailer_invoice_rows
+                if row.get("status") in ["pending", "overdue"]
+            )
+            available_credit = sum(
+                max(0, float(row.get("credit_limit", 0) or 0) - float(row.get("utilized_amount", 0) or 0))
+                for row in retailer_credit_rows
+            )
+            upcoming_due_payments = sum(
+                1
+                for row in retailer_invoice_rows
+                if row.get("status") in ["pending", "overdue"]
+                and (_parse_ts(row.get("due_date", "")) or next_due_cutoff) <= next_due_cutoff
+            )
+            invoice_success_base = [
+                row for row in retailer_invoice_rows
+                if row.get("status") in ["paid", "pending", "overdue", "cancelled"]
+            ]
+            payment_success_rate = round(
+                (sum(1 for row in invoice_success_base if row.get("status") == "paid") / max(len(invoice_success_base), 1)) * 100
+            ) if invoice_success_base else 0
+            order_accuracy_rate = round((len(delivered_orders) / max(len(orders), 1)) * 100) if orders else 0
             data = {
                 "role": "retailer",
                 "inventory": {"total_items": total_inv, "low_stock_count": low_stock, "out_of_stock_count": out_of_stock},
-                "orders": {"active_orders": processing, "pending_approval": pending, "in_transit": processing,
-                           "completed_this_month": completed, "order_accuracy_rate": 97},
-                "spending": {"total_outstanding": 0, "monthly_spending": 0, "available_credit": 0,
-                              "upcoming_due_payments": 0, "payment_success_rate": 0},
-                "distributors": {"active_partnered": distributor_partner_count, "pending_requests": 0, "average_reliability_score": 0, "avg_delivery_time": 0},
-                "forecast_accuracy_pct": 0,
+                "orders": {"active_orders": processing, "pending_approval": pending, "in_transit": in_transit,
+                           "completed_this_month": completed, "order_accuracy_rate": order_accuracy_rate},
+                "spending": {"total_outstanding": total_outstanding, "monthly_spending": monthly_spending, "available_credit": available_credit,
+                              "upcoming_due_payments": upcoming_due_payments, "payment_success_rate": payment_success_rate},
+                "distributors": {"active_partnered": retailer_partner_count, "pending_requests": pending_retailer_requests,
+                                 "average_reliability_score": _counterparty_performance_score(orders, "seller_id"),
+                                 "avg_delivery_time": _average_delivery_days(delivered_orders)},
+                "forecast_accuracy_pct": _demand_stability_pct(delivered_orders),
                 "ai_insights": ai_alerts,
             }
         else:
@@ -934,7 +1153,7 @@ def get_dashboard_summary(x_user_role: Optional[str] = Header(default=None),
                 "ai_insights": ai_alerts,
             }
 
-        return success_response(data=data, message="Data dashboard berhasil ditarik")
+        return success_response(data=data, message="Dashboard data retrieved successfully")
     except Exception as e:
         return error_response(str(e))
 
@@ -969,7 +1188,7 @@ def get_retailer_payments(user_id: Optional[str] = None):
                 "invoices": invoices,
                 "insights": [],
             },
-            message="Data pembayaran retailer berhasil ditarik",
+            message="Retailer payment data retrieved successfully",
         )
     except Exception as e:
         return error_response(str(e))
@@ -1004,7 +1223,7 @@ def get_distributor_payments(user_id: Optional[str] = None):
                             "pending_count": sum(1 for p in payments if p["status"] == "pending")},
                 "payments": payments,
             },
-            message="Data pembayaran distributor berhasil ditarik",
+            message="Distributor payment data retrieved successfully",
         )
     except Exception as e:
         return error_response(str(e))
@@ -1014,7 +1233,7 @@ def get_distributor_payments(user_id: Optional[str] = None):
 def settle_payment(data: SettlePaymentReq):
     try:
         supabase.table("payments").update({"status": "settled"}).eq("id", data.payment_id).execute()
-        return success_response(data={"success": True}, message="Pembayaran berhasil diselesaikan")
+        return success_response(data={"success": True}, message="Payment completed successfully")
     except Exception as e:
         return error_response(str(e))
 
@@ -1023,7 +1242,7 @@ def settle_payment(data: SettlePaymentReq):
 def pay_invoice(invoice_id: str):
     try:
         supabase.table("invoices").update({"status": "paid", "paid_at": now_iso()}).eq("id", invoice_id).execute()
-        return success_response(data={"success": True}, message="Invoice berhasil dibayar")
+        return success_response(data={"success": True}, message="Invoice paid successfully")
     except Exception as e:
         return error_response(str(e))
 
@@ -1033,8 +1252,10 @@ def pay_invoice(invoice_id: str):
 
 @app.get("/retailers")
 def get_retailers(search: Optional[str] = None, segment: Optional[str] = None,
-                  status: Optional[str] = None, user_id: Optional[str] = None,
+                  status: Optional[str] = None, type: Optional[str] = None,
+                  user_id: Optional[str] = None,
                   page: int = 1, limit: int = 20):
+    # type=partner means show only partnered retailers for this distributor
     try:
         query = supabase.table("retailers").select("*")
         if status:
@@ -1052,15 +1273,38 @@ def get_retailers(search: Optional[str] = None, segment: Optional[str] = None,
                 "contact_person": r.get("contact_person", ""),
                 "phone": r.get("phone", ""),
                 "city": r.get("city", ""),
-                "segment": r.get("segment", "reguler"),
+                "segment": r.get("segment", "regular"),
                 "status": r.get("status", "active"),
                 "monthly_order_volume": r.get("monthly_order_volume", 0),
                 "total_purchase_amount": r.get("total_purchase_amount", 0),
                 "last_order_at": r.get("last_order_at", past_iso(days=3)),
+                "partnership_status": "none",
             }
             for r in (res.data or [])
         ]
-        # Fallback: auth admin
+
+        # Mark partnership status for current distributor
+        if user_id and retailers:
+            try:
+                p_rows = supabase.table("partnerships").select("distributor_id,retailer_name,status,partnership_type").eq("distributor_id", user_id).execute().data or []
+                partner_ids = {
+                    p.get("retailer_name", "") for p in p_rows
+                    if p.get("status") in ["approved", "accepted"] and p.get("partnership_type") == "retailer"
+                }
+                pending_ids = {
+                    p.get("retailer_name", "") for p in p_rows
+                    if p.get("status") == "pending" and p.get("partnership_type") == "retailer"
+                }
+                for r in retailers:
+                    rid = r["retailer_id"] or ""
+                    if rid in partner_ids:
+                        r["partnership_status"] = "partner"
+                    elif rid in pending_ids:
+                        r["partnership_status"] = "pending"
+            except Exception:
+                pass
+
+        # Fallback: auth admin — also mark partnership status
         if not retailers:
             for u in auth_users_by_role("retailer"):
                 retailers.append({
@@ -1074,7 +1318,31 @@ def get_retailers(search: Optional[str] = None, segment: Optional[str] = None,
                     "monthly_order_volume": 0,
                     "total_purchase_amount": 0,
                     "last_order_at": past_iso(days=3),
+                    "partnership_status": "none",
                 })
+            # Mark fallback partnership status
+            if user_id:
+                try:
+                    p_rows = supabase.table("partnerships").select("distributor_id,retailer_name,status,partnership_type").eq("distributor_id", user_id).execute().data or []
+                    partner_ids = {p.get("retailer_name", "") for p in p_rows if p.get("status") in ["approved", "accepted"] and p.get("partnership_type") == "retailer"}
+                    pending_ids = {p.get("retailer_name", "") for p in p_rows if p.get("status") == "pending" and p.get("partnership_type") == "retailer"}
+                    for r in retailers:
+                        rid = r["retailer_id"] or ""
+                        if rid in partner_ids:
+                            r["partnership_status"] = "partner"
+                        elif rid in pending_ids:
+                            r["partnership_status"] = "pending"
+                except Exception:
+                    pass
+
+        # type filter
+        if type == "partner":
+            retailers = [r for r in retailers if r.get("partnership_status") == "partner"]
+        elif type == "all":
+            retailers = [r for r in retailers if r.get("partnership_status") == "partner"]
+        elif type == "discover":
+            retailers = [r for r in retailers if r.get("partnership_status") == "none"]
+
         if search:
             sl = search.lower()
             retailers = [r for r in retailers if sl in r["name"].lower() or sl in r["city"].lower()]
@@ -1089,7 +1357,7 @@ def get_retailers(search: Optional[str] = None, segment: Optional[str] = None,
                             "premium_count": sum(1 for r in retailers if r["segment"] == "premium")},
                 "pagination": {"page": page, "limit": limit, "total": total},
             },
-            message="Data retailer berhasil ditarik",
+            message="Retailer data retrieved successfully",
         )
     except Exception as e:
         return error_response(str(e))
@@ -1100,19 +1368,19 @@ def get_retailer_detail(retailer_id: str):
     try:
         res = supabase.table("retailers").select("*").eq("id", retailer_id).execute()
         if not res.data:
-            return error_response("Retailer tidak ditemukan.")
+            return error_response("Retailer not found.")
         r = res.data[0]
         return success_response(
             data={
                 "retailer_id": r.get("id"), "name": r.get("name", ""), "contact_person": r.get("contact_person", ""),
                 "phone": r.get("phone", ""), "email": r.get("email", ""), "city": r.get("city", ""),
-                "address": r.get("address", ""), "segment": r.get("segment", "reguler"), "status": r.get("status", "active"),
+                "address": r.get("address", ""), "segment": r.get("segment", "regular"), "status": r.get("status", "active"),
                 "monthly_order_volume": r.get("monthly_order_volume", 0),
                 "total_purchase_amount": r.get("total_purchase_amount", 0),
                 "last_order_at": r.get("last_order_at", past_iso(days=3)),
-                "purchase_history": [], "demand_intelligence": {"top_products": [], "peak_order_day": "Senin"}, "credit_summary": None,
+                "purchase_history": [], "demand_intelligence": {"top_products": [], "peak_order_day": "Monday"}, "credit_summary": None,
             },
-            message="Detail retailer ditemukan",
+            message="Retailer detail found",
         )
     except Exception as e:
         return error_response(str(e))
@@ -1137,7 +1405,7 @@ def add_retailer(data: AddRetailerReqV2):
             data={"retailer_id": r.get("id"), "name": r.get("name"), "contact_person": r.get("contact_person"),
                   "phone": r.get("phone"), "city": r.get("city"), "segment": r.get("segment"),
                   "status": "active", "monthly_order_volume": 0, "total_purchase_amount": 0, "last_order_at": now_iso()},
-            message="Retailer berhasil ditambahkan",
+            message="Retailer added successfully",
         )
     except Exception as e:
         return error_response(str(e))
@@ -1149,14 +1417,14 @@ def update_retailer(retailer_id: str, data: UpdateRetailerReq):
         update_payload = {k: v for k, v in data.dict().items() if v is not None}
         res = supabase.table("retailers").update(update_payload).eq("id", retailer_id).execute()
         if not res.data:
-            return error_response("Retailer tidak ditemukan.")
+            return error_response("Retailer not found.")
         r = res.data[0]
         return success_response(
             data={"retailer_id": r.get("id"), "name": r.get("name"), "contact_person": r.get("contact_person"),
                   "phone": r.get("phone"), "city": r.get("city"), "segment": r.get("segment"),
                   "status": r.get("status"), "monthly_order_volume": r.get("monthly_order_volume", 0),
                   "total_purchase_amount": r.get("total_purchase_amount", 0), "last_order_at": r.get("last_order_at", now_iso())},
-            message="Retailer berhasil diupdate",
+            message="Retailer updated successfully",
         )
     except Exception as e:
         return error_response(str(e))
@@ -1168,7 +1436,8 @@ def update_retailer(retailer_id: str, data: UpdateRetailerReq):
 @app.get("/distributors")
 def get_distributors(search: Optional[str] = None, status: Optional[str] = None,
                      type: Optional[str] = None,
-                     user_id: Optional[str] = None, page: int = 1, limit: int = 20):
+                     user_id: Optional[str] = None, role: Optional[str] = None,
+                     page: int = 1, limit: int = 20):
     # type=partner means show only partnered, type=discover means show only non-partnered, no type = all
     if not status and type:
         if type == "partner":
@@ -1177,6 +1446,12 @@ def get_distributors(search: Optional[str] = None, status: Optional[str] = None,
             status = "none"
     try:
         # Always use auth users as source — their id matches partnership distributor_id
+        distributor_users = [
+            u for u in auth_users_by_role("distributor")
+            if u.get("id") and u.get("is_active", True) is not False
+        ]
+        active_distributor_ids = {u["id"] for u in distributor_users}
+
         distributors = [
             {
                 "distributor_id": u["id"],
@@ -1196,15 +1471,41 @@ def get_distributors(search: Optional[str] = None, status: Optional[str] = None,
                 "phone": u.get("phone", ""),
                 "email": u.get("email", ""),
             }
-            for u in auth_users_by_role("distributor")
+            for u in distributor_users
         ]
 
         # Mark partner / pending status for current user (supplier or retailer)
         if user_id:
             try:
-                p_rows = supabase.table("partnerships").select("distributor_id,retailer_name,status").or_(
+                p_rows = supabase.table("partnerships").select("id,distributor_id,retailer_name,status,partnership_type").or_(
                     f"supplier_id.eq.{user_id},supplier_name.eq.{user_id},retailer_name.eq.{user_id}"
                 ).execute().data or []
+                if role == "supplier":
+                    p_rows = [
+                        p for p in p_rows
+                        if p.get("partnership_type") in ("supplier", "distributor_supplier")
+                    ]
+                elif role == "retailer":
+                    p_rows = [p for p in p_rows if p.get("partnership_type") == "retailer"]
+
+                orphan_ids = [
+                    p.get("id") for p in p_rows
+                    if p.get("distributor_id")
+                    and p.get("distributor_id") not in active_distributor_ids
+                    and p.get("status") in ["approved", "accepted", "pending"]
+                ]
+                for pid in orphan_ids:
+                    if pid:
+                        try:
+                            supabase.table("partnerships").update({"status": "terminated"}).eq("id", pid).execute()
+                        except Exception:
+                            pass
+
+                p_rows = [
+                    p for p in p_rows
+                    if p.get("distributor_id") in active_distributor_ids
+                    and p.get("status") != "terminated"
+                ]
                 partner_ids = {
                     p.get("distributor_id", "") for p in p_rows
                     if p.get("status") in ["approved", "accepted"]
@@ -1227,6 +1528,10 @@ def get_distributors(search: Optional[str] = None, status: Optional[str] = None,
         if status and status != "all":
             distributors = [d for d in distributors if d["partnership_status"] == status]
 
+        # Sort: partnered first, pending second, none last — alphabetically within each group
+        status_order = {"partner": 0, "pending": 1, "none": 2}
+        distributors.sort(key=lambda d: (status_order.get(d["partnership_status"], 99), d["name"].lower()))
+
         total = len(distributors)
         start = (page - 1) * limit
         partner_count = sum(1 for d in distributors if d["partnership_status"] == "partner")
@@ -1243,10 +1548,62 @@ def get_distributors(search: Optional[str] = None, status: Optional[str] = None,
                 },
                 "pagination": {"page": page, "limit": limit, "total": total},
             },
-            message="Data distributor berhasil ditarik",
+            message="Distributor data retrieved successfully",
         )
     except Exception as e:
         return error_response(str(e))
+
+
+def _resolve_retailer_name(requester_id: str) -> str:
+    """Resolve a retailer display name from auth metadata."""
+    if not requester_id:
+        return "Unknown"
+
+    # 1. Get single auth user by ID
+    try:
+        raw = _get_auth_user(requester_id)
+        if raw:
+            meta = raw.get("user_metadata", {}) or {}
+            name = meta.get("business_name") or meta.get("full_name")
+            if name:
+                return name
+    except Exception:
+        pass
+
+    # 2. Try supabase admin client directly
+    try:
+        u = supabase.auth.admin.get_user_by_id(requester_id)
+        if u and u.user:
+            meta = u.user.user_metadata or {}
+            name = meta.get("business_name") or meta.get("full_name")
+            if name:
+                return name
+    except Exception:
+        pass
+
+    # 3. Bulk scan: list all users and find by ID
+    try:
+        headers = {
+            "apikey": os.getenv("SUPABASE_KEY"),
+            "Authorization": f"Bearer {os.getenv('SUPABASE_KEY')}",
+        }
+        resp = requests.get(
+            f"{os.getenv('SUPABASE_URL')}/auth/v1/admin/users",
+            headers=headers,
+            timeout=10,
+        )
+        if resp.status_code == 200:
+            for u in resp.json().get("users", []):
+                if u.get("id") == requester_id:
+                    meta = u.get("user_metadata", {}) or {}
+                    name = meta.get("business_name") or meta.get("full_name") or ""
+                    if name:
+                        return name
+    except Exception:
+        pass
+
+    # 4. Fallback: show first 8 chars of ID so it's not completely blank
+    return requester_id[:8] if len(requester_id) >= 8 else requester_id
 
 
 @app.get("/distributors/partnership-requests")
@@ -1254,22 +1611,20 @@ def get_distributor_requests(user_id: Optional[str] = None, page: int = 1, limit
     try:
         query = supabase.table("partnerships").select("*").eq("status", "pending")
         if user_id:
-            # Filter request yang masuk KE distributor ini
             query = query.eq("distributor_id", user_id)
+            # Exclude supplier-type partnerships (distributor→supplier requests)
+            # Those are fetched via GET /suppliers/partnership-requests
+            query = query.or_("supplier_id.is.null,partnership_type.neq.supplier")
         res = query.execute()
-
-        # Ambil nama retailer dari auth users
-        retailer_ids = [p.get("retailer_name") for p in (res.data or []) if p.get("retailer_name")]
-        retailer_names = {}
-        for u in auth_users_by_role("retailer"):
-            if u["id"] in retailer_ids:
-                retailer_names[u["id"]] = u.get("business_name") or u.get("full_name") or "Unknown"
 
         requests = [
             {
                 "request_id": p.get("id"),
                 "distributor_id": p.get("retailer_name", ""),
-                "distributor_name": retailer_names.get(p.get("retailer_name", ""), "Unknown"),
+                "distributor_name": p.get("retailer_display_name")
+                    or _resolve_retailer_name(p.get("retailer_name", "")),
+                "city": "",
+                "reliability_score": 0,
                 "status": p.get("status", "pending"),
                 "created_at": p.get("created_at", now_iso()),
             }
@@ -1278,7 +1633,7 @@ def get_distributor_requests(user_id: Optional[str] = None, page: int = 1, limit
         total = len(requests)
         return success_response(
             data={"requests": requests[(page-1)*limit: page*limit], "pagination": {"page": page, "limit": limit, "total": total}},
-            message="Data permintaan kemitraan berhasil ditarik",
+            message="Partnership request data retrieved successfully",
         )
     except Exception as e:
         return error_response(str(e))
@@ -1290,7 +1645,7 @@ def get_distributor_stock(distributor_id: str, page: int = 1, limit: int = 20):
         res = supabase.table("inventories").select("*").eq("owner_id", distributor_id).execute()
         products = [
             {
-                "item_id": i.get("id"), "name": i.get("product_name", ""), "category": i.get("category", "umum"),
+                "item_id": i.get("id"), "name": i.get("product_name", ""), "category": i.get("category", "general"),
                 "stock": i.get("current_stock", 0), "min_stock": i.get("min_threshold", 0), "unit": i.get("unit", "pcs"),
                 "status": "in_stock" if i.get("current_stock", 0) > i.get("min_threshold", 0) else (
                     "low_stock" if i.get("current_stock", 0) > 0 else "out_of_stock"),
@@ -1302,10 +1657,52 @@ def get_distributor_stock(distributor_id: str, page: int = 1, limit: int = 20):
         return success_response(
             data={"distributor": {"distributor_id": distributor_id, "name": ""},
                   "products": products[(page-1)*limit: page*limit], "pagination": {"page": page, "limit": limit, "total": total}},
-            message="Stok distributor berhasil ditarik",
+            message="Distributor stock data retrieved successfully",
         )
     except Exception as e:
         return error_response(str(e))
+
+
+@app.get("/distributors/{distributor_id}/partnership-history")
+def get_distributor_partnership_history(distributor_id: str, user_id: Optional[str] = None, role: Optional[str] = None):
+    try:
+        query = supabase.table("partnerships").select("*").eq("distributor_id", distributor_id)
+        rows = query.execute().data or []
+
+        if role == "supplier" and user_id:
+            rows = [
+                row for row in rows
+                if row.get("partnership_type") in ("supplier", "distributor_supplier")
+                and user_id in {row.get("supplier_id", ""), row.get("supplier_name", "")}
+            ]
+        elif role == "retailer" and user_id:
+            rows = [
+                row for row in rows
+                if row.get("partnership_type") == "retailer"
+                and row.get("retailer_name", "") == user_id
+            ]
+
+        rows.sort(key=lambda row: row.get("created_at", ""), reverse=True)
+        history = [
+            {
+                "request_id": row.get("id", ""),
+                "status": row.get("status", "pending"),
+                "created_at": row.get("created_at", now_iso()),
+                "terms": row.get("terms", ""),
+                "distribution_region": row.get("distribution_region", ""),
+                "valid_until": row.get("valid_until", 0),
+                "legal_contract_hash": row.get("legal_contract_hash", ""),
+                "mou_document_name": row.get("mou_document_name", ""),
+                "mou_document_data": row.get("mou_document_data", ""),
+            }
+            for row in rows
+        ]
+        return success_response(
+            data={"history": history},
+            message="Distributor partnership history retrieved successfully",
+        )
+    except Exception:
+        return success_response(data={"history": []}, message="Distributor partnership history unavailable")
 
 
 @app.post("/distributors/partnership-request")
@@ -1320,16 +1717,61 @@ def request_partnership(data: PartnershipRequestReq):
                 row = existing[0]
                 return success_response(
                     data={"request_id": row["id"], "distributor_id": data.distributor_id, "status": row["status"], "created_at": now_iso()},
-                    message="Partnership sudah ada",
+                    message="Partnership request already exists",
                 )
         request_id = str(uuid.uuid4())
-        row_data = {"id": request_id, "distributor_id": data.distributor_id, "status": "pending", "created_at": now_iso()}
+
+        # Resolve requester display name
+        requester_display_name = ""
+        if data.requester_id:
+            # Try auth users first
+            try:
+                raw = _get_auth_user(data.requester_id)
+                if raw:
+                    meta = raw.get("user_metadata", {}) or {}
+                    requester_display_name = meta.get("business_name") or meta.get("full_name") or ""
+            except Exception:
+                pass
+            # Fallback: retailers table
+            if not requester_display_name:
+                try:
+                    rres = supabase.table("retailers").select("name").eq("id", data.requester_id).execute()
+                    if rres.data:
+                        requester_display_name = rres.data[0].get("name", "")
+                except Exception:
+                    pass
+            # Final fallback: use ID
+            if not requester_display_name:
+                requester_display_name = data.requester_id[:8] if len(data.requester_id) >= 8 else data.requester_id
+
+        row_data = {
+            "id": request_id,
+            "distributor_id": data.distributor_id,
+            "partnership_type": "retailer",
+            "status": "pending",
+            "created_at": now_iso(),
+        }
         if data.requester_id:
             row_data["retailer_name"] = data.requester_id
+            row_data["retailer_display_name"] = requester_display_name
+        if data.terms:
+            row_data["terms"] = data.terms[:256]
+        if data.legal_contract_hash:
+            row_data["legal_contract_hash"] = data.legal_contract_hash
+        if data.valid_until:
+            row_data["valid_until"] = data.valid_until
+        if data.distribution_region:
+            row_data["distribution_region"] = data.distribution_region[:64]
         supabase.table("partnerships").insert(row_data).execute()
         return success_response(
-            data={"request_id": request_id, "distributor_id": data.distributor_id, "distributor_name": "", "status": "pending", "created_at": now_iso()},
-            message="Permintaan kemitraan berhasil dikirim",
+            data={
+                "request_id": request_id,
+                "distributor_id": data.distributor_id,
+                "distributor_name": requester_display_name,
+                "status": "pending",
+                "created_at": now_iso(),
+            },
+            message="Partnership request sent successfully",
         )
     except Exception as e:
         return error_response(str(e))
@@ -1340,6 +1782,68 @@ def update_partnership_request(request_id: str, data: UpdatePartnershipReq):
     try:
         new_status = "approved" if data.action == "accept" else "rejected"
         supabase.table("partnerships").update({"status": new_status}).eq("id", request_id).execute()
+
+        if data.action == "accept":
+            p_res = supabase.table("partnerships").select("*").eq("id", request_id).execute()
+            if p_res.data:
+                p = p_res.data[0]
+                distributor_id = p.get("distributor_id", "")
+                retailer_id = p.get("retailer_name", "")
+                terms = p.get("terms", "") or "AUTOSUP Retailer Partnership"
+                legal_hash = p.get("legal_contract_hash", "") or ("0" * 64)
+                valid_until = p.get("valid_until", 0) or 0
+                distribution_region = p.get("distribution_region", "") or ""
+
+                # Find supplier from parent partnership
+                supplier_id = None
+                try:
+                    sup_res = supabase.table("partnerships").select("supplier_id").eq("distributor_id", distributor_id).eq("status", "accepted").execute()
+                    if sup_res.data:
+                        supplier_id = sup_res.data[0].get("supplier_id", "")
+                except Exception:
+                    pass
+
+                try:
+                    if bc and distributor_id and retailer_id:
+                        d_wallet = bc.get_or_create_wallet(supabase, distributor_id)
+                        r_wallet = bc.get_or_create_wallet(supabase, retailer_id)
+                        s_pubkey = ""
+                        if supplier_id:
+                            s_wallet = bc.get_or_create_wallet(supabase, supplier_id)
+                            s_pubkey = s_wallet["pubkey"]
+                        nft_result = bc.mint_retailer_partnership_nft(
+                            d_wallet["pubkey"],
+                            r_wallet["pubkey"],
+                            s_pubkey or d_wallet["pubkey"],  # fallback: use distributor as supplier pubkey
+                            terms=terms[:256],
+                            legal_contract_hash=legal_hash[:64],
+                            valid_until=valid_until,
+                            distribution_region=distribution_region[:64],
+                            tier=0,  # default Bronze
+                        )
+                        mint_address = nft_result["mint_address"]
+                        explorer_url = nft_result.get("mint_explorer_url", nft_result["explorer_url"])
+                        token_name = f"AUTOSUP Retailer Partnership: {distributor_id[:8]} → {retailer_id[:8]}"
+
+                        try:
+                            existing = supabase.table("partnership_nfts").select("id").eq("distributor_id", distributor_id).eq("retailer_id", retailer_id).execute()
+                            if not existing.data:
+                                supabase.table("partnership_nfts").insert({
+                                    "id": str(uuid.uuid4()),
+                                    "distributor_id": distributor_id,
+                                    "supplier_id": supplier_id or "",
+                                    "retailer_id": retailer_id,
+                                    "mint_address": mint_address,
+                                    "explorer_url": explorer_url,
+                                    "token_name": token_name,
+                                    "issued_at": now_iso(),
+                                }).execute()
+                        except Exception:
+                            pass
+                except Exception as mint_err:
+                    print(f"[partnership] retailer NFT mint error: {mint_err}")
+                    # Non-critical — partnership already approved
+
         return success_response(data={"request_id": request_id, "action": data.action}, message=f"Partnership {data.action}ed")
     except Exception as e:
         return error_response(str(e))
@@ -1349,8 +1853,12 @@ def update_partnership_request(request_id: str, data: UpdatePartnershipReq):
 # ==========================================
 
 @app.get("/partnerships/summary")
-def get_partnerships_summary(user_id: Optional[str] = None):
+def get_partnerships_summary(user_id: Optional[str] = None, partner_type: Optional[str] = None):
     try:
+        normalized_partner_type = (partner_type or "").strip().lower()
+        if normalized_partner_type and normalized_partner_type not in ("supplier", "retailer"):
+            return error_response("partner_type must be 'supplier' or 'retailer'")
+
         query = supabase.table("partnerships").select("*")
         if user_id:
             try:
@@ -1359,6 +1867,31 @@ def get_partnerships_summary(user_id: Optional[str] = None):
                 pass
         res = query.execute()
         ps = res.data or []
+        if normalized_partner_type == "supplier":
+            ps = [p for p in ps if p.get("partnership_type") in ("supplier", "distributor_supplier")]
+            active_distributor_ids = {
+                u["id"] for u in auth_users_by_role("distributor")
+                if u.get("id") and u.get("is_active", True) is not False
+            }
+            orphan_ids = [
+                p.get("id") for p in ps
+                if p.get("distributor_id")
+                and p.get("distributor_id") not in active_distributor_ids
+                and p.get("status") in ["approved", "accepted", "pending"]
+            ]
+            for pid in orphan_ids:
+                if pid:
+                    try:
+                        supabase.table("partnerships").update({"status": "terminated"}).eq("id", pid).execute()
+                    except Exception:
+                        pass
+            ps = [
+                p for p in ps
+                if p.get("distributor_id") in active_distributor_ids
+                and p.get("status") != "terminated"
+            ]
+        elif normalized_partner_type == "retailer":
+            ps = [p for p in ps if p.get("partnership_type") == "retailer"]
         active = sum(1 for p in ps if p.get("status") in ("approved", "accepted"))
         pending = sum(1 for p in ps if p.get("status") == "pending")
         rejected = sum(1 for p in ps if p.get("status") in ("rejected", "terminated"))
@@ -1369,12 +1902,17 @@ def get_partnerships_summary(user_id: Optional[str] = None):
         nft_count = 0
         try:
             if user_id:
-                nft_res = supabase.table("partnership_nfts").select("id", count="exact").or_(
+                nft_res = supabase.table("partnership_nfts").select("id,supplier_id,retailer_id").or_(
                     f"distributor_id.eq.{user_id},supplier_id.eq.{user_id},retailer_id.eq.{user_id}"
                 ).execute()
             else:
-                nft_res = supabase.table("partnership_nfts").select("id", count="exact").execute()
-            nft_count = nft_res.count or len(nft_res.data or [])
+                nft_res = supabase.table("partnership_nfts").select("id,supplier_id,retailer_id").execute()
+            nft_rows = nft_res.data or []
+            if normalized_partner_type == "supplier":
+                nft_rows = [n for n in nft_rows if (n.get("supplier_id") or "").strip() != ""]
+            elif normalized_partner_type == "retailer":
+                nft_rows = [n for n in nft_rows if (n.get("retailer_id") or "").strip() != ""]
+            nft_count = len(nft_rows)
         except Exception:
             nft_count = active
 
@@ -1391,9 +1929,9 @@ def get_partnerships_summary(user_id: Optional[str] = None):
 
         insights = []
         if pending > 0:
-            insights.append({"type": "new_partner", "message": f"{pending} permintaan kemitraan menunggu persetujuan.", "urgency": "medium"})
+            insights.append({"type": "new_partner", "message": f"{pending} pending partnership requests awaiting approval.", "urgency": "medium"})
         if nft_count > 0:
-            insights.append({"type": "nft_issued", "message": f"{nft_count} Partnership NFT aktif di Solana Devnet.", "urgency": "low"})
+            insights.append({"type": "nft_issued", "message": f"{nft_count} active Partnership NFTs on Solana Devnet.", "urgency": "low"})
 
         return success_response(
             data={
@@ -1407,7 +1945,7 @@ def get_partnerships_summary(user_id: Optional[str] = None):
                 },
                 "insights": insights,
             },
-            message="Data partnership berhasil ditarik",
+            message="Partnership data retrieved successfully",
         )
     except Exception as e:
         return error_response(str(e))
@@ -1436,10 +1974,10 @@ def delete_partnership(partner_id: str, user_id: Optional[str] = None):
             if partner_id in all_vals:
                 matching_ids.append(r["id"])
         if not matching_ids:
-            return error_response("Partnership tidak ditemukan")
+            return error_response("Partnership not found")
         for pid in matching_ids:
             supabase.table("partnerships").update({"status": "terminated"}).eq("id", pid).execute()
-        return success_response(data={"terminated": len(matching_ids)}, message="Partnership berhasil dihapus")
+        return success_response(data={"terminated": len(matching_ids)}, message="Partnership deleted successfully")
     except Exception as e:
         return error_response(str(e))
 
@@ -1451,8 +1989,8 @@ def _get_nft(table_filter: dict):
             query = query.eq(col, val)
         res = query.execute()
         if not res.data:
-            return success_response(data=None, message="NFT tidak ditemukan")
-        return success_response(data=res.data[0], message="NFT ditemukan")
+            return success_response(data=None, message="NFT not found")
+        return success_response(data=res.data[0], message="NFT found")
     except Exception as e:
         return error_response(str(e))
 
@@ -1461,14 +1999,14 @@ def _get_nft(table_filter: dict):
 def request_wallet_airdrop(user_id: Optional[str] = None):
     """Request devnet SOL airdrop for a user's wallet (max 2 SOL)."""
     if not user_id:
-        return error_response("user_id diperlukan")
+        return error_response("user_id required")
     try:
         if not bc:
-            return error_response("Blockchain service tidak tersedia — install solders dan solana")
+            return error_response("Blockchain service unavailable — install solders and solana")
         wallet = bc.get_or_create_wallet(supabase, user_id)
         success = bc.request_airdrop(wallet["pubkey"])
         return success_response(data={"success": success, "pubkey": wallet["pubkey"]},
-                                message="Airdrop berhasil" if success else "Airdrop gagal — coba lagi")
+                                message="Airdrop successful" if success else "Airdrop failed — please try again")
     except Exception as e:
         return error_response(str(e))
 
@@ -1477,13 +2015,13 @@ def request_wallet_airdrop(user_id: Optional[str] = None):
 def connect_browser_wallet(user_id: Optional[str] = None, body: dict = None):
     """Store a browser-provided wallet pubkey (Phantom/MetaMask) for a user."""
     if not user_id:
-        return error_response("user_id diperlukan")
+        return error_response("user_id required")
     if not body:
         body = {}
     pubkey = body.get("pubkey", "").strip()
     wallet_type = body.get("wallet_type", "browser")
     if not pubkey:
-        return error_response("pubkey diperlukan")
+        return error_response("pubkey required")
     try:
         # Upsert: store browser pubkey, mark as browser wallet (no privkey)
         supabase.table("user_wallets").upsert({
@@ -1497,7 +2035,7 @@ def connect_browser_wallet(user_id: Optional[str] = None, body: dict = None):
             "wallet_type": wallet_type,
             "explorer_url": explorer_url,
             "is_browser_wallet": True,
-        }, message=f"Wallet {wallet_type} berhasil dihubungkan")
+        }, message=f"Wallet {wallet_type} connected successfully")
     except Exception as e:
         return error_response(str(e))
 
@@ -1506,7 +2044,7 @@ def connect_browser_wallet(user_id: Optional[str] = None, body: dict = None):
 def disconnect_browser_wallet(user_id: Optional[str] = None):
     """Remove browser wallet — regenerate a fresh backend-managed wallet."""
     if not user_id:
-        return error_response("user_id diperlukan")
+        return error_response("user_id required")
     try:
         # Delete current record so next GET /wallet/my auto-generates a new keypair
         supabase.table("user_wallets").delete().eq("user_id", user_id).execute()
@@ -1524,7 +2062,7 @@ def disconnect_browser_wallet(user_id: Optional[str] = None):
                 n //= 58
             pk = "".join(reversed(chars))[:44].ljust(44, "1")
             wallet = {"pubkey": pk, "explorer_url": f"https://explorer.solana.com/address/{pk}?cluster=devnet"}
-        return success_response(data={"pubkey": wallet["pubkey"]}, message="Browser wallet dilepas, wallet baru dibuat")
+        return success_response(data={"pubkey": wallet["pubkey"]}, message="Browser wallet disconnected, new wallet created")
     except Exception as e:
         return error_response(str(e))
 
@@ -1533,7 +2071,7 @@ def disconnect_browser_wallet(user_id: Optional[str] = None):
 def get_my_wallet_info(user_id: Optional[str] = None):
     """Get wallet info — also returns whether it's a browser wallet."""
     if not user_id:
-        return error_response("user_id diperlukan")
+        return error_response("user_id required")
     try:
         is_browser = False
         wallet_type = "backend"
@@ -1580,7 +2118,7 @@ def get_escrow_details(order_id: str):
     try:
         res = supabase.table("orders").select("id,order_number,escrow_status,total_price,status,seller_id,buyer_id,created_at,updated_at").eq("id", order_id).execute()
         if not res.data:
-            return error_response("Order tidak ditemukan")
+            return error_response("Order not found")
         o = res.data[0]
 
         # Generate deterministic on-chain tx hash (mock Solana devnet)
@@ -1624,7 +2162,7 @@ def get_escrow_details(order_id: str):
             "creation_tx": tx_hash,
             "explorer_url": explorer_url,
             "events": events,
-        }, message="Escrow details ditarik")
+        }, message="Escrow details retrieved")
     except Exception as e:
         return error_response(str(e))
 
@@ -1642,6 +2180,56 @@ def get_retailer_nft(user_id: str, distributor_id: str):
 @app.get("/blockchain/partnership-nft/distributor/{user_id}/{retailer_id}")
 def get_distributor_nft(user_id: str, retailer_id: str):
     return _get_nft({"distributor_id": user_id, "retailer_id": retailer_id})
+
+
+class RevokePartnershipReq(BaseModel):
+    partnership_pda: str
+
+
+@app.post("/blockchain/partnership-nft/revoke")
+def revoke_partnership_nft_onchain(data: RevokePartnershipReq):
+    """Revoke an active partnership NFT on-chain (state change, token stays)."""
+    try:
+        if not bc:
+            return success_response(
+                data={"on_chain": False},
+                message="Blockchain service unavailable — partnership marked as revoked off-chain.",
+            )
+        result = bc.revoke_partnership_nft(data.partnership_pda)
+        return success_response(
+            data=result,
+            message="Partnership NFT revoked on-chain" if result.get("on_chain") else "Revoke sent (fallback mode)",
+        )
+    except Exception as e:
+        return error_response(str(e))
+
+
+@app.get("/blockchain/partnership-nft/verify/{supplier}/{distributor}")
+def verify_partnership_onchain(supplier: str, distributor: str, role: int = 0):
+    """Verify on-chain that a partnership PDA is active (role: 0=supplier→dist, 2=dist→retailer)."""
+    try:
+        if not bc:
+            return success_response(
+                data={"verified": True, "reason": "blockchain_unavailable"},
+                message="Off-chain fallback — blockchain service unavailable.",
+            )
+        # Derive PDA from pubkeys
+        pda_data = bc.get_partnership_pda(supplier, distributor, role)
+        if pda_data is None:
+            return success_response(
+                data={"verified": False, "reason": "pda_not_found"},
+                message="Partnership PDA not found on-chain.",
+            )
+        return success_response(
+            data={
+                "verified": pda_data.get("is_active", False),
+                "pda": pda_data.get("pda"),
+                "tier": pda_data.get("tier"),
+            },
+            message="Partnership verified on-chain",
+        )
+    except Exception as e:
+        return error_response(str(e))
 
 # ==========================================
 # 13. ANALYTICS
@@ -1666,79 +2254,161 @@ def _month_starts(now, n: int) -> list:
         result.append(datetime(yr, mo, 1))
     return result
 
-def _analytics_overview(all_orders: list, user_id: Optional[str], inventory: list) -> dict:
-    from collections import defaultdict
+def _month_start(now: datetime) -> datetime:
+    return datetime(now.year, now.month, 1)
+
+
+def _order_total(order: dict) -> float:
+    return float(order.get("total_price", order.get("total_amount", 0)) or 0)
+
+
+def _order_items(order: dict) -> list:
+    return order.get("items") or []
+
+
+def _item_name(item: dict) -> str:
+    return item.get("item_name") or item.get("product_name") or item.get("name") or ""
+
+
+def _item_qty(item: dict) -> int:
+    return int(item.get("qty", item.get("quantity", 0)) or 0)
+
+
+def _sum_units(orders: list) -> int:
+    return sum(_item_qty(item) for order in orders for item in _order_items(order))
+
+
+def _period_growth_pct(current_value: float, previous_value: float) -> int:
+    if previous_value <= 0:
+        return 100 if current_value > 0 else 0
+    return round(((current_value - previous_value) / previous_value) * 100)
+
+
+def _inventory_turnover(delivered_orders: list, inventory: list) -> float:
+    inventory_units = sum(int(i.get("current_stock", 0) or 0) for i in inventory)
+    if inventory_units <= 0:
+        return 0.0
+    return round(_sum_units(delivered_orders) / inventory_units, 1)
+
+
+def _demand_stability_pct(delivered_orders: list) -> int:
     now = datetime.utcnow()
+    cutoff_recent = now - timedelta(days=30)
+    cutoff_prev = now - timedelta(days=60)
+    recent_units = 0
+    prev_units = 0
+    for order in delivered_orders:
+        ts = _parse_ts(order.get("created_at", "")) or now
+        units = sum(_item_qty(item) for item in _order_items(order))
+        if ts >= cutoff_recent:
+            recent_units += units
+        elif ts >= cutoff_prev:
+            prev_units += units
+    if recent_units == 0 and prev_units == 0:
+        return 0
+    if prev_units <= 0:
+        return 0
+    variance_pct = abs(recent_units - prev_units) / prev_units * 100
+    return round(max(0, 100 - min(variance_pct, 100)))
 
-    orders_sell = [o for o in all_orders if o.get("seller_id") == user_id] if user_id else all_orders
-    orders_buy  = [o for o in all_orders if o.get("buyer_id") == user_id]  if user_id else []
-    delivered_sell = [o for o in orders_sell if o.get("status") == "delivered"]
-    delivered_buy  = [o for o in orders_buy  if o.get("status") == "delivered"]
 
-    cutoff_30 = now - timedelta(days=30)
-    cutoff_60 = now - timedelta(days=60)
+def _counterparty_performance_score(orders: list, counterpart_key: str) -> int:
+    from collections import defaultdict
+    grouped: dict = defaultdict(list)
+    for order in orders:
+        counterpart_id = order.get(counterpart_key, "")
+        if counterpart_id:
+            grouped[counterpart_id].append(order)
+    if not grouped:
+        return 0
+    scores = []
+    for grouped_orders in grouped.values():
+        total = len(grouped_orders)
+        delivered = sum(1 for order in grouped_orders if order.get("status") == "delivered")
+        cancelled = sum(1 for order in grouped_orders if order.get("status") == "cancelled")
+        delivered_rate = (delivered / total) * 100
+        cancelled_penalty = (cancelled / total) * 20
+        scores.append(max(0, min(100, round(delivered_rate - cancelled_penalty))))
+    return round(sum(scores) / len(scores))
 
-    def _price(o): return o.get("total_price", 0) or 0
-    def _ts(o): return _parse_ts(o.get("created_at", "")) or now
 
-    # Revenue growth (as seller)
-    recent_rev = sum(_price(o) for o in delivered_sell if _ts(o) >= cutoff_30)
-    prev_rev   = sum(_price(o) for o in delivered_sell if cutoff_60 <= _ts(o) < cutoff_30)
-    revenue_growth = round(((recent_rev - prev_rev) / max(prev_rev, 1)) * 100) if prev_rev > 0 else (5 if recent_rev > 0 else 0)
+def _average_delivery_days(delivered_orders: list) -> float:
+    durations = []
+    for order in delivered_orders:
+        created_at = _parse_ts(order.get("created_at", ""))
+        completed_at = _parse_ts(order.get("updated_at", "")) or _parse_ts(order.get("created_at", ""))
+        if created_at and completed_at and completed_at >= created_at:
+            durations.append((completed_at - created_at).total_seconds() / 86400)
+    return round(sum(durations) / len(durations), 1) if durations else 0.0
 
-    # Fulfillment: seller side preferred; fallback to buyer side for retailer
-    if orders_sell:
-        fulfillment_rate = round(len(delivered_sell) / max(len(orders_sell), 1) * 100)
-    else:
-        fulfillment_rate = round(len(delivered_buy) / max(len(orders_buy), 1) * 100)
 
-    # Inventory turnover = delivered orders / inventory items
-    turnover = round((len(delivered_sell) + len(delivered_buy)) / max(len(inventory), 1), 1)
-
-    # Monthly trends (last 6 months)
+def _monthly_trends(outbound_delivered: list, inbound_delivered: list) -> list:
+    now = datetime.utcnow()
     month_dts = _month_starts(now, 6)
-    buckets: dict = {}
-    for dt in month_dts:
-        key = (dt.year, dt.month)
-        buckets[key] = {"label": dt.strftime("%b"), "revenue": 0, "spending": 0}
-
-    for o in all_orders:
-        ts = _parse_ts(o.get("created_at", ""))
+    buckets = {
+        (dt.year, dt.month): {"label": dt.strftime("%b"), "revenue": 0, "spending": 0}
+        for dt in month_dts
+    }
+    for order in outbound_delivered:
+        ts = _parse_ts(order.get("created_at", ""))
         if not ts:
             continue
         key = (ts.year, ts.month)
-        if key not in buckets:
+        if key in buckets:
+            buckets[key]["revenue"] += _order_total(order)
+    for order in inbound_delivered:
+        ts = _parse_ts(order.get("created_at", ""))
+        if not ts:
             continue
-        price = _price(o)
-        if o.get("seller_id") == user_id:
-            buckets[key]["revenue"] += price
-        if o.get("buyer_id") == user_id:
-            buckets[key]["spending"] += price
+        key = (ts.year, ts.month)
+        if key in buckets:
+            buckets[key]["spending"] += _order_total(order)
+    return [
+        {"label": buckets[key]["label"], "revenue": buckets[key]["revenue"], "spending": buckets[key]["spending"]}
+        for key in sorted(buckets)
+    ]
 
-    trends = [{"label": buckets[k]["label"], "revenue": buckets[k]["revenue"], "spending": buckets[k]["spending"]}
-              for k in sorted(buckets)]
 
-    # Top products from sell-side orders
-    product_vol: dict = defaultdict(int)
-    for o in orders_sell:
-        for item in (o.get("items") or []):
-            pname = item.get("product_name", item.get("name", item.get("item_name", "")))
-            qty = item.get("quantity", item.get("qty", 0)) or 0
-            if pname:
-                product_vol[pname] += qty
-    top_products = [{"name": n, "sales": v}
-                    for n, v in sorted(product_vol.items(), key=lambda x: x[1], reverse=True)[:5]]
+def _top_products_from_orders(primary_orders: list, fallback_orders: list) -> list:
+    from collections import defaultdict
+    source_orders = primary_orders if primary_orders else fallback_orders
+    volumes: dict = defaultdict(int)
+    for order in source_orders:
+        for item in _order_items(order):
+            name = _item_name(item)
+            qty = _item_qty(item)
+            if name and qty > 0:
+                volumes[name] += qty
+    return [
+        {"name": name, "sales": qty}
+        for name, qty in sorted(volumes.items(), key=lambda item: item[1], reverse=True)[:5]
+    ]
+
+
+def _shared_analytics_response(outbound_orders: list, inbound_orders: list, inventory: list, partner_key: str) -> dict:
+    now = datetime.utcnow()
+    cutoff_recent = now - timedelta(days=30)
+    cutoff_prev = now - timedelta(days=60)
+
+    delivered_outbound = [order for order in outbound_orders if order.get("status") == "delivered"]
+    delivered_inbound = [order for order in inbound_orders if order.get("status") == "delivered"]
+    growth_orders = delivered_outbound if delivered_outbound else delivered_inbound
+
+    recent_revenue = sum(_order_total(order) for order in growth_orders if (_parse_ts(order.get("created_at", "")) or now) >= cutoff_recent)
+    prev_revenue = sum(_order_total(order) for order in growth_orders if cutoff_prev <= (_parse_ts(order.get("created_at", "")) or now) < cutoff_recent)
+
+    partner_orders = inbound_orders if inbound_orders else outbound_orders
 
     return {
         "summary": {
-            "revenue_growth": revenue_growth,
-            "inventory_turnover": max(turnover, 0.1),
-            "partner_performance": 80,
-            "order_fulfillment_rate": fulfillment_rate,
-            "forecast_accuracy": 0,
+            "revenue_growth": _period_growth_pct(recent_revenue, prev_revenue),
+            "inventory_turnover": _inventory_turnover(delivered_outbound or delivered_inbound, inventory),
+            "partner_performance": _counterparty_performance_score(partner_orders, partner_key),
+            "order_fulfillment_rate": round((len(delivered_outbound or delivered_inbound) / max(len(outbound_orders or inbound_orders), 1)) * 100),
+            "forecast_accuracy": _demand_stability_pct(delivered_outbound or delivered_inbound),
         },
-        "trends": trends,
-        "top_products": top_products,
+        "trends": _monthly_trends(delivered_outbound, delivered_inbound),
+        "top_products": _top_products_from_orders(delivered_outbound, delivered_inbound),
     }
 
 
@@ -1750,7 +2420,10 @@ def analytics_retailer(user_id: Optional[str] = None):
             oq = oq.eq("buyer_id", user_id)
         orders = oq.execute().data or []
         inventory = (supabase.table("inventories").select("*").eq("user_id", user_id).execute().data or []) if user_id else []
-        return success_response(data=_analytics_overview(orders, user_id, inventory), message="Analytics retailer")
+        return success_response(
+            data=_shared_analytics_response([], orders, inventory, "seller_id"),
+            message="Analytics retailer",
+        )
     except Exception as e:
         return error_response(str(e))
 
@@ -1763,7 +2436,12 @@ def analytics_distributor(user_id: Optional[str] = None):
             oq = oq.or_(f"buyer_id.eq.{user_id},seller_id.eq.{user_id}")
         orders = oq.execute().data or []
         inventory = (supabase.table("inventories").select("*").eq("user_id", user_id).execute().data or []) if user_id else []
-        return success_response(data=_analytics_overview(orders, user_id, inventory), message="Analytics distributor")
+        outbound_orders = [order for order in orders if order.get("seller_id") == user_id]
+        inbound_orders = [order for order in orders if order.get("buyer_id") == user_id]
+        return success_response(
+            data=_shared_analytics_response(outbound_orders, inbound_orders, inventory, "seller_id"),
+            message="Analytics distributor",
+        )
     except Exception as e:
         return error_response(str(e))
 
@@ -1771,65 +2449,81 @@ def analytics_distributor(user_id: Optional[str] = None):
 @app.get("/analytics/supplier/overview")
 def analytics_supplier(user_id: Optional[str] = None):
     try:
-        from collections import defaultdict
         oq = supabase.table("orders").select("*")
         if user_id:
             oq = oq.eq("seller_id", user_id)
         orders = oq.execute().data or []
-
-        completed = [o for o in orders if o.get("status") == "delivered"]
-        total_revenue = sum((o.get("total_price", 0) or 0) for o in completed)
-
-        # Weekly trends (last 4 weeks)
+        delivered_orders = [order for order in orders if order.get("status") == "delivered"]
         now = datetime.utcnow()
-        weekly = []
+        cutoff_recent = now - timedelta(days=30)
+        cutoff_prev = now - timedelta(days=60)
+
+        recent_units = sum(_sum_units([order]) for order in delivered_orders if (_parse_ts(order.get("created_at", "")) or now) >= cutoff_recent)
+        prev_units = sum(_sum_units([order]) for order in delivered_orders if cutoff_prev <= (_parse_ts(order.get("created_at", "")) or now) < cutoff_recent)
+
+        weekly_revenue = []
+        weekly_demand = []
+        weekly_orders = []
+        weekly_fulfillment = []
         for i in range(3, -1, -1):
             start = now - timedelta(weeks=i + 1)
-            end   = now - timedelta(weeks=i)
-            wk = [o for o in orders if start <= (_parse_ts(o.get("created_at", "")) or now) < end]
-            weekly.append({
-                "period": f"Minggu {4 - i}",
-                "revenue": sum((o.get("total_price", 0) or 0) for o in wk if o.get("status") == "delivered"),
-                "orders": len(wk),
-            })
+            end = now - timedelta(weeks=i)
+            weekly_orders_all = [order for order in orders if start <= (_parse_ts(order.get("created_at", "")) or now) < end]
+            weekly_delivered = [order for order in weekly_orders_all if order.get("status") == "delivered"]
+            label = f"Week {4 - i}"
+            weekly_revenue.append({"label": label, "value": sum(_order_total(order) for order in weekly_delivered)})
+            weekly_demand.append({"label": label, "value": _sum_units(weekly_delivered)})
+            weekly_orders.append({"label": label, "value": len(weekly_orders_all)})
+            weekly_fulfillment.append({"label": label, "value": round((len(weekly_delivered) / max(len(weekly_orders_all), 1)) * 100)})
 
-        recent_rev = sum(t["revenue"] for t in weekly[2:])
-        prev_rev   = sum(t["revenue"] for t in weekly[:2])
-        growth_pct = round(((recent_rev - prev_rev) / max(prev_rev, 1)) * 100) if prev_rev > 0 else (5 if recent_rev > 0 else 0)
+        distinct_buyers_all = {order.get("buyer_id", "") for order in orders if order.get("buyer_id", "")}
+        distinct_buyers_recent = {
+            order.get("buyer_id", "")
+            for order in delivered_orders
+            if order.get("buyer_id", "") and (_parse_ts(order.get("created_at", "")) or now) >= cutoff_recent
+        }
 
-        # Distributor performance from real order data
+        from collections import defaultdict
         dist_orders: dict = defaultdict(list)
         dist_names: dict = {}
-        for o in orders:
-            bid = o.get("buyer_id", "")
-            bname = o.get("buyer_name", "")
-            if bid:
-                dist_orders[bid].append(o)
-                if bname:
-                    dist_names[bid] = bname
+        for order in orders:
+            buyer_id = order.get("buyer_id", "")
+            if buyer_id:
+                dist_orders[buyer_id].append(order)
+                dist_names[buyer_id] = order.get("buyer_name", "") or dist_names.get(buyer_id, "Unknown")
 
         distributor_performance = []
-        for dist_id, d_ords in dist_orders.items():
-            delivered = [o for o in d_ords if o.get("status") == "delivered"]
+        for dist_id, distributor_orders in dist_orders.items():
+            delivered = [order for order in distributor_orders if order.get("status") == "delivered"]
+            fulfillment_ratio = len(delivered) / max(len(distributor_orders), 1)
             distributor_performance.append({
                 "distributor_id": dist_id,
-                "distributor_name": dist_names.get(dist_id, "Unknown"),
-                "orders": len(d_ords),
-                "revenue": sum((o.get("total_price", 0) or 0) for o in delivered),
-                "reliability": round(len(delivered) / max(len(d_ords), 1) * 100),
+                "name": dist_names.get(dist_id, "Unknown"),
+                "order_volume": len(distributor_orders),
+                "revenue_contribution": sum(_order_total(order) for order in delivered),
+                "fulfillment_success_rate": round(fulfillment_ratio, 4),
+                "reliability_score": _counterparty_performance_score(distributor_orders, "buyer_id"),
             })
-        distributor_performance.sort(key=lambda x: x["revenue"], reverse=True)
+        distributor_performance.sort(key=lambda item: item["revenue_contribution"], reverse=True)
 
-        return success_response(data={
-            "summary": {
-                "total_revenue": total_revenue,
-                "total_orders": len(orders),
-                "completed_orders": len(completed),
-                "growth_pct": growth_pct,
+        return success_response(
+            data={
+                "summary": {
+                    "total_revenue": sum(_order_total(order) for order in delivered_orders),
+                    "demand_growth_pct": _period_growth_pct(recent_units, prev_units),
+                    "fulfillment_rate": round(len(delivered_orders) / max(len(orders), 1), 4),
+                    "active_distributor_contribution_pct": round((len(distinct_buyers_recent) / max(len(distinct_buyers_all), 1)) * 100),
+                },
+                "trends": {
+                    "revenue": weekly_revenue,
+                    "demand": weekly_demand,
+                    "orders": weekly_orders,
+                    "fulfillment": weekly_fulfillment,
+                },
+                "distributor_performance": distributor_performance,
             },
-            "trends": weekly,
-            "distributor_performance": distributor_performance,
-        }, message="Analytics supplier")
+            message="Analytics supplier",
+        )
     except Exception as e:
         return error_response(str(e))
 
@@ -1838,9 +2532,9 @@ def analytics_supplier(user_id: Optional[str] = None):
 def analytics_distributor_regional(user_id: Optional[str] = None, item_id: Optional[str] = None):
     try:
         from collections import defaultdict
-        oq = supabase.table("orders").select("delivery_address, items, created_at")
+        oq = supabase.table("orders").select("delivery_address, items, created_at, status")
         if user_id:
-            oq = oq.eq("buyer_id", user_id)
+            oq = oq.eq("seller_id", user_id)
         orders = oq.execute().data or []
         now = datetime.utcnow()
         cutoff_recent = now - timedelta(days=30)
@@ -1848,11 +2542,13 @@ def analytics_distributor_regional(user_id: Optional[str] = None, item_id: Optio
         recent: dict = defaultdict(int)
         prev: dict   = defaultdict(int)
         for order in orders:
+            if order.get("status") != "delivered":
+                continue
             city = _extract_city(order.get("delivery_address", ""))
             if not city:
                 continue
             items = order.get("items") or []
-            vol = sum(it.get("quantity", 0) for it in items if not item_id or it.get("item_id") == item_id or it.get("id") == item_id) or 1
+            vol = sum(_item_qty(it) for it in items if not item_id or it.get("item_id") == item_id or it.get("id") == item_id)
             ts = _parse_ts(order.get("created_at", "")) or now
             if ts >= cutoff_recent:
                 recent[city] += vol
@@ -1860,17 +2556,14 @@ def analytics_distributor_regional(user_id: Optional[str] = None, item_id: Optio
                 prev[city] += vol
         all_cities = set(recent) | set(prev)
         if not all_cities:
-            return success_response(data={"regional_demand": []}, message="Data regional distributor")
-        max_vol = max((recent.get(c, 0) + prev.get(c, 0)) for c in all_cities) or 1
+            return success_response(data={"regional_demand": []}, message="Regional distributor data")
         regional_demand = []
         for city in all_cities:
             r_vol = recent.get(city, 0)
             p_vol = prev.get(city, 0)
-            demand_score = round(((r_vol + p_vol) / max_vol) * 100)
-            growth_pct = round(((r_vol - p_vol) / max(p_vol, 1)) * 100) if p_vol > 0 else (10 if r_vol > 0 else 0)
-            regional_demand.append({"region": city, "demand_score": demand_score, "growth_pct": growth_pct})
-        regional_demand.sort(key=lambda x: x["demand_score"], reverse=True)
-        return success_response(data={"regional_demand": regional_demand}, message="Data regional distributor")
+            regional_demand.append({"region": city, "demand": r_vol, "growth_pct": _period_growth_pct(r_vol, p_vol)})
+        regional_demand.sort(key=lambda x: x["demand"], reverse=True)
+        return success_response(data={"regional_demand": regional_demand}, message="Regional distributor data")
     except Exception as e:
         return error_response(str(e))
 
@@ -1888,6 +2581,9 @@ def _extract_city(address: str) -> Optional[str]:
     addr_lower = address.lower()
     for city in KNOWN_CITIES:
         if city.lower() in addr_lower:
+            # Normalize Bali → Denpasar
+            if city == "Bali":
+                return "Denpasar"
             return city
     return None
 
@@ -1896,7 +2592,7 @@ def analytics_supplier_regional(user_id: Optional[str] = None, item_id: Optional
     try:
         from collections import defaultdict
 
-        oq = supabase.table("orders").select("delivery_address, items, created_at")
+        oq = supabase.table("orders").select("buyer_id, buyer_name, delivery_address, items, created_at, status")
         if user_id:
             oq = oq.eq("seller_id", user_id)
         orders = oq.execute().data or []
@@ -1905,45 +2601,62 @@ def analytics_supplier_regional(user_id: Optional[str] = None, item_id: Optional
         cutoff_recent = now - timedelta(days=30)
         cutoff_prev = now - timedelta(days=60)
 
+        # Cache buyer_id → region
+        buyer_region_cache: dict = {}
+
+        def _resolve_region(order: dict) -> Optional[str]:
+            buyer_id = order.get("buyer_id", "")
+            if buyer_id in buyer_region_cache:
+                return buyer_region_cache[buyer_id]
+            # Try delivery_address first
+            region = _extract_city(order.get("delivery_address", ""))
+            # Fallback: extract from buyer_name
+            if not region:
+                region = _extract_city(order.get("buyer_name", ""))
+            # Default: Jakarta for unresolved
+            if not region:
+                region = "Jakarta"
+            buyer_region_cache[buyer_id] = region
+            return region
+
         recent: dict = defaultdict(int)
         prev: dict = defaultdict(int)
 
         for order in orders:
-            city = _extract_city(order.get("delivery_address", ""))
-            if not city:
+            if order.get("status") != "delivered":
+                continue
+            region = _resolve_region(order)
+            if not region:
                 continue
             items = order.get("items") or []
-            vol = 0
             if item_id:
-                vol = sum(it.get("quantity", 0) for it in items if it.get("item_id") == item_id or it.get("id") == item_id)
+                vol = sum(_item_qty(it) for it in items if it.get("item_id") == item_id or it.get("id") == item_id or _item_name(it) == item_id)
             else:
-                vol = sum(it.get("quantity", 0) for it in items) or 1
-
-            try:
-                ts = datetime.fromisoformat(order.get("created_at", "").replace("Z", "+00:00").replace("+00:00", ""))
-            except Exception:
-                ts = now
-
+                vol = sum(_item_qty(it) for it in items)
+            if vol <= 0:
+                continue
+            ts = _parse_ts(order.get("created_at", "")) or now
             if ts >= cutoff_recent:
-                recent[city] += vol
+                recent[region] += vol
             elif ts >= cutoff_prev:
-                prev[city] += vol
+                prev[region] += vol
 
-        all_cities = set(recent.keys()) | set(prev.keys())
-        if not all_cities:
-            return success_response(data={"regions": []}, message="Data regional supplier")
+        all_regions = set(recent.keys()) | set(prev.keys())
+        if not all_regions:
+            return success_response(data={"regions": []}, message="Regional supplier data")
 
-        max_vol = max((recent.get(c, 0) + prev.get(c, 0)) for c in all_cities) or 1
         regions = []
-        for city in all_cities:
-            r_vol = recent.get(city, 0)
-            p_vol = prev.get(city, 0)
-            demand_score = round(((r_vol + p_vol) / max_vol) * 100)
-            growth_pct = round(((r_vol - p_vol) / max(p_vol, 1)) * 100) if p_vol > 0 else (10 if r_vol > 0 else 0)
-            regions.append({"region": city, "demand_score": demand_score, "growth_pct": growth_pct})
+        for region in all_regions:
+            r_vol = recent.get(region, 0)
+            p_vol = prev.get(region, 0)
+            regions.append({
+                "region": region,
+                "demand_score": r_vol,
+                "growth_pct": _period_growth_pct(r_vol, p_vol),
+            })
 
         regions.sort(key=lambda x: x["demand_score"], reverse=True)
-        return success_response(data={"regions": regions}, message="Data regional supplier")
+        return success_response(data={"regions": regions}, message="Regional supplier data")
     except Exception as e:
         return error_response(str(e))
 
@@ -1953,27 +2666,39 @@ def analytics_product_insights(user_id: Optional[str] = None):
     try:
         from collections import defaultdict
         # Orders data for sell-side volume ranking
-        oq = supabase.table("orders").select("items, seller_id, buyer_id")
+        oq = supabase.table("orders").select("items, seller_id, buyer_id, created_at, status")
         if user_id:
             oq = oq.or_(f"seller_id.eq.{user_id},buyer_id.eq.{user_id}")
         orders = oq.execute().data or []
 
-        sell_vol: dict = defaultdict(int)
-        buy_vol: dict  = defaultdict(int)
-        for o in orders:
-            items_list = o.get("items") or []
-            for it in items_list:
-                pname = it.get("product_name", it.get("name", it.get("item_name", "")))
-                qty = it.get("quantity", it.get("qty", 0)) or 0
-                if pname:
-                    if o.get("seller_id") == user_id:
-                        sell_vol[pname] += qty
-                    else:
-                        buy_vol[pname] += qty
+        delivered_orders = [order for order in orders if order.get("status") == "delivered"]
+        delivered_sell_orders = [order for order in delivered_orders if order.get("seller_id") == user_id]
+        delivered_buy_orders = [order for order in delivered_orders if order.get("buyer_id") == user_id]
+        source_orders = delivered_sell_orders if delivered_sell_orders else delivered_buy_orders
 
-        # Use sell_vol if has data, otherwise buy_vol
-        vol = sell_vol if sell_vol else buy_vol
-        sorted_vol = sorted(vol.items(), key=lambda x: x[1], reverse=True)
+        now = datetime.utcnow()
+        cutoff_30 = now - timedelta(days=30)
+        cutoff_60 = now - timedelta(days=60)
+        total_vol: dict = defaultdict(int)
+        curr_vol: dict = defaultdict(int)
+        prev_vol: dict = defaultdict(int)
+        for order in source_orders:
+            ts = _parse_ts(order.get("created_at", "")) or now
+            for item in _order_items(order):
+                name = _item_name(item)
+                qty = _item_qty(item)
+                if not name or qty <= 0:
+                    continue
+                total_vol[name] += qty
+                if ts >= cutoff_30:
+                    curr_vol[name] += qty
+                elif ts >= cutoff_60:
+                    prev_vol[name] += qty
+
+        def _growth(name: str) -> int:
+            c = curr_vol.get(name, 0)
+            p = prev_vol.get(name, 0)
+            return _period_growth_pct(c, p)
 
         # Stock risk from inventory (real data, no random)
         iq = supabase.table("inventories").select("product_name, current_stock, min_threshold")
@@ -1986,13 +2711,18 @@ def analytics_product_insights(user_id: Optional[str] = None):
             if (i.get("current_stock", 0) or 0) < (i.get("min_threshold", 0) or 0)
         ]
 
+        sorted_vol = sorted(total_vol.items(), key=lambda item: item[1], reverse=True)
+        declining_names = sorted(
+            [(name, qty, _growth(name)) for name, qty in total_vol.items() if _growth(name) < 0],
+            key=lambda item: item[2],
+        )
         top_n = sorted_vol[:3]
-        dec_n = sorted_vol[-3:] if len(sorted_vol) > 3 else []
+        dec_n = declining_names[:3]
 
         return success_response(
             data={
-                "top_selling": [{"name": n, "units": v, "growth_pct": 0} for n, v in top_n],
-                "declining":   [{"name": n, "units": v, "decline_pct": 0} for n, v in dec_n],
+                "top_selling": [{"name": n, "units": v, "growth_pct": _growth(n)} for n, v in top_n],
+                "declining":   [{"name": n, "units": v, "decline_pct": abs(growth_pct)} for n, v, growth_pct in dec_n],
                 "stock_risk":  stock_risk,
             },
             message="Product insights",
@@ -2007,73 +2737,178 @@ def analytics_product_insights(user_id: Optional[str] = None):
 @app.get("/analytics/supplier/demand")
 def get_demand(period: str = "monthly", user_id: Optional[str] = None):
     try:
-        # Fetch orders for this supplier
-        oq = supabase.table("orders").select("items, created_at, buyer_id, buyer_name")
+        from collections import defaultdict
+
+        now = datetime.utcnow()
+        if period == "weekly":
+            current_start = now - timedelta(days=7)
+            prev_start = now - timedelta(days=14)
+            bucket_labels = [(now - timedelta(days=i)).strftime("%-d %b") for i in range(6, -1, -1)]
+            bucket_count = 7
+        else:
+            current_start = _month_start(now)
+            prev_start = _month_start(current_start - timedelta(days=1))
+            bucket_labels = [(current_start - relativedelta(months=i)).strftime("%b %Y") for i in range(5, -1, -1)]
+            bucket_count = 6
+
+        oq = supabase.table("orders").select("items, created_at, buyer_id, buyer_name, status")
         if user_id:
             oq = oq.eq("seller_id", user_id)
         orders = oq.execute().data or []
+        delivered_orders = [order for order in orders if order.get("status") == "delivered"]
 
-        # Aggregate product volumes from order items
-        from collections import defaultdict
-        product_vol: dict = defaultdict(int)
+        inv_map = {}
+        try:
+            inv = supabase.table("inventories").select("product_name, category").eq("user_id", user_id).execute()
+            for row in (inv.data or []):
+                if row.get("product_name"):
+                    inv_map[row["product_name"]] = row.get("category", "general")
+        except Exception:
+            pass
+
+        product_curr: dict = defaultdict(int)
+        product_prev: dict = defaultdict(int)
+        product_total: dict = defaultdict(int)
+        product_revenue: dict = defaultdict(float)
+        product_last_order: dict = {}
         dist_product_vol: dict = defaultdict(lambda: defaultdict(int))
+        dist_product_rev: dict = defaultdict(lambda: defaultdict(float))
+        dist_product_last: dict = defaultdict(lambda: defaultdict(str))
         dist_names: dict = {}
+        trend_buckets = [0] * bucket_count
 
-        for order in orders:
-            items = order.get("items") or []
+        for order in delivered_orders:
+            created_str = order.get("created_at", "")
+            items = _order_items(order)
             buyer_id = order.get("buyer_id", "")
             buyer_name = order.get("buyer_name", "")
             if buyer_id:
                 dist_names[buyer_id] = buyer_name
-            if isinstance(items, list):
-                for item in items:
-                    pname = item.get("product_name", item.get("name", ""))
-                    qty = item.get("quantity", 0)
-                    if pname:
-                        product_vol[pname] += qty
-                        if buyer_id:
-                            dist_product_vol[buyer_id][pname] += qty
+            if not isinstance(items, list):
+                continue
 
-        # Sort products by volume
-        sorted_products = sorted(product_vol.items(), key=lambda x: x[1], reverse=True)
-        top_selling = [
-            {"id": f"p{i}", "name": name, "current_demand": vol, "growth_pct": 0, "trend": "stable", "category": "umum"}
-            for i, (name, vol) in enumerate(sorted_products[:5])
-        ]
-        top_rising = [p for p in top_selling if p["current_demand"] > 0][:3]
-        declining = [
-            {"id": f"d{i}", "name": name, "current_demand": vol, "growth_pct": 0, "trend": "declining", "category": "umum"}
-            for i, (name, vol) in enumerate(sorted_products[-3:]) if vol > 0
-        ]
+            order_date = _parse_ts(created_str)
+            in_current = False
+            in_prev = False
 
-        # Build trend data bucketed by period
-        from datetime import datetime, timedelta
-        now = datetime.utcnow()
-        if period == "weekly":
-            buckets = [(now - timedelta(days=i)).strftime("%-d %b") for i in range(6, -1, -1)]
-            bucket_key = lambda d: (now - datetime.fromisoformat(d[:10])).days if d else None
-            bucket_count = 7
+            if order_date:
+                if order_date >= current_start:
+                    in_current = True
+                elif order_date >= prev_start:
+                    in_prev = True
+                if period == "weekly":
+                    days_ago = (now - order_date).days
+                    if 0 <= days_ago < bucket_count:
+                        total_qty = sum(_item_qty(item) for item in items)
+                        trend_buckets[bucket_count - 1 - days_ago] += total_qty
+                else:
+                    months_ago = (now.year - order_date.year) * 12 + now.month - order_date.month
+                    if 0 <= months_ago < bucket_count:
+                        total_qty = sum(_item_qty(item) for item in items)
+                        trend_buckets[bucket_count - 1 - months_ago] += total_qty
+
+            for item in items:
+                pname = _item_name(item)
+                qty = _item_qty(item)
+                if not pname or qty <= 0:
+                    continue
+                price = float(item.get("price_per_unit") or item.get("unit_price") or item.get("price") or 0)
+                subtotal = float(item.get("subtotal") or (qty * price))
+
+                if in_current:
+                    product_curr[pname] += qty
+                elif in_prev:
+                    product_prev[pname] += qty
+
+                product_total[pname] += qty
+                product_revenue[pname] += subtotal
+                if created_str and (pname not in product_last_order or created_str > product_last_order[pname]):
+                    product_last_order[pname] = created_str
+
+                if buyer_id:
+                    dist_product_vol[buyer_id][pname] += qty
+                    dist_product_rev[buyer_id][pname] += subtotal
+                    if created_str and (pname not in dist_product_last[buyer_id] or created_str > dist_product_last[buyer_id][pname]):
+                        dist_product_last[buyer_id][pname] = created_str
+
+        def calc_growth(name: str) -> int:
+            return _period_growth_pct(product_curr.get(name, 0), product_prev.get(name, 0))
+
+        def trend_label(growth: float) -> str:
+            if growth > 10:
+                return "rising"
+            if growth < -10:
+                return "declining"
+            return "stable"
+
+        all_product_names = set(product_curr.keys()) | set(product_prev.keys()) | set(product_total.keys())
+        all_products = sorted(
+            [(name, product_total.get(name, 0)) for name in all_product_names],
+            key=lambda x: x[1], reverse=True,
+        )
+
+        top_selling = []
+        for i, (name, vol) in enumerate(all_products[:5]):
+            if vol > 0:
+                g = calc_growth(name)
+                top_selling.append({
+                    "id": f"p{i}", "name": name, "current_demand": vol,
+                    "growth_pct": g, "trend": trend_label(g),
+                    "category": inv_map.get(name, "general"), "revenue": product_revenue.get(name, 0),
+                })
+
+        # Minimum volume threshold: at least 5 units to filter out pure noise
+        min_vol_threshold = 5
+
+        # Check if prev period has any data at all
+        has_prev_data = any(product_prev.get(n, 0) > 0 for n in all_product_names)
+
+        if has_prev_data:
+            # Normal case: rising = existed in prev AND grew
+            rising_candidates = sorted(
+                [
+                    (name, product_curr.get(name, 0), calc_growth(name))
+                    for name in all_product_names
+                    if product_curr.get(name, 0) >= min_vol_threshold
+                    and product_prev.get(name, 0) > 0
+                    and product_curr.get(name, 0) > product_prev.get(name, 0)
+                ],
+                key=lambda x: (x[2], x[1]), reverse=True,
+            )
         else:
-            buckets = [(now - timedelta(days=30 * i)).strftime("%b %Y") for i in range(5, -1, -1)]
-            bucket_key = lambda d: None
-            bucket_count = 6
+            # Fallback: no prev data (e.g. all orders in current month) — show top by volume
+            rising_candidates = sorted(
+                [
+                    (name, product_curr.get(name, 0), 100)
+                    for name in all_product_names
+                    if product_curr.get(name, 0) >= min_vol_threshold
+                ],
+                key=lambda x: x[1], reverse=True,
+            )
 
-        trend_vols = [0] * len(buckets)
-        for order in orders:
-            created = order.get("created_at", "")
-            items = order.get("items") or []
-            total_qty = sum(item.get("quantity", 0) for item in (items if isinstance(items, list) else []))
-            if period == "weekly" and created:
-                try:
-                    days_ago = (now - datetime.fromisoformat(created[:10])).days
-                    if 0 <= days_ago < 7:
-                        trend_vols[6 - days_ago] += total_qty
-                except Exception:
-                    pass
+        top_rising = [
+            {"id": f"r{i}", "name": name, "current_demand": vol, "growth_pct": g,
+             "trend": trend_label(g), "category": inv_map.get(name, "general"), "revenue": product_revenue.get(name, 0)}
+            for i, (name, vol, g) in enumerate(rising_candidates[:3])
+        ]
 
-        trends = [{"period": buckets[i], "total_volume": trend_vols[i]} for i in range(len(buckets))]
+        # Declining: must have at least 5 units in current period
+        declining_candidates = sorted(
+            [
+                (name, product_curr.get(name, 0), calc_growth(name))
+                for name in all_product_names
+                if product_curr.get(name, 0) >= min_vol_threshold and calc_growth(name) < 0
+            ],
+            key=lambda x: x[2],
+        )
+        declining = [
+            {"id": f"d{i}", "name": name, "current_demand": vol, "growth_pct": g,
+             "trend": trend_label(g), "category": inv_map.get(name, "general"), "revenue": product_revenue.get(name, 0)}
+            for i, (name, vol, g) in enumerate(declining_candidates[:5])
+        ]
 
-        # Product performance by distributor
+        trends = [{"period": bucket_labels[i], "total_volume": trend_buckets[i]} for i in range(bucket_count)]
+
         perf_by_dist = []
         for dist_id, prods in dist_product_vol.items():
             sorted_prods = sorted(prods.items(), key=lambda x: x[1], reverse=True)
@@ -2081,16 +2916,37 @@ def get_demand(period: str = "monthly", user_id: Optional[str] = None):
                 "distributor_id": dist_id,
                 "distributor_name": dist_names.get(dist_id, dist_id),
                 "products": [
-                    {"product_id": f"p{i}", "product_name": name, "quantity": qty, "revenue": 0, "last_order_date": ""}
+                    {
+                        "product_id": f"p{i}", "product_name": name, "quantity": qty,
+                        "revenue": dist_product_rev[dist_id].get(name, 0),
+                        "last_order_date": dist_product_last[dist_id].get(name, ""),
+                    }
                     for i, (name, qty) in enumerate(sorted_prods[:5])
                 ],
             })
+        perf_by_dist.sort(key=lambda dist: sum(product.get("quantity", 0) for product in dist["products"]), reverse=True)
 
         insights = []
         if top_rising:
-            insights.append({"type": "demand_forecast", "message": f"Produk terlaris: {top_rising[0]['name']} dengan {top_rising[0]['current_demand']} unit.", "urgency": "low"})
-        if not orders:
-            insights.append({"type": "inventory_warning", "message": "Belum ada data order. Mulai bertransaksi untuk melihat analisis demand.", "urgency": "medium"})
+            best = top_rising[0]
+            insights.append({
+                "type": "demand_forecast",
+                "message": f"{best['name']} demand up {best['growth_pct']}% — {best['current_demand']} units this period.",
+                "urgency": "medium" if best["growth_pct"] > 20 else "low",
+            })
+        if declining:
+            worst = declining[0]
+            insights.append({
+                "type": "inventory_warning",
+                "message": f"{worst['name']} demand down {abs(worst['growth_pct'])}% — consider reducing stock.",
+                "urgency": "medium",
+            })
+        if not delivered_orders:
+            insights.append({
+                "type": "inventory_warning",
+                "message": "No order data yet. Start transacting to see demand analysis.",
+                "urgency": "medium",
+            })
 
         return success_response(
             data={
@@ -2101,7 +2957,7 @@ def get_demand(period: str = "monthly", user_id: Optional[str] = None):
                 "top_selling": top_selling,
                 "product_performance_by_distributor": perf_by_dist,
             },
-            message="Data demand berhasil ditarik",
+            message="Demand analysis data retrieved successfully",
         )
     except Exception as e:
         return error_response(str(e))
@@ -2133,7 +2989,7 @@ def get_shipments(user_id: Optional[str] = None):
                 "delivered_today": sum(1 for s in shipments if s["status"] == "delivered"),
                 "shipments": shipments, "partners": [],
             },
-            message="Data shipment berhasil ditarik",
+            message="Shipment data retrieved successfully",
         )
     except Exception as e:
         return error_response(str(e))
@@ -2144,7 +3000,7 @@ def optimize_route(shipment_id: str):
     try:
         new_eta = future_iso(hours=2)
         supabase.table("shipments").update({"status": "in_transit", "eta": new_eta}).eq("id", shipment_id).execute()
-        return success_response(data={"shipment_id": shipment_id, "new_eta": new_eta, "optimized": True}, message="Rute berhasil dioptimasi")
+        return success_response(data={"shipment_id": shipment_id, "new_eta": new_eta, "optimized": True}, message="Route optimized successfully")
     except Exception as e:
         return error_response(str(e))
 
@@ -2187,7 +3043,7 @@ def get_credit_accounts(user_id: Optional[str] = None, page: int = 1, limit: int
                             "avg_utilization_pct": round(total_utilized / max(total_limit, 1) * 100, 1)},
                 "pagination": {"page": page, "limit": limit, "total": total},
             },
-            message="Data credit berhasil ditarik",
+            message="Credit data retrieved successfully",
         )
     except Exception as e:
         return error_response(str(e))
@@ -2202,7 +3058,47 @@ def get_repayments(account_id: str):
              "status": r.get("status", "paid"), "payment_method": r.get("payment_method", "transfer"), "invoice_id": r.get("invoice_id")}
             for r in (res.data or [])
         ]
-        return success_response(data={"repayments": repayments}, message="Data repayment berhasil ditarik")
+        return success_response(data={"repayments": repayments}, message="Repayment data retrieved successfully")
+    except Exception as e:
+        return error_response(str(e))
+
+
+@app.post("/credit/accounts/{account_id}/repayments")
+def add_repayment(account_id: str, data: dict):
+    """Record a new repayment and update credit account utilized amount."""
+    try:
+        amount = data.get("amount", 0)
+        payment_method = data.get("payment_method", "bank_transfer")
+        invoice_id = data.get("invoice_id", "")
+        notes = data.get("notes", "")
+
+        if amount <= 0:
+            return error_response("Amount must be greater than 0.")
+
+        # Insert repayment record
+        repayment_id = str(uuid.uuid4())
+        supabase.table("repayments").insert({
+            "id": repayment_id,
+            "credit_account_id": account_id,
+            "amount": amount,
+            "payment_method": payment_method,
+            "invoice_id": invoice_id,
+            "notes": notes,
+            "status": "paid",
+            "paid_at": now_iso(),
+        }).execute()
+
+        # Update credit account utilized amount
+        acc = supabase.table("credit_accounts").select("*").eq("id", account_id).execute()
+        if acc.data and len(acc.data) > 0:
+            row = acc.data[0]
+            new_utilized = max(0, row.get("utilized_amount", 0) - amount)
+            supabase.table("credit_accounts").update({"utilized_amount": new_utilized}).eq("id", account_id).execute()
+
+        return success_response(
+            data={"repayment_id": repayment_id, "amount": amount, "status": "paid"},
+            message="Repayment recorded successfully",
+        )
     except Exception as e:
         return error_response(str(e))
 
@@ -2211,15 +3107,21 @@ def get_repayments(account_id: str):
 def open_credit(data: OpenCreditReq):
     try:
         account_id = str(uuid.uuid4())
+        # Generate account number: CRD-XXXX
+        count_res = supabase.table("credit_accounts").select("id", count="exact").execute()
+        acc_num = f"CRD-{str((count_res.count or 0) + 1).zfill(4)}"
+        billing_end = (datetime.utcnow() + timedelta(days=data.billing_cycle_days)).isoformat() + "Z"
         payload = {"id": account_id, "retailer_id": data.retailer_id, "credit_limit": data.credit_limit,
-                   "utilized_amount": 0, "status": "active", "risk_level": "medium", "opened_at": now_iso()}
+                   "credit_account_number": acc_num, "billing_cycle_days": data.billing_cycle_days,
+                   "utilized_amount": 0, "status": "active", "risk_level": "medium", "opened_at": now_iso(),
+                   "next_due_date": billing_end, "next_due_amount": 0}
         if data.distributor_id:
             payload["distributor_id"] = data.distributor_id
         supabase.table("credit_accounts").insert(payload).execute()
         return success_response(
             data={**payload, "credit_account_id": account_id, "retailer": {"retailer_id": data.retailer_id, "name": ""},
                   "available_amount": data.credit_limit, "utilization_pct": 0},
-            message="Akun kredit berhasil dibuka",
+            message="Credit account opened successfully",
         )
     except Exception as e:
         return error_response(str(e))
@@ -2231,12 +3133,12 @@ def update_credit(account_id: str, data: UpdateCreditReq):
         update_payload = {k: v for k, v in data.dict().items() if v is not None}
         res = supabase.table("credit_accounts").update(update_payload).eq("id", account_id).execute()
         if not res.data:
-            return error_response("Akun kredit tidak ditemukan.")
+            return error_response("Credit account not found.")
         a = res.data[0]
         return success_response(
             data={"credit_account_id": a.get("id"), "credit_limit": a.get("credit_limit"),
                   "utilized_amount": a.get("utilized_amount", 0), "status": a.get("status"), "risk_level": a.get("risk_level")},
-            message="Akun kredit berhasil diupdate",
+            message="Credit account updated successfully",
         )
     except Exception as e:
         return error_response(str(e))
@@ -2328,58 +3230,58 @@ def get_ai_agents(x_user_role: Optional[str] = Header(default=None),
             if x_user_role == "supplier":
                 agents = [
                     {"id": "fallback-s1", "agent_key": "demand_forecast", "name": "Demand Forecast",
-                     "description": "Memprediksi permintaan dari distributor untuk optimasi produksi.",
+                     "description": "Predicts demand from distributors for production optimization.",
                      "status": "active", "automation_level": "manual_approval",
-                     "recent_action": "Menunggu aktivasi.", "last_active": now_iso()},
+                     "recent_action": "Awaiting activation.", "last_active": now_iso()},
                     {"id": "fallback-s2", "agent_key": "logistics_optimization", "name": "Logistics Optimization",
-                     "description": "Mengoptimalkan rute pengiriman ke distributor.",
+                     "description": "Optimizes delivery routes to distributors.",
                      "status": "active", "automation_level": "auto_with_threshold",
-                     "recent_action": "Menunggu aktivasi.", "last_active": now_iso()},
+                     "recent_action": "Awaiting activation.", "last_active": now_iso()},
                     {"id": "fallback-s3", "agent_key": "price_optimization", "name": "Price Optimization",
-                     "description": "Menyarankan penyesuaian harga berdasarkan supply-demand.",
+                     "description": "Suggests price adjustments based on supply-demand.",
                      "status": "active", "automation_level": "manual_approval",
-                     "recent_action": "Menunggu aktivasi.", "last_active": now_iso()},
+                     "recent_action": "Awaiting activation.", "last_active": now_iso()},
                 ]
             elif x_user_role == "distributor":
                 agents = [
                     {"id": "fallback-d1", "agent_key": "auto_restock", "name": "Auto Restock",
-                     "description": "Memantau inventory dan memberikan peringatan restock otomatis.",
+                     "description": "Monitors inventory and provides automatic restock alerts.",
                      "status": "active", "automation_level": "auto_with_threshold",
-                     "recent_action": "Menunggu aktivasi.", "last_active": now_iso()},
+                     "recent_action": "Awaiting activation.", "last_active": now_iso()},
                     {"id": "fallback-d2", "agent_key": "credit_risk", "name": "Credit Risk Analyzer",
-                     "description": "Menganalisis risiko kredit retailer berdasarkan histori pembayaran.",
+                     "description": "Analyzes retailer credit risk based on payment history.",
                      "status": "active", "automation_level": "manual_approval",
-                     "recent_action": "Menunggu aktivasi.", "last_active": now_iso()},
+                     "recent_action": "Awaiting activation.", "last_active": now_iso()},
                     {"id": "fallback-d3", "agent_key": "supplier_recommendation", "name": "Supplier Recommendation",
-                     "description": "Mencari supplier alternatif dan menganalisis peluang ekspansi.",
+                     "description": "Searches for alternative suppliers and analyzes expansion opportunities.",
                      "status": "active", "automation_level": "manual_approval",
-                     "recent_action": "Menunggu aktivasi.", "last_active": now_iso()},
+                     "recent_action": "Awaiting activation.", "last_active": now_iso()},
                     {"id": "fallback-d4", "agent_key": "cash_flow_optimizer", "name": "Cash Flow Optimizer",
-                     "description": "Mengoptimalkan jadwal pembayaran dan penagihan.",
+                     "description": "Optimizes payment and billing schedules.",
                      "status": "active", "automation_level": "auto_with_threshold",
-                     "recent_action": "Menunggu aktivasi.", "last_active": now_iso()},
+                     "recent_action": "Awaiting activation.", "last_active": now_iso()},
                 ]
             elif x_user_role == "retailer":
                 agents = [
                     {"id": "fallback-r1", "agent_key": "retailer_reorder", "name": "Smart Reorder",
-                     "description": "Monitoring stok dan rekomendasi reorder dari distributor.",
+                     "description": "Monitors retail stock and recommends reorder from distributor.",
                      "status": "active", "automation_level": "auto_with_threshold",
-                     "recent_action": "Menunggu aktivasi.", "last_active": now_iso()},
+                     "recent_action": "Awaiting activation.", "last_active": now_iso()},
                     {"id": "fallback-r2", "agent_key": "retailer_sales_trend", "name": "Sales Trend Analyzer",
-                     "description": "Analisis tren penjualan dan pola permintaan konsumen.",
+                     "description": "Analyzes sales trends and consumer demand patterns.",
                      "status": "active", "automation_level": "manual_approval",
-                     "recent_action": "Menunggu aktivasi.", "last_active": now_iso()},
+                     "recent_action": "Awaiting activation.", "last_active": now_iso()},
                     {"id": "fallback-r3", "agent_key": "retailer_demand_insight", "name": "Demand Insight",
-                     "description": "Prediksi permintaan konsumen 7-14 hari ke depan.",
+                     "description": "Predicts consumer demand 7-14 days ahead.",
                      "status": "active", "automation_level": "manual_approval",
-                     "recent_action": "Menunggu aktivasi.", "last_active": now_iso()},
+                     "recent_action": "Awaiting activation.", "last_active": now_iso()},
                 ]
             else:
                 agents = [
                     {"id": "fallback-g1", "agent_key": "demand_forecast", "name": "Demand Forecast",
-                     "description": "Analisis tren permintaan dan prediksi kebutuhan.",
+                     "description": "Analyzes demand trends and predicts needs.",
                      "status": "active", "automation_level": "manual_approval",
-                     "recent_action": "Menunggu aktivasi.", "last_active": now_iso()},
+                     "recent_action": "Awaiting activation.", "last_active": now_iso()},
                 ]
 
         return success_response(
@@ -2392,7 +3294,7 @@ def get_ai_agents(x_user_role: Optional[str] = Header(default=None),
                     "time_saved_hours": actionable_count * 2,
                 },
             },
-            message="Data AI agents berhasil ditarik",
+            message="AI agents data retrieved successfully",
         )
     except Exception as e:
         return error_response(str(e))
@@ -2408,7 +3310,7 @@ def update_agent_config(agent_id: str, data: UpdateAgentConfigReq):
             update_payload["automation_level"] = data.automation_level
         if update_payload:
             supabase.table("ai_agents").update(update_payload).eq("id", agent_id).execute()
-        return success_response(data={"success": True}, message="Config agent berhasil diupdate")
+        return success_response(data={"success": True}, message="Agent config updated successfully")
     except Exception as e:
         return error_response(str(e))
 
@@ -2652,14 +3554,14 @@ def run_ai_agent(agent_key: str,
     try:
         agents_res = supabase.table("ai_agents").select("*").eq("agent_key", agent_key).execute()
         if not agents_res.data:
-            return error_response(f"Agent '{agent_key}' tidak ditemukan.")
+            return error_response(f"Agent '{agent_key}' not found.")
 
         agent = agents_res.data[0]
         role = x_user_role or "distributor"
         uid = user_id or ""
 
         if agent.get("agent_role") not in (role, "all"):
-            return error_response(f"Agent '{agent_key}' tidak tersedia untuk role {role}.")
+            return error_response(f"Agent '{agent_key}' is not available for role {role}.")
 
         # Execute agent
         result = _execute_agent(agent_key, agent, role, uid)
@@ -2779,8 +3681,8 @@ def auto_tick_agents(x_user_role: Optional[str] = Header(default=None),
 def ai_restock(req: AIRestockReq):
     try:
         res = supabase.table("inventories").select("*").execute()
-        prompt = f"Sebagai AI Supply Chain. Cek data stok: {res.data}. Buat rekomendasi restock kritis. Fokus ID: {req.item_id or 'Semua'}."
-        return success_response(data={"rekomendasi_ai": _call_ai(prompt)}, message="Rekomendasi restock selesai")
+        prompt = f"As an AI Supply Chain agent. Check stock data: {res.data}. Generate critical restock recommendations. Focus ID: {req.item_id or 'All'}."
+        return success_response(data={"ai_recommendation": _call_ai(prompt)}, message="Restock recommendation completed")
     except Exception as e:
         return error_response(str(e))
 
@@ -2789,8 +3691,8 @@ def ai_restock(req: AIRestockReq):
 def ai_demand(req: AIDemandReq):
     try:
         res = supabase.table("inventories").select("product_name, current_stock").execute()
-        prompt = f"Buat prediksi permintaan {req.forecast_days} hari ke depan untuk data: {res.data}."
-        return success_response(data={"prediksi_ai": _call_ai(prompt)}, message="Demand forecasting selesai")
+        prompt = f"Generate demand forecast for next {req.forecast_days} days based on data: {res.data}."
+        return success_response(data={"ai_forecast": _call_ai(prompt)}, message="Demand forecasting completed")
     except Exception as e:
         return error_response(str(e))
 
@@ -2799,12 +3701,12 @@ def ai_demand(req: AIDemandReq):
 def ai_credit_risk(req: AICreditRiskReq):
     try:
         res = supabase.table("credit_accounts").select("*").eq("retailer_id", req.retailer_id).execute()
-        prompt = f"Analisis risiko kredit untuk retailer {req.retailer_id}. Data akun kredit: {res.data}."
+        prompt = f"Credit risk analysis for retailer {req.retailer_id}. Credit account data: {res.data}."
         ai_text = _call_ai(prompt)
         return success_response(
             data={"retailer_id": req.retailer_id, "retailer_name": "", "risk_score": 75, "risk_level": "medium",
                   "recommendation": ai_text, "max_credit_suggestion": 5000000, "generated_at": now_iso()},
-            message="Credit risk scoring selesai",
+            message="Credit risk scoring completed",
         )
     except Exception as e:
         return error_response(str(e))
@@ -2814,8 +3716,8 @@ def ai_credit_risk(req: AICreditRiskReq):
 def ai_logistics(req: AILogisticsReq):
     try:
         res = supabase.table("shipments").select("*").execute()
-        prompt = f"Kamu Manajer Logistik. Analisis data {res.data}. Target regional: {req.region or 'Semua'}. Beri rekomendasi pemindahan barang."
-        return success_response(data={"rekomendasi_ai": _call_ai(prompt)}, message="Optimasi logistik selesai")
+        prompt = f"You are a Logistics Manager. Analyze data {res.data}. Regional target: {req.region or 'All'}. Provide goods movement recommendations."
+        return success_response(data={"ai_recommendation": _call_ai(prompt)}, message="Logistics optimization completed")
     except Exception as e:
         return error_response(str(e))
 
@@ -2868,10 +3770,10 @@ def _update_auth_user_metadata(user_id: str, metadata_patch: dict) -> bool:
 @app.get("/settings/profile")
 def get_profile(user_id: Optional[str] = None):
     if not user_id:
-        return success_response(data={"user_id": "", "full_name": "", "email": "", "phone": "", "role": "", "avatar_url": None}, message="Profile ditarik")
+        return success_response(data={"user_id": "", "full_name": "", "email": "", "phone": "", "role": "", "avatar_url": None}, message="Profile retrieved")
     raw = _get_auth_user(user_id)
     if not raw:
-        return error_response("User tidak ditemukan")
+        return error_response("User not found")
     meta = raw.get("user_metadata", {}) or {}
     return success_response(data={
         "user_id": user_id,
@@ -2880,13 +3782,13 @@ def get_profile(user_id: Optional[str] = None):
         "phone": meta.get("phone", ""),
         "role": meta.get("role", ""),
         "avatar_url": meta.get("avatar_url", None),
-    }, message="Profile ditarik")
+    }, message="Profile retrieved")
 
 
 @app.put("/settings/profile")
 def update_profile(data: UpdateProfileReq, user_id: Optional[str] = None):
     if not user_id:
-        return error_response("user_id diperlukan")
+        return error_response("user_id required")
     patch = {}
     if data.full_name is not None:
         patch["full_name"] = data.full_name
@@ -2896,17 +3798,17 @@ def update_profile(data: UpdateProfileReq, user_id: Optional[str] = None):
         patch["avatar_url"] = data.avatar_url
     ok = _update_auth_user_metadata(user_id, patch)
     if not ok:
-        return error_response("Gagal memperbarui profil")
-    return success_response(data=patch, message="Profile berhasil diupdate")
+        return error_response("Failed to update profile")
+    return success_response(data=patch, message="Profile updated successfully")
 
 
 @app.get("/settings/business")
 def get_business(user_id: Optional[str] = None):
     if not user_id:
-        return success_response(data={"business_name": "", "tax_id": "", "warehouse_locations": [], "service_regions": []}, message="Business settings ditarik")
+        return success_response(data={"business_name": "", "tax_id": "", "warehouse_locations": [], "service_regions": []}, message="Business settings retrieved")
     raw = _get_auth_user(user_id)
     if not raw:
-        return error_response("User tidak ditemukan")
+        return error_response("User not found")
     meta = raw.get("user_metadata", {}) or {}
     return success_response(data={
         "business_name": meta.get("business_name", ""),
@@ -2916,18 +3818,18 @@ def get_business(user_id: Optional[str] = None):
         "service_regions": meta.get("service_regions", []),
         "preferred_currency": meta.get("preferred_currency", "IDR"),
         "operational_timezone": meta.get("operational_timezone", "Asia/Jakarta"),
-    }, message="Business settings ditarik")
+    }, message="Business settings retrieved")
 
 
 @app.put("/settings/business")
 def update_business(data: UpdateBusinessReq, user_id: Optional[str] = None):
     if not user_id:
-        return error_response("user_id diperlukan")
+        return error_response("user_id required")
     patch = {k: v for k, v in data.dict().items() if v is not None}
     ok = _update_auth_user_metadata(user_id, patch)
     if not ok:
-        return error_response("Gagal memperbarui data bisnis")
-    return success_response(data=patch, message="Business settings diupdate")
+        return error_response("Failed to update business data")
+    return success_response(data=patch, message="Business settings updated")
 
 
 @app.get("/settings/notifications")
@@ -2945,7 +3847,7 @@ def get_notification_settings():
                 "weekly_analytics_report": False,
             },
         },
-        message="Notification settings ditarik",
+        message="Notification settings retrieved",
     )
 
 
@@ -2953,7 +3855,7 @@ def get_notification_settings():
 def update_notifications(data: UpdateNotificationReq):
     return success_response(
         data={"channels": data.channels or {}, "preferences": data.preferences or {}},
-        message="Notification settings diupdate",
+        message="Notification settings updated",
     )
 
 
@@ -2962,7 +3864,7 @@ def get_integrations():
     return success_response(
         data={"erp": {"connected": False, "provider": None}, "payment_gateway": {"connected": False, "provider": None},
               "wallet": {"connected": False, "address": None}, "logistics": {"connected": False, "provider": None}, "api_keys": []},
-        message="Integration settings ditarik",
+        message="Integration settings retrieved",
     )
 
 
@@ -2971,7 +3873,7 @@ def get_sessions():
     return success_response(
         data={"sessions": [{"session_id": str(uuid.uuid4()), "device": "Chrome / Windows", "ip": "127.0.0.1",
                             "city": "Jakarta", "is_current": True, "last_active_at": now_iso()}]},
-        message="Sessions ditarik",
+        message="Sessions retrieved",
     )
 
 
@@ -2980,17 +3882,17 @@ def enable_2fa():
     import base64, os
     secret = base64.b32encode(os.urandom(10)).decode("utf-8")
     qr_code_url = f"otpauth://totp/AUTOSUP:user@autosup.app?secret={secret}&issuer=AUTOSUP"
-    return success_response(data={"secret": secret, "qr_code_url": qr_code_url}, message="2FA siap diaktifkan")
+    return success_response(data={"secret": secret, "qr_code_url": qr_code_url}, message="2FA ready to be enabled")
 
 
 @app.post("/settings/security/2fa/verify")
 def verify_2fa(data: Verify2FAReq):
-    return success_response(message="2FA berhasil diverifikasi")
+    return success_response(message="2FA verified successfully")
 
 
 @app.post("/settings/security/2fa/disable")
 def disable_2fa(data: Disable2FAReq):
-    return success_response(message="2FA berhasil dinonaktifkan")
+    return success_response(message="2FA disabled successfully")
 
 # ==========================================
 # 20. SUPPLIERS
@@ -3003,7 +3905,7 @@ def get_suppliers(search: str = "", type: str = "", user_id: Optional[str] = Non
         {
             "supplier_id": u["id"],
             "name": u.get("business_name", u.get("full_name", "")),
-            "category": u.get("business_type", "Umum"),
+            "category": u.get("business_type", "General"),
             "type": "discover",
             "reputation_score": u.get("reputation_score", 0),
             "total_transactions": u.get("total_transactions", 0),
@@ -3074,6 +3976,8 @@ def get_partnership_requests(status: str = "", supplier_id: Optional[str] = None
     """Get partnership requests (distributor -> supplier). Filter by supplier_id for data isolation."""
     try:
         query = supabase.table("partnerships").select("*")
+        # Only return supplier-type partnerships (distributor→supplier)
+        query = query.or_("partnership_type.eq.supplier,partnership_type.eq.distributor_supplier")
         if status:
             query = query.eq("status", status)
         if supplier_id:
@@ -3094,6 +3998,12 @@ def get_partnership_requests(status: str = "", supplier_id: Optional[str] = None
                 },
                 "status": r.get("status", "pending"),
                 "created_at": r.get("created_at", now_iso()),
+                "terms": r.get("terms", ""),
+                "distribution_region": r.get("distribution_region", ""),
+                "valid_until": r.get("valid_until", 0),
+                "legal_contract_hash": r.get("legal_contract_hash", ""),
+                "mou_document_name": r.get("mou_document_name", ""),
+                "mou_document_data": r.get("mou_document_data", ""),
             })
         return success_response(data={
             "requests": requests,
@@ -3109,6 +4019,12 @@ def create_partnership_request(body: dict):
     supplier_id = body.get("supplier_id", "")
     distributor_id = body.get("distributor_id", "")
     distributor_name = body.get("distributor_name", "")
+    terms = body.get("terms", "")
+    legal_contract_hash = body.get("legal_contract_hash", "")
+    valid_until = body.get("valid_until", 0)
+    distribution_region = body.get("distribution_region", "")
+    mou_document_name = body.get("mou_document_name", "")
+    mou_document_data = body.get("mou_document_data", "")
 
     # Prevent duplicate requests — check if active/pending already exists
     if supplier_id and distributor_id:
@@ -3116,19 +4032,31 @@ def create_partnership_request(body: dict):
             existing = supabase.table("partnerships").select("id,status").eq("supplier_id", supplier_id).eq("distributor_id", distributor_id).in_("status", ["pending", "approved", "accepted"]).execute().data or []
             if existing:
                 row = existing[0]
-                return success_response(data={"request_id": row["id"], "supplier_id": supplier_id, "status": row["status"], "created_at": now_iso()}, message="Partnership sudah ada")
+                return success_response(data={"request_id": row["id"], "supplier_id": supplier_id, "status": row["status"], "created_at": now_iso()}, message="Partnership already exists")
         except Exception:
             pass
 
     payload = {
-        "retailer_name": distributor_name or "Distributor",
-        "supplier_name": "",
+        "distributor_name": distributor_name or "",
         "status": "pending",
+        "partnership_type": "supplier",
     }
     if distributor_id:
         payload["distributor_id"] = distributor_id
     if supplier_id:
         payload["supplier_id"] = supplier_id
+    if terms:
+        payload["terms"] = terms[:256]
+    if legal_contract_hash:
+        payload["legal_contract_hash"] = legal_contract_hash
+    if valid_until:
+        payload["valid_until"] = valid_until
+    if distribution_region:
+        payload["distribution_region"] = distribution_region[:64]
+    if mou_document_name:
+        payload["mou_document_name"] = mou_document_name[:255]
+    if mou_document_data:
+        payload["mou_document_data"] = mou_document_data
     try:
         res = supabase.table("partnerships").insert(payload).execute()
         if res.data:
@@ -3206,13 +4134,23 @@ def respond_partnership_request(request_id: str, body: dict):
 
                 # Mint partnership NFT via blockchain service (falls back to deterministic if offline)
                 token_name = f"AUTOSUP Partnership: {supplier_name or supplier_id[:8]} × {distributor_name or distributor_id[:8]}"
+                # Read MOU fields from partnership record
+                terms = p.get("terms", "") or token_name
+                legal_hash = p.get("legal_contract_hash", "") or ("0" * 64)
+                valid_until = p.get("valid_until", 0) or 0
+                distribution_region = p.get("distribution_region", "") or ""
+
                 try:
                     if bc:
                         d_wallet = bc.get_or_create_wallet(supabase, distributor_id)
                         s_wallet = bc.get_or_create_wallet(supabase, supplier_id)
                         nft_result = bc.mint_partnership_nft(
                             d_wallet["pubkey"], s_wallet["pubkey"],
-                            terms=token_name, role=1,
+                            terms=terms[:256],
+                            role=1,
+                            legal_contract_hash=legal_hash[:64],
+                            valid_until=valid_until,
+                            distribution_region=distribution_region[:64],
                         )
                         mint_address = nft_result["mint_address"]
                         explorer_url = nft_result.get("mint_explorer_url", nft_result["explorer_url"])
@@ -3252,7 +4190,7 @@ def respond_partnership_request(request_id: str, body: dict):
         return error_response(str(e))
     return success_response(
         data={"request_id": request_id, "action": action, "nft": nft_data},
-        message=f"Request {new_status}" + (" — Partnership NFT diterbitkan" if nft_data else ""),
+        message=f"Request {new_status}" + (" — Partnership NFT issued" if nft_data else ""),
     )
 
 
@@ -3267,15 +4205,20 @@ def discover_suppliers():
 # ==========================================
 
 @app.get("/notifications/{user_name}")
-def get_user_notifications(user_name: str):
-    res = supabase.table("notifications").select("*").eq("user_name", user_name).order("created_at", desc=True).execute()
-    return success_response(data=res.data, message="Notifikasi ditarik")
+def get_user_notifications(user_name: str, user_id: Optional[str] = None):
+    query = supabase.table("notifications").select("*")
+    if user_id:
+        query = query.eq("user_id", user_id)
+    else:
+        query = query.eq("user_name", user_name)
+    res = query.order("created_at", desc=True).execute()
+    return success_response(data=res.data, message="Notifications retrieved")
 
 
 @app.patch("/notifications/read/{notif_id}")
 def mark_notification_read(notif_id: str):
     supabase.table("notifications").update({"is_read": True}).eq("id", notif_id).execute()
-    return success_response(message="Notifikasi ditandai dibaca")
+    return success_response(message="Notification marked as read")
 
 # ==========================================
 # 22. PAYMENTS (checkout + webhook)
@@ -3286,11 +4229,11 @@ def checkout_order(order_id: str):
     try:
         res = supabase.table("orders").select("*").eq("id", order_id).execute()
         if not res.data:
-            return error_response("Pesanan tidak ditemukan.")
-        nomor_va = f"8077{random.randint(1000000, 9999999)}"
+            return error_response("Order not found.")
+        va_number = f"8077{random.randint(1000000, 9999999)}"
         return success_response(
-            data={"order_id": order_id, "total_tagihan": res.data[0].get("total_price"), "metode": "BCA Virtual Account", "nomor_va": nomor_va},
-            message="Checkout berhasil",
+            data={"order_id": order_id, "total_bill": res.data[0].get("total_price"), "method": "BCA Virtual Account", "va_number": va_number},
+            message="Checkout successful",
         )
     except Exception as e:
         return error_response(str(e))
@@ -3300,9 +4243,9 @@ def checkout_order(order_id: str):
 def payment_webhook(data: WebhookPayment):
     try:
         status_map = {"settlement": "processing", "expire": "cancelled", "cancel": "cancelled", "deny": "cancelled"}
-        status_baru = status_map.get(data.transaction_status, "pending")
-        supabase.table("orders").update({"status": status_baru}).eq("id", data.order_id).execute()
-        return success_response(data={"order_id": data.order_id}, message=f"Webhook diterima, status: {status_baru}")
+        new_status = status_map.get(data.transaction_status, "pending")
+        supabase.table("orders").update({"status": new_status}).eq("id", data.order_id).execute()
+        return success_response(data={"order_id": data.order_id}, message=f"Webhook received, status: {new_status}")
     except Exception as e:
         return error_response(str(e))
 
@@ -3314,14 +4257,14 @@ def payment_webhook(data: WebhookPayment):
 def export_orders(store_name: str):
     res = supabase.table("orders").select("*").eq("retailer_name", store_name).execute()
     if not res.data:
-        return error_response("Tidak ada data untuk diexport.")
+        return error_response("No data to export.")
     output = io.StringIO()
     writer = csv.DictWriter(output, fieldnames=res.data[0].keys())
     writer.writeheader()
     writer.writerows(res.data)
     return StreamingResponse(
         io.StringIO(output.getvalue()), media_type="text/csv",
-        headers={"Content-Disposition": f"attachment; filename=laporan_order_{store_name}.csv"},
+        headers={"Content-Disposition": f"attachment; filename=order_report_{store_name}.csv"},
     )
 
 # ==========================================
@@ -3331,10 +4274,15 @@ def export_orders(store_name: str):
 @app.get("/team/{store_name}")
 def get_team(store_name: str):
     res = supabase.table("team_members").select("*").eq("store_name", store_name).execute()
-    return success_response(data=res.data, message="Team ditarik")
+    return success_response(data=res.data, message="Team data retrieved")
 
 
 @app.post("/team/invite/{store_name}")
 def invite_member(store_name: str, member: TeamMemberInvite):
     res = supabase.table("team_members").insert({"store_name": store_name, **member.dict()}).execute()
-    return success_response(data=res.data[0], message="Member diundang")
+    return success_response(data=res.data[0], message="Member invited")
+
+
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run("main:app", host="0.0.0.0", port=int(os.getenv("PORT", "8000")), reload=True)

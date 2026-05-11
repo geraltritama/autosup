@@ -24,6 +24,18 @@ export type Distributor = {
   joined_at?: string;
 };
 
+export type DistributorPartnershipHistoryItem = {
+  request_id: string;
+  status: "pending" | "accepted" | "approved" | "rejected" | "terminated";
+  created_at: string;
+  terms?: string;
+  distribution_region?: string;
+  valid_until?: number;
+  legal_contract_hash?: string;
+  mou_document_name?: string;
+  mou_document_data?: string;
+};
+
 export type DistributorPartnershipRequest = {
   request_id: string;
   distributor: {
@@ -60,6 +72,10 @@ export type DistributorRequestsResponse = {
   pagination: { page: number; limit: number; total: number };
 };
 
+export type DistributorPartnershipHistoryResponse = {
+  history: DistributorPartnershipHistoryItem[];
+};
+
 type DistributorFilters = {
   search?: string;
   status?: string;
@@ -70,8 +86,9 @@ type DistributorFilters = {
 
 export function useDistributors(filters: DistributorFilters = {}) {
   const userId = useAuthStore((s) => s.user?.user_id);
+  const role = useAuthStore((s) => s.user?.role);
   return useQuery({
-    queryKey: ["distributors", filters, userId],
+    queryKey: ["distributors", filters, userId, role],
     queryFn: async (): Promise<DistributorsResponse> => {
       const params = new URLSearchParams();
       if (filters.search) params.set("search", filters.search);
@@ -80,6 +97,7 @@ export function useDistributors(filters: DistributorFilters = {}) {
       if (filters.page) params.set("page", String(filters.page));
       if (filters.limit) params.set("limit", String(filters.limit));
       if (userId) params.set("user_id", userId);
+      if (role) params.set("role", role);
       const { data } = await api.get<ApiResponse<DistributorsResponse>>(
         `/distributors?${params.toString()}`,
       );
@@ -131,6 +149,25 @@ export function useDistributorRequests(status?: string) {
   });
 }
 
+export function useDistributorPartnershipHistory(distributorId: string | null) {
+  const userId = useAuthStore((s) => s.user?.user_id);
+  const role = useAuthStore((s) => s.user?.role);
+  return useQuery({
+    queryKey: ["distributor-partnership-history", distributorId, userId, role],
+    enabled: !!distributorId && !!userId,
+    queryFn: async (): Promise<DistributorPartnershipHistoryResponse> => {
+      const params = new URLSearchParams();
+      if (userId) params.set("user_id", userId);
+      if (role) params.set("role", role);
+      const { data } = await api.get<ApiResponse<DistributorPartnershipHistoryResponse>>(
+        `/distributors/${distributorId}/partnership-history?${params.toString()}`,
+      );
+      return data.data;
+    },
+    staleTime: 30 * 1000,
+  });
+}
+
 export function useRespondDistributorRequest() {
   const qc = useQueryClient();
   return useMutation({
@@ -173,6 +210,12 @@ export type DistributorStockResponse = {
   pagination: { page: number; limit: number; total: number };
 };
 
+const distributorStockStatusOrder: Record<InventoryStatus, number> = {
+  out_of_stock: 0,
+  low_stock: 1,
+  in_stock: 2,
+};
+
 export function useDistributorStock(distributorId: string | null) {
   return useQuery({
     queryKey: ["distributor-stock", distributorId],
@@ -181,7 +224,15 @@ export function useDistributorStock(distributorId: string | null) {
       const { data } = await api.get<ApiResponse<DistributorStockResponse>>(
         `/distributors/${distributorId}/stock`,
       );
-      return data.data;
+      const products = [...(data.data.products ?? [])].sort(
+        (a, b) =>
+          distributorStockStatusOrder[a.status] - distributorStockStatusOrder[b.status] ||
+          a.name.localeCompare(b.name),
+      );
+      return {
+        ...data.data,
+        products,
+      };
     },
     staleTime: 60 * 1000,
   });
@@ -189,17 +240,21 @@ export function useDistributorStock(distributorId: string | null) {
 
 export function useDeleteDistributorPartnership() {
   const qc = useQueryClient();
-  const userId = useAuthStore((s) => s.user?.user_id);
   return useMutation({
     mutationFn: async (distributorId: string) => {
+      const uid = useAuthStore.getState().user?.user_id;
+      if (!uid) throw new Error("Not authenticated");
       const { data } = await api.delete<ApiResponse<{ terminated: number }>>(
-        `/partnerships/between/${distributorId}?user_id=${userId ?? ""}`,
+        `/partnerships/between/${distributorId}?user_id=${uid}`,
       );
       return data.data;
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["distributors"] });
       qc.invalidateQueries({ queryKey: ["distributor-requests"] });
+    },
+    onError: () => {
+      qc.invalidateQueries({ queryKey: ["distributors"] });
     },
   });
 }
@@ -208,10 +263,23 @@ export function useRequestDistributorPartnership() {
   const qc = useQueryClient();
   const userId = useAuthStore((s) => s.user?.user_id);
   return useMutation({
-    mutationFn: async (distributor_id: string) => {
+    mutationFn: async (payload: {
+      distributor_id: string;
+      terms?: string;
+      legal_contract_hash?: string;
+      valid_until?: number;
+      distribution_region?: string;
+    }) => {
       const { data } = await api.post<ApiResponse<{ request_id: string; distributor_id: string; distributor_name: string; status: string; created_at: string }>>(
         "/distributors/partnership-request",
-        { distributor_id, requester_id: userId ?? "" },
+        {
+          distributor_id: payload.distributor_id,
+          requester_id: userId ?? "",
+          terms: payload.terms,
+          legal_contract_hash: payload.legal_contract_hash,
+          valid_until: payload.valid_until,
+          distribution_region: payload.distribution_region,
+        },
       );
       return data.data;
     },

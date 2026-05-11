@@ -8,7 +8,7 @@ import { useAuthStore } from "@/store/useAuthStore";
 import type { RestockRecommendation } from "@/hooks/useInventory";
 
 const urgencyTone = { high: "danger", medium: "warning", low: "info" } as const;
-const urgencyLabel = { high: "Segera restock", medium: "Perhatikan", low: "Aman" } as const;
+const urgencyLabel = { high: "Restock soon", medium: "Attention", low: "Safe" } as const;
 
 type Props = {
   recommendation: RestockRecommendation;
@@ -73,7 +73,7 @@ export function RestockPanel({ recommendation: rec, onClose, onCreateOrder }: Pr
                 </span>
                 <span className="flex items-center gap-1">
                   <Truck className="h-3 w-3" />
-                  {rec.suggested_seller.estimated_delivery_days} hari
+                  {rec.suggested_seller.estimated_delivery_days} days
                 </span>
               </div>
             </div>
@@ -87,7 +87,7 @@ export function RestockPanel({ recommendation: rec, onClose, onCreateOrder }: Pr
           {rec.suggested_seller && (
             <Button onClick={() => onCreateOrder(rec)} className="gap-2">
               <Truck className="h-4 w-4" />
-              Buat Order
+              Create Order
             </Button>
           )}
         </div>

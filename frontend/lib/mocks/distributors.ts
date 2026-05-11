@@ -168,7 +168,7 @@ export const mockDistributorRequests: DistributorPartnershipRequest[] = [
     },
     status: "pending",
     created_at: "2026-04-28T14:00:00Z",
-    terms: "Partnership untuk distribusi produk suku cadang di wilayah Jawa Timur. Minimum order 50 unit per bulan.",
+    terms: "Partnership for spare parts product distribution in East Java region. Minimum order 50 units per month.",
     proposed_start_date: "2026-06-01",
     proposed_end_date: "2027-05-31",
   },

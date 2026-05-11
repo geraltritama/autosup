@@ -30,7 +30,7 @@ export function useRetailerAnalytics(enabled = true) {
   const userId = useAuthStore((s) => s.user?.user_id);
   return useQuery({
     queryKey: ["analytics", "retailer", userId],
-    enabled,
+    enabled: enabled && !!userId,
     queryFn: async (): Promise<AnalyticsResponse> => {
       const params = userId ? `?user_id=${userId}` : "";
       const { data } = await api.get<ApiResponse<AnalyticsResponse>>(`/analytics/retailer/overview${params}`);
@@ -44,7 +44,7 @@ export function useDistributorAnalytics(enabled = true) {
   const userId = useAuthStore((s) => s.user?.user_id);
   return useQuery({
     queryKey: ["analytics", "distributor", userId],
-    enabled,
+    enabled: enabled && !!userId,
     queryFn: async (): Promise<AnalyticsResponse> => {
       const params = userId ? `?user_id=${userId}` : "";
       const { data } = await api.get<ApiResponse<AnalyticsResponse>>(`/analytics/distributor/overview${params}`);
@@ -90,62 +90,15 @@ export type SupplierAnalyticsResponse = {
   distributor_performance: DistributorPerformance[];
 };
 
-type RawSupplierAnalytics = {
-  summary: {
-    total_revenue: number;
-    total_orders: number;
-    completed_orders: number;
-    growth_pct: number;
-  };
-  trends: { period: string; revenue: number; orders: number }[];
-  distributor_performance: {
-    distributor_id: string;
-    distributor_name: string;
-    orders: number;
-    revenue: number;
-    reliability: number;
-  }[];
-};
-
-function transformSupplierAnalytics(raw: RawSupplierAnalytics): SupplierAnalyticsResponse {
-  const trendPoints = (raw.trends ?? []).map((t) => ({ label: t.period, value: t.revenue }));
-  const orderPoints = (raw.trends ?? []).map((t) => ({ label: t.period, value: t.orders }));
-  const totalOrders = raw.summary?.total_orders ?? 0;
-  const completedOrders = raw.summary?.completed_orders ?? 0;
-  const fulfillmentRate = totalOrders > 0 ? completedOrders / totalOrders : 0;
-  return {
-    summary: {
-      total_revenue: raw.summary?.total_revenue ?? 0,
-      demand_growth_pct: raw.summary?.growth_pct ?? 0,
-      fulfillment_rate: fulfillmentRate,
-      active_distributor_contribution_pct: 0,
-    },
-    trends: {
-      revenue: trendPoints,
-      demand: trendPoints,
-      orders: orderPoints,
-      fulfillment: orderPoints,
-    },
-    distributor_performance: (raw.distributor_performance ?? []).map((d) => ({
-      distributor_id: d.distributor_id,
-      name: d.distributor_name,
-      order_volume: d.orders,
-      revenue_contribution: d.revenue,
-      fulfillment_success_rate: 0,
-      reliability_score: d.reliability,
-    })),
-  };
-}
-
 export function useSupplierAnalytics(enabled = true) {
   const userId = useAuthStore((s) => s.user?.user_id);
   return useQuery({
     queryKey: ["analytics", "supplier", userId],
-    enabled,
+    enabled: enabled && !!userId,
     queryFn: async (): Promise<SupplierAnalyticsResponse> => {
       const params = userId ? `?user_id=${userId}` : "";
-      const { data } = await api.get<ApiResponse<RawSupplierAnalytics>>(`/analytics/supplier/overview${params}`);
-      return transformSupplierAnalytics(data.data);
+      const { data } = await api.get<ApiResponse<SupplierAnalyticsResponse>>(`/analytics/supplier/overview${params}`);
+      return data.data;
     },
     staleTime: 60 * 1000,
   });
@@ -164,11 +117,13 @@ export type RegionalAnalyticsResponse = {
 };
 
 export function useDistributorRegional(enabled = true) {
+  const userId = useAuthStore((s) => s.user?.user_id);
   return useQuery({
-    queryKey: ["analytics", "distributor", "regional"],
-    enabled,
+    queryKey: ["analytics", "distributor", "regional", userId],
+    enabled: enabled && !!userId,
     queryFn: async (): Promise<RegionalAnalyticsResponse> => {
-      const { data } = await api.get<ApiResponse<RegionalAnalyticsResponse>>("/analytics/distributor/regional");
+      const params = userId ? `?user_id=${userId}` : "";
+      const { data } = await api.get<ApiResponse<RegionalAnalyticsResponse>>(`/analytics/distributor/regional${params}`);
       return data.data;
     },
     staleTime: 60 * 1000,
@@ -176,11 +131,13 @@ export function useDistributorRegional(enabled = true) {
 }
 
 export function useSupplierRegional(enabled = true) {
+  const userId = useAuthStore((s) => s.user?.user_id);
   return useQuery({
-    queryKey: ["analytics", "supplier", "regional"],
-    enabled,
+    queryKey: ["analytics", "supplier", "regional", userId],
+    enabled: enabled && !!userId,
     queryFn: async (): Promise<RegionalAnalyticsResponse> => {
-      const { data } = await api.get<ApiResponse<RegionalAnalyticsResponse>>("/analytics/supplier/regional");
+      const params = userId ? `?user_id=${userId}` : "";
+      const { data } = await api.get<ApiResponse<RegionalAnalyticsResponse>>(`/analytics/supplier/regional${params}`);
       return data.data;
     },
     staleTime: 60 * 1000,
@@ -213,7 +170,7 @@ export function useProductInsights(enabled = true) {
   const userId = useAuthStore((s) => s.user?.user_id);
   return useQuery({
     queryKey: ["analytics", "products", "insights", userId],
-    enabled,
+    enabled: enabled && !!userId,
     queryFn: async (): Promise<ProductInsightsResponse> => {
       const params = userId ? `?user_id=${userId}` : "";
       const { data } = await api.get<ApiResponse<{

@@ -28,6 +28,12 @@ export type PartnershipRequest = {
   };
   status: "pending" | "accepted" | "rejected";
   created_at: string;
+  terms?: string;
+  distribution_region?: string;
+  valid_until?: number;
+  legal_contract_hash?: string;
+  mou_document_name?: string;
+  mou_document_data?: string;
 };
 
 export type SuppliersResponse = {
@@ -87,17 +93,33 @@ export function usePartnershipRequests(status?: string) {
   });
 }
 
+export type RequestPartnershipPayload = {
+  supplier_id: string;
+  terms?: string;
+  legal_contract_hash?: string;
+  valid_until?: number;
+  distribution_region?: string;
+  mou_document_name?: string;
+  mou_document_data?: string;
+};
+
 export function useRequestPartnership() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: async (supplier_id: string) => {
+    mutationFn: async (payload: RequestPartnershipPayload) => {
       const user = useAuthStore.getState().user;
       const { data } = await api.post<ApiResponse<{ request_id: string; supplier_id: string; supplier_name: string; status: string; created_at: string }>>(
         "/suppliers/partnership-request",
         {
-          supplier_id,
+          supplier_id: payload.supplier_id,
           distributor_id: user?.user_id ?? "",
           distributor_name: user?.business_name ?? user?.full_name ?? "",
+          terms: payload.terms,
+          legal_contract_hash: payload.legal_contract_hash,
+          valid_until: payload.valid_until,
+          distribution_region: payload.distribution_region,
+          mou_document_name: payload.mou_document_name,
+          mou_document_data: payload.mou_document_data,
         },
       );
       return data.data;
@@ -131,6 +153,12 @@ export type SupplierStockResponse = {
   pagination: { page: number; limit: number; total: number };
 };
 
+const supplierStockStatusOrder: Record<InventoryStatus, number> = {
+  out_of_stock: 0,
+  low_stock: 1,
+  in_stock: 2,
+};
+
 export function useSupplierStock(supplierId: string | null) {
   return useQuery({
     queryKey: ["supplier-stock", supplierId],
@@ -139,7 +167,15 @@ export function useSupplierStock(supplierId: string | null) {
       const { data } = await api.get<ApiResponse<SupplierStockResponse>>(
         `/suppliers/${supplierId}/stock`,
       );
-      return data.data;
+      const products = [...(data.data.products ?? [])].sort(
+        (a, b) =>
+          supplierStockStatusOrder[a.status] - supplierStockStatusOrder[b.status] ||
+          a.name.localeCompare(b.name),
+      );
+      return {
+        ...data.data,
+        products,
+      };
     },
     staleTime: 60 * 1000,
   });
@@ -147,17 +183,21 @@ export function useSupplierStock(supplierId: string | null) {
 
 export function useDeleteSupplierPartnership() {
   const qc = useQueryClient();
-  const userId = useAuthStore((s) => s.user?.user_id);
   return useMutation({
     mutationFn: async (supplierId: string) => {
+      const uid = useAuthStore.getState().user?.user_id;
+      if (!uid) throw new Error("Not authenticated");
       const { data } = await api.delete<ApiResponse<{ terminated: number }>>(
-        `/partnerships/between/${supplierId}?user_id=${userId ?? ""}`,
+        `/partnerships/between/${supplierId}?user_id=${uid}`,
       );
       return data.data;
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["suppliers"] });
       qc.invalidateQueries({ queryKey: ["partnership-requests"] });
+    },
+    onError: () => {
+      qc.invalidateQueries({ queryKey: ["suppliers"] });
     },
   });
 }

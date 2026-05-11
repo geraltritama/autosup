@@ -12,10 +12,10 @@ export function InventoryEmptyState({ onAdd }: Props) {
           <Boxes className="h-6 w-6" />
         </div>
         <h3 className="mt-5 text-lg font-semibold text-[#0F172A]">
-          Belum ada item inventory
+          No inventory items yet
         </h3>
         <p className="mt-2 max-w-md text-sm leading-6 text-[#64748B]">
-          Mulai bangun visibilitas supply chain dengan menambahkan item pertama agar stok, threshold, dan rekomendasi restock bisa dipantau dari dashboard.
+          Start building supply chain visibility by adding your first item so that stock, thresholds, and restock recommendations can be monitored from the dashboard.
         </p>
         <Button className="mt-6" onClick={onAdd}>Add Item</Button>
       </CardContent>

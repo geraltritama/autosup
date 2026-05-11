@@ -15,10 +15,10 @@ export function OrdersEmptyState({ onCreateOrder, showCreate = true }: Props) {
           <ClipboardList className="h-6 w-6" />
         </div>
         <h3 className="mt-5 text-lg font-semibold text-[#0F172A]">
-          Belum ada order yang ditampilkan
+          No orders to display
         </h3>
         <p className="mt-2 max-w-md text-sm leading-6 text-[#64748B]">
-          Saat data order belum tersedia, halaman ini tetap harus membantu user memahami langkah berikutnya untuk memulai workflow pemesanan.
+          When order data is not yet available, this page should still help users understand the next steps to start the ordering workflow.
         </p>
         {showCreate && (
           <Button className="mt-6" onClick={onCreateOrder}>Create Order</Button>

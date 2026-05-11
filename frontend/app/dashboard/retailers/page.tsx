@@ -11,6 +11,7 @@ import {
   AlertTriangle,
   TrendingUp,
   X,
+  Trash2,
 } from "lucide-react";
 import { KpiCard } from "@/components/dashboard/kpi-card";
 import { PageErrorState } from "@/components/dashboard/page-error-state";
@@ -37,13 +38,15 @@ import {
   useRetailers,
   useAddRetailer,
   useRetailerDetail,
+  useDeleteRetailerPartnership,
   type RetailerSegment,
   type RetailerStatus,
 } from "@/hooks/useRetailers";
 import { useAuthStore } from "@/store/useAuthStore";
+import { ConfirmDialog } from "@/components/shared/confirm-dialog";
 
 function formatCurrency(amount: number) {
-  return new Intl.NumberFormat("id-ID", {
+  return new Intl.NumberFormat("en-US", {
     style: "currency",
     currency: "IDR",
     maximumFractionDigits: 0,
@@ -52,7 +55,7 @@ function formatCurrency(amount: number) {
 }
 
 function formatDate(iso: string) {
-  return new Intl.DateTimeFormat("id-ID", {
+  return new Intl.DateTimeFormat("en-US", {
     day: "numeric",
     month: "short",
     year: "numeric",
@@ -78,9 +81,9 @@ const segmentLabel: Record<RetailerSegment, string> = {
 };
 
 const statusLabel: Record<RetailerStatus, string> = {
-  active: "Aktif",
-  inactive: "Nonaktif",
-  high_risk: "Risiko Tinggi",
+  active: "Active",
+  inactive: "Inactive",
+  high_risk: "High Risk",
 };
 
 function AddRetailerDialog({
@@ -123,30 +126,30 @@ function AddRetailerDialog({
     <Dialog open={open} onOpenChange={onClose}>
       <DialogContent className="max-w-md">
         <DialogHeader>
-          <DialogTitle>Tambah Retailer</DialogTitle>
+          <DialogTitle>Add Retailer</DialogTitle>
         </DialogHeader>
         <form onSubmit={handleSubmit} className="space-y-4 pt-2">
           <div className="space-y-1.5">
-            <Label>Nama Toko</Label>
+            <Label>Store Name</Label>
             <Input
               required
               value={form.name}
               onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
-              placeholder="Toko Maju Jaya"
+              placeholder="Store Name"
             />
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1.5">
-              <Label>Kontak Person</Label>
+              <Label>Contact Person</Label>
               <Input
                 required
                 value={form.contact_person}
                 onChange={(e) => setForm((f) => ({ ...f, contact_person: e.target.value }))}
-                placeholder="Ibu Sari"
+                placeholder="Contact Person"
               />
             </div>
             <div className="space-y-1.5">
-              <Label>No. Telepon</Label>
+              <Label>Phone Number</Label>
               <Input
                 required
                 value={form.phone}
@@ -167,7 +170,7 @@ function AddRetailerDialog({
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1.5">
-              <Label>Kota</Label>
+              <Label>City</Label>
               <Input
                 required
                 value={form.city}
@@ -176,7 +179,7 @@ function AddRetailerDialog({
               />
             </div>
             <div className="space-y-1.5">
-              <Label>Segmen</Label>
+              <Label>Segment</Label>
               <Select
                 value={form.segment}
                 onValueChange={(v) => setForm((f) => ({ ...f, segment: v as RetailerSegment }))}
@@ -193,24 +196,24 @@ function AddRetailerDialog({
             </div>
           </div>
           <div className="space-y-1.5">
-            <Label>Alamat</Label>
+            <Label>Address</Label>
             <Input
               required
               value={form.address}
               onChange={(e) => setForm((f) => ({ ...f, address: e.target.value }))}
-              placeholder="Jl. Merdeka No.1, Jakarta"
+              placeholder="123 Main Street"
             />
           </div>
           <DialogFooter className="pt-2">
             <Button type="button" variant="outline" onClick={onClose}>
-              Batal
+              Cancel
             </Button>
             <Button type="submit" disabled={addRetailer.isPending}>
               {addRetailer.isPending ? (
                 <Loader2 className="mr-2 h-4 w-4 animate-spin" />
               ) : null}
-              Tambah Retailer
-            </Button>
+              Add Retailer
+          </Button>
           </DialogFooter>
         </form>
       </DialogContent>
@@ -245,7 +248,7 @@ function RetailerDetailPanel({
         </div>
       ) : !data ? (
         <div className="flex flex-1 items-center justify-center">
-          <p className="text-sm text-[#64748B]">Data tidak ditemukan.</p>
+          <p className="text-sm text-[#64748B]">No data found.</p>
         </div>
       ) : (
         <div className="flex-1 overflow-y-auto px-6 py-4 space-y-6">
@@ -260,11 +263,11 @@ function RetailerDetailPanel({
             </div>
             <div className="grid grid-cols-2 gap-3 text-sm">
               <div>
-                <p className="text-[#64748B]">Kontak</p>
+                <p className="text-[#64748B]">Contact</p>
                 <p className="font-medium text-[#0F172A]">{data.contact_person}</p>
               </div>
               <div>
-                <p className="text-[#64748B]">Telepon</p>
+                <p className="text-[#64748B]">Phone</p>
                 <p className="font-medium text-[#0F172A]">{data.phone}</p>
               </div>
               <div>
@@ -272,7 +275,7 @@ function RetailerDetailPanel({
                 <p className="font-medium text-[#0F172A]">{data.email}</p>
               </div>
               <div>
-                <p className="text-[#64748B]">Kota</p>
+                <p className="text-[#64748B]">City</p>
                 <p className="font-medium text-[#0F172A]">{data.city}</p>
               </div>
             </div>
@@ -285,13 +288,13 @@ function RetailerDetailPanel({
           {/* Stats */}
           <div className="grid grid-cols-2 gap-3">
             <div className="rounded-xl border border-[#E2E8F0] bg-[#F8FAFC] p-4">
-              <p className="text-xs text-[#64748B]">Total Pembelian</p>
+              <p className="text-xs text-[#64748B]">Total Purchases</p>
               <p className="mt-1 text-lg font-semibold text-[#0F172A]">
                 {formatCurrency(data.total_purchase_amount)}
               </p>
             </div>
             <div className="rounded-xl border border-[#E2E8F0] bg-[#F8FAFC] p-4">
-              <p className="text-xs text-[#64748B]">Order/Bulan</p>
+              <p className="text-xs text-[#64748B]">Orders/Month</p>
               <p className="mt-1 text-lg font-semibold text-[#0F172A]">
                 {data.monthly_order_volume}x
               </p>
@@ -303,9 +306,9 @@ function RetailerDetailPanel({
             <h4 className="text-sm font-semibold text-[#0F172A]">Demand Intelligence</h4>
             <div className="rounded-xl border border-[#E2E8F0] p-4 space-y-2">
               <div className="flex justify-between text-sm">
-                <span className="text-[#64748B]">Frekuensi Order</span>
+                <span className="text-[#64748B]">Order Frequency</span>
                 <span className="font-medium text-[#0F172A]">
-                  {data.demand_intelligence.order_frequency_per_month}x/bulan
+                  {data.demand_intelligence.order_frequency_per_month}x/month
                 </span>
               </div>
               <div className="flex justify-between text-sm">
@@ -334,14 +337,14 @@ function RetailerDetailPanel({
               <h4 className="text-sm font-semibold text-[#0F172A]">Credit Line</h4>
               {!data.credit_summary ? (
                 <div className="rounded-xl border border-[#E2E8F0] p-4 text-sm text-[#64748B]">
-                  Tidak ada data credit line.
+                  No credit line data.
                 </div>
               ) : (
               <div className="rounded-xl border border-[#E2E8F0] p-4 space-y-2">
                 <div className="flex items-center justify-between">
                   <span className="text-sm text-[#64748B]">Status</span>
                   <Badge tone={data.credit_summary.has_active_credit ? "success" : "neutral"}>
-                    {data.credit_summary.has_active_credit ? "Aktif" : "Tidak Ada"}
+                    {data.credit_summary.has_active_credit ? "Active" : "None"}
                   </Badge>
                 </div>
                 {data.credit_summary.has_active_credit && (
@@ -381,9 +384,9 @@ function RetailerDetailPanel({
 
           {/* Purchase history */}
           <div className="space-y-2">
-            <h4 className="text-sm font-semibold text-[#0F172A]">Riwayat Pesanan</h4>
+            <h4 className="text-sm font-semibold text-[#0F172A]">Order History</h4>
             {data.purchase_history.length === 0 ? (
-              <p className="text-sm text-[#64748B]">Belum ada pesanan.</p>
+              <p className="text-sm text-[#64748B]">No orders yet.</p>
             ) : (
               <div className="space-y-2">
                 {data.purchase_history.map((o) => (
@@ -421,6 +424,7 @@ export default function RetailersPage() {
   const [status, setStatus] = useState<RetailerStatus | "">("");
   const [showAdd, setShowAdd] = useState(false);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
   useScrollLock(!!selectedId);
 
   const { data, isLoading, isError, refetch } = useRetailers({
@@ -429,13 +433,15 @@ export default function RetailersPage() {
     status: status || undefined,
   });
 
+  const deletePartnership = useDeleteRetailerPartnership();
+
   if (role !== "distributor") {
     return (
       <main className="flex h-[80vh] items-center justify-center p-8">
         <div className="text-center">
-          <h2 className="text-xl font-semibold text-[#0F172A]">Akses Ditolak</h2>
+          <h2 className="text-xl font-semibold text-[#0F172A]">Access Denied</h2>
           <p className="mt-2 text-sm text-[#64748B]">
-            Halaman Retailers CRM khusus untuk Distributor.
+            Retailers CRM page is for Distributors only.
           </p>
         </div>
       </main>
@@ -457,14 +463,14 @@ export default function RetailersPage() {
                 Retailers
               </h1>
               <p className="max-w-3xl text-sm leading-7 text-[#64748B]">
-                Kelola dan pantau retailer yang menjadi klien distribusi Anda. Lihat riwayat
-                pembelian, demand intel, dan status kredit per retailer.
+                Manage and monitor retailers that are your distribution clients. View
+                purchase history, demand intel, and credit status per retailer.
               </p>
             </div>
           </div>
           <Button onClick={() => setShowAdd(true)} className="gap-2 self-start lg:self-auto">
             <Plus className="h-4 w-4" />
-            Tambah Retailer
+            Add Retailer
           </Button>
         </section>
 
@@ -472,23 +478,23 @@ export default function RetailersPage() {
         {summary && (
           <section className="grid gap-4 md:grid-cols-3">
             <KpiCard
-              label="Total Aktif"
+              label="Total Active"
               value={String(summary.active)}
-              meta="Retailer aktif saat ini"
+              meta="Currently active retailers"
               tone="success"
               icon={Users}
             />
             <KpiCard
               label="Total Retailer"
               value={String(summary.total)}
-              meta="Seluruh retailer terdaftar"
+              meta="All registered retailers"
               tone="info"
               icon={TrendingUp}
             />
             <KpiCard
               label="Premium"
               value={String(summary.premium_count)}
-              meta="Retailer segmen premium"
+              meta="Premium segment retailers"
               tone="warning"
               icon={AlertTriangle}
             />
@@ -502,7 +508,7 @@ export default function RetailersPage() {
             <Input
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              placeholder="Cari nama, kota, kontak..."
+              placeholder="Search name, city, contact..."
               className="pl-9"
             />
           </div>
@@ -511,10 +517,10 @@ export default function RetailersPage() {
             onValueChange={(v) => setSegment(v === "all" ? "" : (v as RetailerSegment))}
           >
             <SelectTrigger className="w-36">
-              <SelectValue placeholder="Semua Segmen" />
+              <SelectValue placeholder="All Segments" />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="all">Semua Segmen</SelectItem>
+              <SelectItem value="all">All Segments</SelectItem>
               <SelectItem value="premium">Premium</SelectItem>
               <SelectItem value="regular">Regular</SelectItem>
               <SelectItem value="new">New</SelectItem>
@@ -525,13 +531,13 @@ export default function RetailersPage() {
             onValueChange={(v) => setStatus(v === "all" ? "" : (v as RetailerStatus))}
           >
             <SelectTrigger className="w-40">
-              <SelectValue placeholder="Semua Status" />
+              <SelectValue placeholder="All Statuses" />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="all">Semua Status</SelectItem>
-              <SelectItem value="active">Aktif</SelectItem>
-              <SelectItem value="inactive">Nonaktif</SelectItem>
-              <SelectItem value="high_risk">Risiko Tinggi</SelectItem>
+              <SelectItem value="all">All Statuses</SelectItem>
+              <SelectItem value="active">Active</SelectItem>
+              <SelectItem value="inactive">Inactive</SelectItem>
+              <SelectItem value="high_risk">High Risk</SelectItem>
             </SelectContent>
           </Select>
         </section>
@@ -540,7 +546,7 @@ export default function RetailersPage() {
         <section>
           {isError && !isLoading && (
             <PageErrorState
-              message="Gagal memuat data retailers"
+              message="Failed to load retailers data"
               onRetry={() => refetch()}
             />
           )}
@@ -554,20 +560,21 @@ export default function RetailersPage() {
               ) : isError ? null : retailers.length === 0 ? (
                 <div className="flex h-[300px] flex-col items-center justify-center gap-3">
                   <Building2 className="h-10 w-10 text-[#CBD5E1]" />
-                  <p className="text-sm text-[#64748B]">Belum ada retailer ditemukan.</p>
+                  <p className="text-sm text-[#64748B]">No retailers found.</p>
                   <Button variant="outline" size="sm" onClick={() => setShowAdd(true)}>
-                    Tambah Retailer Pertama
+                    Add First Retailer
                   </Button>
                 </div>
               ) : (
                 <div className="space-y-0">
                   {/* Header */}
                   <div className="grid grid-cols-12 gap-4 border-b border-[#E2E8F0] pb-3 text-xs uppercase tracking-wider text-[#64748B]">
-                    <div className="col-span-4">Retailer</div>
-                    <div className="col-span-2">Segmen</div>
+                    <div className="col-span-3">Retailer</div>
+                    <div className="col-span-2">Segment</div>
                     <div className="col-span-2">Status</div>
-                    <div className="col-span-2 text-right">Total Beli</div>
-                    <div className="col-span-2 text-right">Order Terakhir</div>
+                    <div className="col-span-2 text-right">Total Purchases</div>
+                    <div className="col-span-2 text-right">Last Order</div>
+                    <div className="col-span-1" />
                   </div>
                   {/* Rows */}
                   <div className="divide-y divide-[#E2E8F0]">
@@ -581,7 +588,7 @@ export default function RetailersPage() {
                         }
                         className="grid w-full grid-cols-12 items-center gap-4 py-4 text-left transition-colors hover:bg-slate-50/50"
                       >
-                        <div className="col-span-4 flex items-center gap-3">
+                        <div className="col-span-3 flex items-center gap-3">
                           <div className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-lg bg-slate-100 text-[#3B82F6]">
                             <Building2 className="h-4 w-4" />
                           </div>
@@ -603,6 +610,14 @@ export default function RetailersPage() {
                         </div>
                         <div className="col-span-2 text-right text-xs text-[#64748B]">
                           {formatDate(r.last_order_at)}
+                        </div>
+                        <div className="col-span-1 flex justify-end">
+                          <span
+                            onClick={(e) => { e.stopPropagation(); setDeleteTarget(r.retailer_id); }}
+                            className="inline-flex cursor-pointer items-center justify-center rounded-lg p-2 text-[#EF4444] hover:bg-red-50"
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </span>
                         </div>
                       </button>
                     ))}
@@ -629,6 +644,21 @@ export default function RetailersPage() {
       )}
 
       <AddRetailerDialog open={showAdd} onClose={() => setShowAdd(false)} />
+
+      <ConfirmDialog
+        open={!!deleteTarget}
+        onClose={() => setDeleteTarget(null)}
+        onConfirm={() => {
+          if (!deleteTarget) return;
+          deletePartnership.mutate(deleteTarget, {
+            onSuccess: () => setDeleteTarget(null),
+          });
+        }}
+        title="End Partnership"
+        description={`Are you sure you want to end the partnership with this retailer? This action cannot be undone.`}
+        confirmLabel="End Partnership"
+        isLoading={deletePartnership.isPending}
+      />
     </>
   );
 }

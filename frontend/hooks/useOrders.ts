@@ -120,6 +120,8 @@ export function useOrders(filters: OrderFilters = {}) {
       return data.data;
     },
     staleTime: 30 * 1000,
+    refetchInterval: 5 * 1000,
+    refetchOnWindowFocus: true,
   });
 }
 
@@ -132,6 +134,8 @@ export function useOrderDetail(orderId: string | null) {
     },
     enabled: !!orderId,
     staleTime: 30 * 1000,
+    refetchInterval: orderId ? 5 * 1000 : false,
+    refetchOnWindowFocus: true,
   });
 }
 
@@ -142,7 +146,10 @@ export function useCreateOrder() {
       const { data } = await api.post<ApiResponse<CreateOrderResponse>>("/orders", payload);
       return data.data;
     },
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["orders"] }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["orders"] });
+      qc.invalidateQueries({ queryKey: ["inventory"] });
+    },
   });
 }
 
@@ -171,6 +178,8 @@ export function useOrdersTrustSummary() {
     },
     enabled: !!userId,
     staleTime: 30 * 1000,
+    refetchInterval: 5 * 1000,
+    refetchOnWindowFocus: true,
   });
 }
 
@@ -189,12 +198,16 @@ export function useUpdateOrderStatus() {
       const { data } = await api.put<
         ApiResponse<{ order_id: string; status: OrderStatus; updated_at: string }>
       >(`/orders/${orderId}/status`, { status, ...(shipping_info && { shipping_info }) });
+      if (!data.success || !data.data) {
+        throw new Error(data.message || "Failed to update order status.");
+      }
       return data.data;
     },
     onSuccess: (_data, { orderId }) => {
       qc.invalidateQueries({ queryKey: ["orders"] });
       qc.invalidateQueries({ queryKey: ["orders", orderId] });
       qc.invalidateQueries({ queryKey: ["orders", "trust-summary"] });
+      qc.invalidateQueries({ queryKey: ["inventory"] });
     },
   });
 }

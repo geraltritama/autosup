@@ -15,12 +15,13 @@ import { PageErrorState } from "@/components/dashboard/page-error-state";
 import { Badge } from "@/components/ui/badge";
 import { usePartnershipsSummary, usePartnershipNFT, useDistributorPartnershipNFT, useRetailerPartnershipNFT, type PartnershipSummary } from "@/hooks/usePartnerships";
 import { PartnershipRequestsPanel } from "@/components/suppliers/partnership-requests-panel";
-import { useSuppliers, type Supplier } from "@/hooks/useSuppliers";
-import { useDistributors, type Distributor } from "@/hooks/useDistributors";
-import { useRetailers, type Retailer } from "@/hooks/useRetailers";
+import { useSuppliers, type Supplier, useDeleteSupplierPartnership } from "@/hooks/useSuppliers";
+import { useDistributors, type Distributor, useDeleteDistributorPartnership } from "@/hooks/useDistributors";
+import { useRetailers, type Retailer, useDeleteRetailerPartnership } from "@/hooks/useRetailers";
 import { useAuthStore } from "@/store/useAuthStore";
 import { cn } from "@/lib/utils";
 import { DistributorRequestsPanel } from "@/components/distributors/distributor-requests-panel";
+import { ConfirmDialog } from "@/components/shared/confirm-dialog";
 
 function SupplierNFTBadge({ supplierId }: { supplierId: string }) {
   const { data: nft, isLoading } = usePartnershipNFT(supplierId);
@@ -148,30 +149,40 @@ function RetailerTrustPanel() {
     <TrustPanelStats
       summary={data?.summary}
       isLoading={isLoading}
-      description="Kemitraan dengan distributor dilindungi trust layer on-chain. Partnership NFT diterbitkan saat kemitraan disetujui."
+        description="Partnerships with distributors are protected by an on-chain trust layer. Partnership NFTs are issued when partnerships are approved."
     />
   );
 }
 
-function DistributorTrustPanel() {
-  const { data, isLoading } = usePartnershipsSummary();
+function DistributorTrustPanel({ partnerType }: { partnerType: "supplier" | "retailer" }) {
+  const { data, isLoading } = usePartnershipsSummary(partnerType);
   return (
     <TrustPanelStats
       summary={data?.summary}
       isLoading={isLoading}
-      description="Kemitraan dengan supplier dan retailer dilindungi trust layer on-chain. Partnership NFT diterbitkan saat kemitraan disetujui di kedua arah."
+      description={
+        partnerType === "retailer"
+          ? "Partnerships with retailers are protected by an on-chain trust layer. Partnership NFTs are issued when requests are approved."
+          : "Partnerships with suppliers are protected by an on-chain trust layer. Partnership NFTs are issued when requests are approved."
+      }
     />
   );
 }
 
 export default function PartnershipsPage() {
   const role = useAuthStore((s) => s.user?.role);
-  const { data: summaryData } = usePartnershipsSummary();
-
   const isRetailer = role === "retailer";
   const isDistributor = role === "distributor";
   const isSupplier = role === "supplier";
   const [partnerView, setPartnerView] = useState<"suppliers" | "retailers">("suppliers");
+
+  const summaryPartnerType = isDistributor
+    ? (partnerView === "retailers" ? "retailer" : "supplier")
+    : undefined;
+  const { data: summaryData } = usePartnershipsSummary(summaryPartnerType);
+
+  const distributorPanelPartnerType: "supplier" | "retailer" =
+    partnerView === "retailers" ? "retailer" : "supplier";
 
   // Distributor view: fetch supplier partners
   const {
@@ -202,6 +213,16 @@ export default function PartnershipsPage() {
   const [supplierStockDialogOpen, setSupplierStockDialogOpen] = useState(false);
   const [selectedSupplierForStock, setSelectedSupplierForStock] = useState<Supplier | null>(null);
   const [distributorDetailOpen, setDistributorDetailOpen] = useState(false);
+  const [deleteTarget, setDeleteTarget] = useState<{
+    id: string;
+    name: string;
+    type: "supplier" | "distributor" | "retailer";
+    isPartner: boolean;
+  } | null>(null);
+
+  const deleteSupplierP = useDeleteSupplierPartnership();
+  const deleteDistributorP = useDeleteDistributorPartnership();
+  const deleteRetailerP = useDeleteRetailerPartnership();
 
   const summary = summaryData?.summary;
   const suppliers = suppliersData?.suppliers ?? [];
@@ -232,20 +253,20 @@ export default function PartnershipsPage() {
         : refetchSuppliers;
 
   const partnerLabel = isRetailer
-    ? "Distributor partner aktif"
+    ? "Active distributor partners"
     : isSupplier
-      ? "Distributor partner aktif"
+      ? "Active distributor partners"
       : isDistributor && partnerView === "retailers"
-        ? "Retailer partner aktif"
-        : "Supplier partner aktif";
+        ? "Active retailer partners"
+        : "Active supplier partners";
 
   const emptyText = isRetailer
-    ? "Cari distributor di halaman Distributors."
+    ? "Find distributors on the Distributors page."
     : isSupplier
-      ? "Belum ada distributor partner. Cari distributor di halaman Distributors."
+      ? "No distributor partners yet. Find distributors on the Distributors page."
       : isDistributor && partnerView === "retailers"
-        ? "Belum ada retailer partner. Kelola retailer di halaman Retailers."
-        : "Cari supplier di halaman Suppliers.";
+        ? "No retailer partners yet. Manage retailers on the Retailers page."
+        : "Find suppliers on the Suppliers page.";
 
   // Adapt PartnershipInsight to AiInsight format for the InsightCard component
   const adaptedInsights = useMemo(() => {
@@ -275,10 +296,10 @@ export default function PartnershipsPage() {
             <h1 className="text-3xl font-semibold tracking-tight text-[#0F172A]">Partnerships & Trust</h1>
             <p className="max-w-3xl text-sm leading-7 text-[#64748B]">
               {isRetailer
-                ? "Kelola kemitraan dengan distributor, verifikasi trust layer, dan pantau metrik ekosistem partner."
+                ? "Manage partnerships with distributors, verify trust layer, and monitor partner ecosystem metrics."
                 : role === "supplier"
-                  ? "Kelola kemitraan dengan distributor partner, verifikasi trust layer, dan pantau metrik distribusi."
-                  : "Kelola kemitraan dengan supplier dan retailer, verifikasi trust layer secara on-chain, dan pantau metrik ekosistem partner secara komprehensif."}
+                  ? "Manage partnerships with distributor partners, verify trust layer, and monitor distribution metrics."
+                  : "Manage partnerships with suppliers and retailers, verify trust layer on-chain, and monitor comprehensive partner ecosystem metrics."}
             </p>
           </div>
         </div>
@@ -325,28 +346,28 @@ export default function PartnershipsPage() {
           <KpiCard
             label="Pending Agreements"
             value={String(summary.pending_agreements)}
-            meta="Menunggu persetujuan"
+            meta="Awaiting approval"
             tone="warning"
             icon={FileClock}
           />
           <KpiCard
             label="Renewal Rate"
             value={`${summary.contract_renewal_rate}%`}
-            meta="Retensi kontrak"
+            meta="Contract retention"
             tone="info"
             icon={Percent}
           />
           <KpiCard
             label="Trust Score"
             value={String(summary.trust_score)}
-            meta="Rata-rata kredibilitas"
+            meta="Average credibility"
             tone="success"
             icon={ShieldCheck}
           />
           <KpiCard
             label="Network Growth"
             value={`+${summary.network_growth}%`}
-            meta="Dalam 30 hari terakhir"
+            meta="Last 30 days"
             tone="info"
             icon={TrendingUp}
           />
@@ -367,18 +388,18 @@ export default function PartnershipsPage() {
 
           {isLoading && (
             <div className="flex h-32 items-center justify-center rounded-2xl border border-[#E2E8F0] bg-white">
-              <span className="text-sm text-[#64748B]">Memuat data partner...</span>
+              <span className="text-sm text-[#64748B]">Loading partners...</span>
             </div>
           )}
 
           {isError && !isLoading && (
-            <PageErrorState message="Gagal memuat data partnership" onRetry={() => refetch()} />
+            <PageErrorState message="Failed to load partnership data" onRetry={() => refetch()} />
           )}
 
           {/* Retailer: distributor partners */}
           {isRetailer && !isLoading && !isError && distributors.length === 0 && (
             <div className="flex h-32 flex-col items-center justify-center rounded-2xl border border-[#E2E8F0] bg-white">
-              <span className="text-sm font-medium text-[#0F172A]">Belum ada active partnership</span>
+              <span className="text-sm font-medium text-[#0F172A]">No active partnerships</span>
               <span className="mt-1 text-xs text-[#64748B]">{emptyText}</span>
             </div>
           )}
@@ -392,6 +413,7 @@ export default function PartnershipsPage() {
                     role="retailer"
                     onViewStock={(d) => { setSelectedDistributor(d); setStockDialogOpen(true); }}
                     onViewDetail={(d) => { setSelectedDistributor(d); setDistributorDetailOpen(true); }}
+                    onDeletePartnership={(d) => setDeleteTarget({ id: d.distributor_id, name: d.name, type: "distributor", isPartner: d.partnership_status === "partner" })}
                   />
                   <DistributorNFTBadge distributorId={dist.distributor_id} />
                 </div>
@@ -402,8 +424,8 @@ export default function PartnershipsPage() {
           {/* Supplier: distributor partners */}
           {isSupplier && !isLoading && !isError && distributors.length === 0 && (
             <div className="flex h-32 flex-col items-center justify-center rounded-2xl border border-[#E2E8F0] bg-white">
-              <span className="text-sm font-medium text-[#0F172A]">Belum ada distributor partner</span>
-              <span className="mt-1 text-xs text-[#64748B]">Cari distributor di halaman Distributors.</span>
+              <span className="text-sm font-medium text-[#0F172A]">No distributor partners</span>
+              <span className="mt-1 text-xs text-[#64748B]">Find distributors on the Distributors page.</span>
             </div>
           )}
 
@@ -415,6 +437,7 @@ export default function PartnershipsPage() {
                     distributor={dist}
                     role="supplier"
                     onViewDetail={(d) => { setSelectedDistributor(d); setDistributorDetailOpen(true); }}
+                    onDeletePartnership={(d) => setDeleteTarget({ id: d.distributor_id, name: d.name, type: "distributor", isPartner: d.partnership_status === "partner" })}
                   />
                   <DistributorNFTBadge distributorId={dist.distributor_id} />
                 </div>
@@ -425,7 +448,7 @@ export default function PartnershipsPage() {
           {/* Distributor tab "suppliers": supplier partners */}
           {isDistributor && partnerView === "suppliers" && !isLoading && !isError && suppliers.length === 0 && (
             <div className="flex h-32 flex-col items-center justify-center rounded-2xl border border-[#E2E8F0] bg-white">
-              <span className="text-sm font-medium text-[#0F172A]">Belum ada active partnership</span>
+              <span className="text-sm font-medium text-[#0F172A]">No active partnerships</span>
               <span className="mt-1 text-xs text-[#64748B]">{emptyText}</span>
             </div>
           )}
@@ -437,6 +460,7 @@ export default function PartnershipsPage() {
                   <SupplierCard
                     supplier={supplier}
                     onViewStock={(s) => { setSelectedSupplierForStock(s); setSupplierStockDialogOpen(true); }}
+                    onDeletePartnership={(s) => setDeleteTarget({ id: s.supplier_id, name: s.name, type: "supplier", isPartner: s.type === "partner" })}
                   />
                   <SupplierNFTBadge supplierId={supplier.supplier_id} />
                 </div>
@@ -447,7 +471,7 @@ export default function PartnershipsPage() {
           {/* Distributor tab "retailers": retailer partners */}
           {isDistributor && partnerView === "retailers" && !isLoading && !isError && retailers.length === 0 && (
             <div className="flex h-32 flex-col items-center justify-center rounded-2xl border border-[#E2E8F0] bg-white">
-              <span className="text-sm font-medium text-[#0F172A]">Belum ada retailer partner</span>
+              <span className="text-sm font-medium text-[#0F172A]">No retailer partners</span>
               <span className="mt-1 text-xs text-[#64748B]">{emptyText}</span>
             </div>
           )}
@@ -456,7 +480,10 @@ export default function PartnershipsPage() {
             <div className="grid gap-4">
               {(retailers as Retailer[]).map((retailer) => (
                 <div key={retailer.retailer_id} className="space-y-2">
-                  <RetailerCard retailer={retailer} />
+                  <RetailerCard
+                    retailer={retailer}
+                    onDeletePartnership={(r) => setDeleteTarget({ id: r.retailer_id, name: r.name, type: "retailer", isPartner: true })}
+                  />
                   <RetailerNFTBadge retailerId={retailer.retailer_id} />
                 </div>
               ))}
@@ -467,11 +494,11 @@ export default function PartnershipsPage() {
         {/* Side panel */}
         <div className="space-y-6">
           {isSupplier && <PartnershipRequestsPanel />}
-          {isDistributor && <DistributorRequestsPanel />}
+          {isDistributor && partnerView === "retailers" && <DistributorRequestsPanel />}
           {isRetailer ? (
             <RetailerTrustPanel />
-          ) : isDistributor && partnerView === "retailers" ? (
-            <DistributorTrustPanel />
+          ) : isDistributor ? (
+            <DistributorTrustPanel partnerType={distributorPanelPartnerType} />
           ) : (
             <SuppliersTrustPanel />
           )}
@@ -507,6 +534,30 @@ export default function PartnershipsPage() {
           role={isRetailer ? "retailer" : "supplier"}
         />
       )}
+
+      {/* Delete partnership confirm dialog */}
+      <ConfirmDialog
+        open={!!deleteTarget}
+        onClose={() => setDeleteTarget(null)}
+        onConfirm={() => {
+          if (!deleteTarget) return;
+          if (deleteTarget.type === "supplier") {
+            deleteSupplierP.mutate(deleteTarget.id, { onSuccess: () => setDeleteTarget(null) });
+          } else if (deleteTarget.type === "distributor") {
+            deleteDistributorP.mutate(deleteTarget.id, { onSuccess: () => setDeleteTarget(null) });
+          } else {
+            deleteRetailerP.mutate(deleteTarget.id, { onSuccess: () => setDeleteTarget(null) });
+          }
+        }}
+        title={deleteTarget?.isPartner ? "End Partnership" : "Cancel Request"}
+        description={
+          deleteTarget?.isPartner
+            ? `Are you sure you want to end the partnership with ${deleteTarget?.name}? This action cannot be undone.`
+            : `Are you sure you want to cancel the partnership request to ${deleteTarget?.name}?`
+        }
+        confirmLabel={deleteTarget?.isPartner ? "End Partnership" : "Cancel Request"}
+        isLoading={deleteSupplierP.isPending || deleteDistributorP.isPending || deleteRetailerP.isPending}
+      />
     </main>
   );
 }

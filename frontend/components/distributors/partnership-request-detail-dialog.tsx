@@ -26,7 +26,7 @@ export function PartnershipRequestDetailDialog({
   if (!request) return null;
 
   const formatDate = (dateStr: string) => {
-    return new Intl.DateTimeFormat("id-ID", {
+    return new Intl.DateTimeFormat("en-US", {
       day: "numeric",
       month: "long",
       year: "numeric",
@@ -45,8 +45,8 @@ export function PartnershipRequestDetailDialog({
     <Dialog
       open={open}
       onClose={onClose}
-      title="Detail Permintaan Kemitraan"
-      description="Periksa detail sebelum menerima atau menolak permintaan kemitraan."
+      title="Partnership Request Detail"
+      description="Review details before accepting or rejecting the partnership request."
     >
       <div className="space-y-5 max-h-[60vh] overflow-y-auto pr-2">
         {/* Distributor Info Card */}
@@ -62,7 +62,7 @@ export function PartnershipRequestDetailDialog({
               <p className="text-sm text-[#64748B]">{request.distributor.name}</p>
             </div>
             <Badge tone="warning" className="ml-auto">
-              Menunggu
+              Pending
             </Badge>
           </div>
 
@@ -104,7 +104,7 @@ export function PartnershipRequestDetailDialog({
         <div className="flex items-center gap-3 rounded-xl bg-slate-50 p-4">
           <Calendar className="h-5 w-5 text-[#64748B]" />
           <div>
-            <p className="text-xs text-[#64748B]">Tanggal Pengajuan</p>
+            <p className="text-xs text-[#64748B]">Application Date</p>
             <p className="text-sm font-medium text-[#0F172A]">
               {formatDate(request.created_at)}
             </p>
@@ -117,7 +117,7 @@ export function PartnershipRequestDetailDialog({
             <div className="flex items-center gap-2">
               <FileText className="h-4 w-4 text-[#64748B]" />
               <p className="text-xs uppercase tracking-[0.15em] text-[#64748B]">
-                Detail Kontrak
+                Contract Details
               </p>
             </div>
 
@@ -125,7 +125,7 @@ export function PartnershipRequestDetailDialog({
               <div className="grid grid-cols-2 gap-3">
                 {request.proposed_start_date && (
                   <div className="rounded-lg bg-slate-50 p-3">
-                    <p className="text-xs text-[#64748B]">Mulai</p>
+                    <p className="text-xs text-[#64748B]">Start</p>
                     <p className="text-sm font-medium text-[#0F172A]">
                       {formatDate(request.proposed_start_date)}
                     </p>
@@ -133,7 +133,7 @@ export function PartnershipRequestDetailDialog({
                 )}
                 {request.proposed_end_date && (
                   <div className="rounded-lg bg-slate-50 p-3">
-                    <p className="text-xs text-[#64748B]">Berakhir</p>
+                    <p className="text-xs text-[#64748B]">End</p>
                     <p className="text-sm font-medium text-[#0F172A]">
                       {formatDate(request.proposed_end_date)}
                     </p>
@@ -144,7 +144,7 @@ export function PartnershipRequestDetailDialog({
 
             {request.terms && (
               <div className="rounded-lg bg-slate-50 p-3">
-                <p className="text-xs text-[#64748B] mb-1">Ketentuan</p>
+                <p className="text-xs text-[#64748B] mb-1">Terms</p>
                 <p className="text-sm text-[#0F172A] leading-relaxed">{request.terms}</p>
               </div>
             )}
@@ -158,8 +158,8 @@ export function PartnershipRequestDetailDialog({
             <p className="text-sm font-semibold text-[#1E40AF]">Partnership Trust Layer</p>
           </div>
           <p className="text-sm text-[#3B82F6]">
-            Partnership NFT akan diterbitkan oleh sistem setelah Anda menerima permintaan ini.
-            Kemitraan akan dilindungi dengan trust layer on-chain.
+            A Partnership NFT will be issued by the system after you accept this request.
+            The partnership will be protected with an on-chain trust layer.
           </p>
         </div>
       </div>
@@ -171,13 +171,13 @@ export function PartnershipRequestDetailDialog({
           onClick={handleReject}
           disabled={isProcessing}
         >
-          Tolak
+          Reject
         </Button>
         <Button
           onClick={handleAccept}
           disabled={isProcessing}
         >
-          {isProcessing ? "Memproses..." : "Terima Partnership"}
+          {isProcessing ? "Memproses..." : "Accept Partnership"}
         </Button>
       </div>
     </Dialog>

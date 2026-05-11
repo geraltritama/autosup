@@ -100,7 +100,7 @@ const mockAccounts: CreditAccount[] = [
   },
   {
     credit_account_id: "credit-uuid-003",
-    retailer: { retailer_id: "retailer-uuid-005", name: "Kedai Kopi Nusantara" },
+    retailer: { retailer_id: "retailer-uuid-005", name: "Nusantara Coffee Shop" },
     credit_limit: 5000000,
     utilized_amount: 4900000,
     available_amount: 100000,
@@ -157,27 +157,6 @@ export function useCreditRepayments(creditAccountId: string | null) {
   return useQuery({
     queryKey: ["credit", "repayments", creditAccountId],
     queryFn: async (): Promise<Repayment[]> => {
-      if (USE_MOCK) {
-        await new Promise((r) => setTimeout(r, 300));
-        return [
-          {
-            repayment_id: "rep-001",
-            amount: 1500000,
-            paid_at: new Date(Date.now() - 20 * 24 * 60 * 60 * 1000).toISOString(),
-            status: "paid",
-            payment_method: "bank_transfer",
-            invoice_id: "inv-010",
-          },
-          {
-            repayment_id: "rep-002",
-            amount: 800000,
-            paid_at: new Date(Date.now() - 50 * 24 * 60 * 60 * 1000).toISOString(),
-            status: "paid",
-            payment_method: "bank_transfer",
-            invoice_id: "inv-007",
-          },
-        ];
-      }
       const { data } = await api.get<ApiResponse<{ repayments: Repayment[] }>>(
         `/credit/accounts/${creditAccountId}/repayments`,
       );
@@ -196,7 +175,7 @@ export function useAiCreditRisk() {
         const retailerNames: Record<string, string> = {
           "retailer-uuid-001": "Toko Sumber Rejeki",
           "retailer-uuid-003": "Restoran Padang Jaya",
-          "retailer-uuid-005": "Kedai Kopi Nusantara",
+          "retailer-uuid-005": "Nusantara Coffee Shop",
         };
         const riskMap: Record<string, { score: number; level: RiskLevel; max: number }> = {
           "retailer-uuid-001": { score: 78, level: "low", max: 10000000 },
@@ -211,10 +190,10 @@ export function useAiCreditRisk() {
           risk_level: r.level,
           recommendation:
             r.level === "low"
-              ? "Retailer ini memiliki histori pembayaran yang konsisten. Aman untuk diberikan kredit."
+              ? "This retailer has a consistent payment history. It is safe to provide credit."
               : r.level === "medium"
-                ? "Perlu pemantauan ekstra. Pertimbangkan limit moderat dan pantau repayment tiap bulan."
-                : "Risiko tinggi terdeteksi. Disarankan tidak memberi kredit atau batasi sangat ketat.",
+                ? "Extra monitoring needed. Consider a moderate limit and monitor repayments monthly."
+                : "High risk detected. It is recommended not to extend credit or limit it very strictly.",
           max_credit_suggestion: r.max,
           generated_at: new Date().toISOString(),
         };
@@ -231,34 +210,6 @@ export function useOpenCreditAccount() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async (payload: OpenCreditPayload): Promise<CreditAccount> => {
-      if (USE_MOCK) {
-        await new Promise((r) => setTimeout(r, 800));
-        const retailerNames: Record<string, string> = {
-          "retailer-uuid-001": "Toko Sumber Rejeki",
-          "retailer-uuid-002": "Warung Bu Tini",
-          "retailer-uuid-004": "Bakery Sweet Corner",
-        };
-        const newAccount: CreditAccount = {
-          credit_account_id: `credit-uuid-${Date.now()}`,
-          retailer: {
-            retailer_id: payload.retailer_id,
-            name: retailerNames[payload.retailer_id] ?? "Retailer",
-          },
-          credit_limit: payload.credit_limit,
-          utilized_amount: 0,
-          available_amount: payload.credit_limit,
-          utilization_pct: 0,
-          status: "active",
-          risk_level: "low",
-          next_due_date: new Date(Date.now() + payload.billing_cycle_days * 24 * 60 * 60 * 1000)
-            .toISOString()
-            .split("T")[0],
-          next_due_amount: 0,
-          opened_at: new Date().toISOString(),
-        };
-        mockAccounts.push(newAccount);
-        return newAccount;
-      }
       const { data } = await api.post<ApiResponse<CreditAccount>>("/credit/accounts", payload);
       return data.data;
     },
@@ -279,7 +230,7 @@ export function useUpdateCreditAccount() {
       if (USE_MOCK) {
         await new Promise((r) => setTimeout(r, 600));
         const idx = mockAccounts.findIndex((a) => a.credit_account_id === creditAccountId);
-        if (idx === -1) throw new Error("Credit account tidak ditemukan");
+        if (idx === -1) throw new Error("Credit account not found");
         if (body.credit_limit !== undefined) {
           mockAccounts[idx].credit_limit = body.credit_limit;
           mockAccounts[idx].available_amount = body.credit_limit - mockAccounts[idx].utilized_amount;

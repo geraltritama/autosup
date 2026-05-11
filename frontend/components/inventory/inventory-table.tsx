@@ -4,6 +4,7 @@ import { PencilLine, Sparkles, Trash2 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { InventoryStatusBadge } from "@/components/inventory/inventory-status-badge";
 import type { InventoryItem } from "@/hooks/useInventory";
+import { CATEGORY_LABELS } from "@/components/inventory/category-labels";
 
 type Props = {
   items: InventoryItem[];
@@ -15,7 +16,7 @@ type Props = {
 
 function formatDate(iso: string) {
   try {
-    return new Intl.DateTimeFormat("id-ID", {
+    return new Intl.DateTimeFormat("en-US", {
       day: "numeric",
       month: "short",
       year: "numeric",
@@ -38,7 +39,7 @@ export function InventoryTable({ items, onEdit, onDelete, onRestock, showPrice =
           <table className="min-w-full border-collapse">
             <thead>
               <tr className="border-b border-[#E2E8F0] bg-slate-50/70 text-left">
-                {["Item Name", "Category", "Stock", "Min Stock", "Unit", ...(showPrice ? ["Harga Jual"] : []), "Status", "Last Updated", "Actions"].map(
+                {["Item Name", "Category", "Stock", "Min Stock", "Unit", ...(showPrice ? ["Price"] : []), "Status", "Last Updated", "Actions"].map(
                   (col) => (
                     <th
                       key={col}
@@ -57,14 +58,14 @@ export function InventoryTable({ items, onEdit, onDelete, onRestock, showPrice =
                     <p className="text-sm font-semibold text-[#0F172A]">{item.name}</p>
                     <p className="mt-0.5 text-xs text-[#94A3B8]">{item.id}</p>
                   </td>
-                  <td className="px-5 py-4 text-sm text-[#475569]">{item.category.replace("_", " ")}</td>
+                  <td className="px-5 py-4 text-sm text-[#475569]">{CATEGORY_LABELS[item.category] || item.category}</td>
                   <td className="px-5 py-4 text-sm font-medium text-[#0F172A]">{item.stock}</td>
                   <td className="px-5 py-4 text-sm text-[#475569]">{item.min_stock}</td>
                   <td className="px-5 py-4 text-sm text-[#475569]">{item.unit}</td>
                   {showPrice && (
                     <td className="px-5 py-4 text-sm font-medium text-[#0F172A]">
                       {item.price > 0
-                        ? new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", maximumFractionDigits: 0 }).format(item.price)
+                        ? new Intl.NumberFormat("en-US", { style: "currency", currency: "IDR", maximumFractionDigits: 0 }).format(item.price)
                         : <span className="text-[#94A3B8]">—</span>}
                     </td>
                   )}

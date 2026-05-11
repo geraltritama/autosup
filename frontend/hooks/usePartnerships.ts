@@ -1,6 +1,6 @@
 "use client";
 
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api, type ApiResponse } from "@/lib/api";
 import { useAuthStore } from "@/store/useAuthStore";
 
@@ -126,17 +126,76 @@ export function useBlockchainEscrow(orderId: string | null) {
   });
 }
 
-export function usePartnershipsSummary() {
+export function usePartnershipsSummary(partnerType?: "supplier" | "retailer") {
   const role = useAuthStore((s) => s.user?.role);
   const userId = useAuthStore((s) => s.user?.user_id);
 
   return useQuery({
-    queryKey: ["partnerships", "summary", role, userId],
+    queryKey: ["partnerships", "summary", role, userId, partnerType],
     queryFn: async (): Promise<PartnershipsResponse> => {
-      const params = userId ? `?user_id=${userId}` : "";
-      const { data } = await api.get<ApiResponse<PartnershipsResponse>>(`/partnerships/summary${params}`);
+      const params = new URLSearchParams();
+      if (userId) params.set("user_id", userId);
+      if (partnerType) params.set("partner_type", partnerType);
+      const qs = params.toString();
+      const { data } = await api.get<ApiResponse<PartnershipsResponse>>(`/partnerships/summary${qs ? `?${qs}` : ""}`);
       return data.data;
     },
     staleTime: 60 * 1000,
+  });
+}
+
+// ─── Revoke ────────────────────────────────────────────────────────────────────
+
+export type RevokePartnershipPayload = {
+  partnership_pda: string;
+};
+
+export type RevokePartnershipResponse = {
+  tx_signature: string;
+  explorer_url: string;
+  on_chain: boolean;
+};
+
+export function useRevokePartnershipNFT() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (payload: RevokePartnershipPayload): Promise<RevokePartnershipResponse> => {
+      const { data } = await api.post<ApiResponse<RevokePartnershipResponse>>(
+        "/blockchain/partnership-nft/revoke",
+        payload,
+      );
+      return data.data;
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["partnership-nft"] });
+      qc.invalidateQueries({ queryKey: ["partnerships"] });
+    },
+  });
+}
+
+// ─── Verify ────────────────────────────────────────────────────────────────────
+
+export type VerifyPartnershipResponse = {
+  verified: boolean;
+  pda: string;
+  tier?: string;
+  reason?: string;
+};
+
+export function useVerifyPartnership(
+  supplier: string | null,
+  distributor: string | null,
+  role: number = 0,
+) {
+  return useQuery({
+    queryKey: ["partnership-nft", "verify", supplier, distributor, role],
+    enabled: !!supplier && !!distributor,
+    queryFn: async (): Promise<VerifyPartnershipResponse> => {
+      const { data } = await api.get<ApiResponse<VerifyPartnershipResponse>>(
+        `/blockchain/partnership-nft/verify/${supplier}/${distributor}?role=${role}`,
+      );
+      return data.data;
+    },
+    staleTime: 30 * 1000,
   });
 }

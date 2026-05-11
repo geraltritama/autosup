@@ -268,10 +268,6 @@ export function useNotificationSettings() {
   return useQuery({
     queryKey: ["settings", "notifications"],
     queryFn: async (): Promise<NotificationSettings> => {
-      if (USE_MOCK) {
-        await new Promise((r) => setTimeout(r, 300));
-        return { ...mockNotifications };
-      }
       const { data } = await api.get<ApiResponse<NotificationSettings>>("/settings/notifications");
       return data.data;
     },
@@ -283,11 +279,6 @@ export function useUpdateNotifications() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async (body: Partial<NotificationSettings>) => {
-      if (USE_MOCK) {
-        await new Promise((r) => setTimeout(r, 500));
-        Object.assign(mockNotifications, body);
-        return mockNotifications;
-      }
       const { data } = await api.put<ApiResponse<NotificationSettings>>(
         "/settings/notifications",
         body,
