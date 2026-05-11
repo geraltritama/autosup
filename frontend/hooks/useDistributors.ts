@@ -34,6 +34,9 @@ export type DistributorPartnershipHistoryItem = {
   legal_contract_hash?: string;
   mou_document_name?: string;
   mou_document_data?: string;
+  nft_mint_address?: string;
+  nft_explorer_url?: string;
+  nft_token_name?: string;
 };
 
 export type DistributorPartnershipRequest = {
