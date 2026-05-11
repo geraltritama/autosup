@@ -16,7 +16,7 @@ function formatCurrency(amount: number) {
 
 export function OrdersTrustPanel({ view }: { view?: "outgoing" | "incoming" }) {
   const role = useAuthStore((s) => s.user?.role);
-  const { data, isLoading } = useOrdersTrustSummary();
+  const { data, isLoading } = useOrdersTrustSummary(view);
 
   const escrowReleased = data?.escrow_released ?? 0;
   const escrowHeld = data?.escrow_held ?? 0;

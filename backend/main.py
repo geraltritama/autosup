@@ -904,7 +904,7 @@ def get_orders(status: Optional[str] = None, search: Optional[str] = None,
 
 
 @app.get("/orders/trust-summary")
-def get_orders_trust_summary(user_id: Optional[str] = None, role: Optional[str] = None):
+def get_orders_trust_summary(user_id: Optional[str] = None, role: Optional[str] = None, view: Optional[str] = None):
     try:
         if not user_id:
             return success_response(data={
@@ -912,11 +912,15 @@ def get_orders_trust_summary(user_id: Optional[str] = None, role: Optional[str] 
                 "total_released_value": 0, "reputation_score": 0,
             }, message="Trust summary")
 
-        # Fetch orders scoped to user
-        if role == "supplier":
-            res = supabase.table("orders").select("*").eq("seller_id", user_id).execute()
+        uid = user_id
+
+        # Fetch orders scoped to user + view
+        if role == "supplier" or view == "incoming":
+            res = supabase.table("orders").select("*").eq("seller_id", uid).execute()
+        elif view == "outgoing":
+            res = supabase.table("orders").select("*").eq("buyer_id", uid).execute()
         else:
-            res = supabase.table("orders").select("*").eq("buyer_id", user_id).execute()
+            res = supabase.table("orders").select("*").or_(f"buyer_id.eq.{uid},seller_id.eq.{uid}").execute()
         orders = res.data or []
 
         # Derive escrow from order status (more reliable than escrow_status field)
