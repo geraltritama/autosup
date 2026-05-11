@@ -4330,9 +4330,55 @@ def auto_tick_agents(x_user_role: Optional[str] = Header(default=None),
 @app.post("/ai/restock-recommendation")
 def ai_restock(req: AIRestockReq):
     try:
-        res = supabase.table("inventories").select("*").execute()
-        prompt = f"As an AI Supply Chain agent. Check stock data: {res.data}. Generate critical restock recommendations. Focus ID: {req.item_id or 'All'}."
-        return success_response(data={"ai_recommendation": _call_ai(prompt)}, message="Restock recommendation completed")
+        # Get the specific item
+        item_res = supabase.table("inventories").select("product_name,current_stock,min_threshold,unit").eq("id", req.item_id).execute()
+        item = item_res.data[0] if item_res.data else None
+        if not item:
+            return error_response("Item not found")
+
+        item_name = item.get("product_name", "")
+        current = item.get("current_stock", 0)
+        min_stock = item.get("min_threshold", 0)
+        unit = item.get("unit", "pcs")
+        suggested_qty = max((min_stock * 2) - current, min_stock)
+
+        # Find a partner supplier
+        suggested_seller = None
+        try:
+            # Get user_id from item
+            item_full = supabase.table("inventories").select("user_id").eq("id", req.item_id).execute()
+            if item_full.data:
+                uid = item_full.data[0].get("user_id", "")
+                partners = supabase.table("partnerships").select("approver_id").eq("requester_id", uid).eq("type", "supplier_distributor").eq("status", "accepted").limit(1).execute()
+                if partners.data:
+                    seller_id = partners.data[0]["approver_id"]
+                    seller_user = _get_auth_user(seller_id)
+                    if seller_user:
+                        meta = seller_user.get("user_metadata", {}) or {}
+                        suggested_seller = {
+                            "seller_id": seller_id,
+                            "name": meta.get("business_name", ""),
+                            "seller_type": "supplier",
+                            "reputation_score": meta.get("reputation_score", 0),
+                            "estimated_delivery_days": 3,
+                        }
+        except Exception:
+            pass
+
+        urgency = "high" if current == 0 else "medium" if current < min_stock else "low"
+
+        return success_response(data={
+            "item_id": req.item_id,
+            "item_name": item_name,
+            "current_stock": current,
+            "min_stock": min_stock,
+            "recommendation": f"Restock {item_name}: order {suggested_qty} {unit} to maintain healthy stock levels.",
+            "suggested_qty": suggested_qty,
+            "suggested_unit": unit,
+            "suggested_seller": suggested_seller,
+            "urgency": urgency,
+            "generated_at": now_iso(),
+        }, message="Restock recommendation generated")
     except Exception as e:
         return error_response(str(e))
 
