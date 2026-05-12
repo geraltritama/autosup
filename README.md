@@ -16,6 +16,7 @@ AUTOSUP is a full-stack supply chain platform connecting **suppliers**, **distri
 - [Roles & Access](#-roles--access)
 - [Features](#-features)
 - [Trust Layer](#-trust-layer)
+- [Deployed Contracts (Devnet)](#-deployed-contracts-devnet)
 - [API Contract](#-api-contract)
 - [Development](#-development)
 - [Roadmap](#-roadmap)
@@ -45,11 +46,15 @@ AUTOSUP is a full-stack supply chain platform connecting **suppliers**, **distri
 │  Backend — FastAPI (Python)                                     │
 │  Auth · CRUD · AI orchestration · Blockchain proxy              │
 ├─────────────────────────────────────────────────────────────────┤
-│  AI Layer — Google Gemini                                       │
+│  AI Layer — Multi-provider with automatic fallback              │
+│  OpenRouter → Google Gemini 2.0 Flash → Groq                   │
 │  Restock recommendations · Demand forecasting · Credit risk     │
 ├─────────────────────────────────────────────────────────────────┤
 │  Trust Layer — Solana Devnet (Rust / Anchor)                    │
 │  Partnership NFTs · Smart Escrow · On-chain Reputation          │
+├─────────────────────────────────────────────────────────────────┤
+│  Payments — Xendit                                              │
+│  Invoice generation · IDR payment redirect · Webhook callback   │
 └─────────────────────────────────────────────────────────────────┘
 ```
 
@@ -71,8 +76,9 @@ Distributors buy from suppliers, sell to retailers. Retailers serve end consumer
 | **QR / 2FA** | qrcode.react |
 | **Backend** | FastAPI · Python 3.10+ |
 | **Database** | PostgreSQL (Supabase) · Supabase Auth (JWT) |
-| **AI** | Google Gemini API |
-| **Blockchain** | Solana Devnet · Rust · Anchor |
+| **AI** | OpenRouter (default: `google/gemma-2-9b-it:free`) · Google Gemini 2.0 Flash · Groq — auto-fallback chain |
+| **Payments** | Xendit — invoice creation, IDR redirect, webhook settlement |
+| **Blockchain** | Solana Devnet · Rust · Anchor 0.30 |
 | **Package Manager** | npm |
 
 ---
@@ -82,11 +88,15 @@ Distributors buy from suppliers, sell to retailers. Retailers serve end consumer
 ```
 autosup/
 ├── backend/                    # Python FastAPI service
-│   ├── main.py                 # Application entry
-│   ├── main_teammate.py        # Teammate agent logic
+│   ├── main.py                 # Application entry + all API routes
+│   ├── main_teammate.py        # Teammate AI agent logic
+│   ├── blockchain.py           # Solana/Anchor transaction builder
 │   ├── requirements.txt        # Python dependencies
 │   └── README.md
 ├── contracts/                  # Solana smart contracts (Rust/Anchor)
+│   ├── partnership-nft/        # Soulbound partnership NFT program
+│   ├── escrow/                 # Smart escrow program
+│   └── reputation/             # On-chain reputation program
 ├── frontend/                   # Next.js dashboard application
 │   ├── app/
 │   │   ├── auth/               # Login & register pages
@@ -157,7 +167,29 @@ Create `frontend/.env.local`:
 
 ```env
 NEXT_PUBLIC_API_URL=http://localhost:8000
-NEXT_PUBLIC_RECAPTCHA_SITE_KEY=your-recaptcha-site-key
+```
+
+Create `backend/.env`:
+
+```env
+# Supabase
+SUPABASE_URL=https://your-project.supabase.co
+SUPABASE_KEY=your-supabase-anon-key
+
+# AI providers — at least one required; backend auto-falls back OpenRouter → Gemini → Groq
+OPENROUTER_API_KEY=sk-or-...
+AI_MODEL=google/gemma-2-9b-it:free    # any OpenRouter model slug
+
+GEMINI_API_KEY=AIza...
+GROQ_API_KEY=gsk_...
+
+# Solana
+SOLANA_AUTHORITY_KEYPAIR=[1,2,3,...]  # base58 or JSON byte array
+
+# Payments (Xendit)
+XENDIT_SECRET_KEY=xnd_production_...
+XENDIT_WEBHOOK_TOKEN=your-webhook-token
+XENDIT_CALLBACK_BASE_URL=https://your-frontend-domain.com
 ```
 
 ---
@@ -194,7 +226,7 @@ NEXT_PUBLIC_RECAPTCHA_SITE_KEY=your-recaptcha-site-key
 
 ### 🤝 Partnerships
 - Partner discovery and request/approve flow
-- Partnership NFT badges (Solana) with explorer links
+- Partnership NFT badges (Solana Devnet) with Solana Explorer links
 - Trust score and reliability metrics per partner
 - 3-role views (distributor sees suppliers + retailers)
 
@@ -211,6 +243,7 @@ NEXT_PUBLIC_RECAPTCHA_SITE_KEY=your-recaptcha-site-key
 
 ### 💰 Payments & Credit
 - Invoice management (draft · sent · pending · paid · overdue · cancelled)
+- Xendit-powered IDR invoice redirect (same-tab `window.location.assign`)
 - Credit line accounts with utilization tracking
 - Payment settlement flow
 - AI cash flow optimization insights
@@ -219,13 +252,13 @@ NEXT_PUBLIC_RECAPTCHA_SITE_KEY=your-recaptcha-site-key
 - Configurable automation levels: Manual Approval · Auto with Threshold · Auto Execute
 - Agent types: Auto Restock · Demand Forecast · Price Optimization · Cash Flow Optimizer
 - Activity log with impact summaries
+- Multi-provider backend: OpenRouter → Gemini 2.0 Flash → Groq (automatic failover)
 
 ### ⚙️ Settings
 - Profile editing (syncs across auth store)
 - Business info management (name, type, NPWP, warehouse/branch locations)
 - 2FA setup with QR code (qrcode.react) and TOTP verification
 - Notification channel and preference toggles (optimistic UI updates)
-- Web3 wallet integration placeholder
 
 ---
 
@@ -235,10 +268,42 @@ AUTOSUP surfaces blockchain trust without exposing users to wallets or crypto fl
 
 | Component | Purpose |
 |-----------|---------|
-| **Partnership NFTs** | Soulbound tokens minted on Solana Devnet for verified supplier/distributor/retailer relationships |
+| **Partnership NFTs** | Soulbound tokens minted on Solana Devnet for verified supplier↔distributor and distributor↔retailer relationships |
 | **Smart Escrow** | IDR-denominated payment holds released on delivery confirmation |
 | **Reputation Score** | On-chain score aggregated from fulfillment rate, payment punctuality, and delivery performance |
-| **NFT Badges** | Visual chips in the UI with explorer links — no wallet required for end users |
+| **NFT Badges** | Visual chips in the UI with Solana Explorer links — no wallet required for end users |
+
+### NFT Relationship Model
+
+```
+Supplier ──[NFT: PartnershipRole::SupplierDistributor]──→ Distributor
+Distributor ──[NFT: PartnershipRole::DistributorRetailer]──→ Retailer
+```
+
+- **Supplier ↔ Distributor**: Minted via `mint_partnership_nft`. Stores `supplier` pubkey, `distributor` pubkey, `role = SupplierDistributor`, on-chain metadata (terms, MOU hash, start date).
+- **Distributor ↔ Retailer**: Minted via `mint_distributor_retailer_nft`. Requires CPI proof that the distributor holds an **active** supplier partnership NFT — enforces hierarchy on-chain. Stores `distributor` pubkey, `retailer` pubkey, `retailer_tier` (Bronze → Silver → Gold).
+- Both NFT types are **soulbound** (non-transferable) and can be revoked by the authority.
+
+---
+
+## ⛓ Deployed Contracts (Devnet)
+
+All three Anchor programs are live on **Solana Devnet**.
+
+| Program | Program ID | Explorer |
+|---------|-----------|---------|
+| **Partnership NFT** | `5YNmS1R9nNSCDZB5P7F3YTvGRR1Px2JnyM7FQNHpdYSw` | [View on Explorer](https://explorer.solana.com/address/5YNmS1R9nNSCDZB5P7F3YTvGRR1Px2JnyM7FQNHpdYSw?cluster=devnet) |
+| **Smart Escrow** | `EsC3wXJYx4G8MgPkFUK3VHgJZP8eBUWH69LMnRSq1HRT` | [View on Explorer](https://explorer.solana.com/address/EsC3wXJYx4G8MgPkFUK3VHgJZP8eBUWH69LMnRSq1HRT?cluster=devnet) |
+| **Reputation** | `RePuT8qDgLFk3zG4kJBNFNhRaBmxVmgh5xBoRmM4V2m` | [View on Explorer](https://explorer.solana.com/address/RePuT8qDgLFk3zG4kJBNFNhRaBmxVmgh5xBoRmM4V2m?cluster=devnet) |
+
+RPC endpoint: `https://api.devnet.solana.com`
+
+To verify locally:
+```bash
+solana program show 5YNmS1R9nNSCDZB5P7F3YTvGRR1Px2JnyM7FQNHpdYSw --url devnet
+solana program show EsC3wXJYx4G8MgPkFUK3VHgJZP8eBUWH69LMnRSq1HRT --url devnet
+solana program show RePuT8qDgLFk3zG4kJBNFNhRaBmxVmgh5xBoRmM4V2m --url devnet
+```
 
 ---
 
@@ -284,10 +349,13 @@ Key conventions:
 | Phase | Status | Focus |
 |-------|--------|-------|
 | **MVP Core** | ✅ Done | 3-role dashboards, inventory, orders, suppliers, distributors, partnerships, analytics, geo, demand, payment, settings, AI agents |
-| **Backend Integration** | 🔄 In Progress | Connecting hooks to live FastAPI endpoints, real auth flow |
-| **AI Enhancement** | 📋 Planned | Gemini-powered demand forecasting, dynamic pricing, anomaly detection |
-| **Trust Layer** | 📋 Planned | Partnership NFT minting, smart escrow settlement, on-chain reputation |
+| **Backend Integration** | ✅ Done | Live FastAPI endpoints, Supabase auth, JWT flow |
+| **AI Engine** | ✅ Done | Multi-provider AI (OpenRouter → Gemini → Groq), restock recommendations, demand forecasting, credit risk, cash flow |
+| **Trust Layer** | ✅ Done | Partnership NFT minting (supplier↔distributor, distributor↔retailer), smart escrow settlement, on-chain reputation — deployed to Solana Devnet |
+| **Payments** | ✅ Done | Xendit invoice integration, IDR redirect, webhook settlement |
+| **Production Deploy** | 🔄 In Progress | Vercel (frontend) + Railway (backend) |
 | **Mobile PWA** | 📋 Planned | Responsive mobile-first experience |
+| **Mainnet** | 📋 Planned | Migrate Solana programs from Devnet to Mainnet-Beta |
 
 ---
 
