@@ -1,9 +1,8 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useState } from "react";
 import { ExternalLink, Gem, Handshake, FileClock, Percent, ShieldCheck, TrendingUp } from "lucide-react";
 import { KpiCard } from "@/components/dashboard/kpi-card";
-import { InsightCard } from "@/components/dashboard/insight-card";
 import { SupplierCard } from "@/components/suppliers/supplier-card";
 import { RetailerCard } from "@/components/retailers/retailer-card";
 import { DistributorCard } from "@/components/distributors/distributor-card";
@@ -270,24 +269,6 @@ export default function PartnershipsPage() {
         ? "No retailer partners yet. Manage retailers on the Retailers page."
         : "Find suppliers on the Suppliers page.";
 
-  // Adapt PartnershipInsight to AiInsight format for the InsightCard component
-  const adaptedInsights = useMemo(() => {
-    const allInsights = summaryData?.insights ?? [];
-
-    const filteredInsights = isDistributor
-      ? partnerView === "suppliers"
-        ? allInsights.filter((i) => i.supplier_id)
-        : allInsights.filter((i) => i.retailer_id)
-      : allInsights;
-
-    return filteredInsights.map((i) => ({
-      type: i.type,
-      message: i.message,
-      urgency: i.urgency,
-      item_id: i.supplier_id ?? i.distributor_id ?? i.retailer_id ?? i.type,
-    }));
-  }, [summaryData?.insights, isDistributor, partnerView]);
-
   return (
     <main className="space-y-6 px-6 py-6 lg:px-8 lg:py-8">
       {/* Header */}
@@ -373,13 +354,6 @@ export default function PartnershipsPage() {
             tone="info"
             icon={TrendingUp}
           />
-        </section>
-      )}
-
-      {/* AI Insights */}
-      {adaptedInsights.length > 0 && (
-        <section>
-          <InsightCard insights={adaptedInsights} />
         </section>
       )}
 

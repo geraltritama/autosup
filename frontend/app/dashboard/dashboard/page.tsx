@@ -15,7 +15,6 @@ import {
   Boxes,
   Building2,
   Check,
-  Clock3,
   CreditCard,
   Package,
   PackageCheck,
@@ -631,7 +630,7 @@ function RetailerDashboard({ data }: { data: Extract<DashboardSummary, { role: "
               Control your business operations
             </h1>
             <p className="max-w-2xl text-sm leading-7 text-[#64748B]">
-              Monitor stock, orders to distributors, monthly spending, and AI recommendations for a more efficient business.
+              Monitor stock, orders to distributors, monthly spending, and credit exposure across all distributor partners.
             </p>
           </div>
         </div>
@@ -651,13 +650,6 @@ function RetailerDashboard({ data }: { data: Extract<DashboardSummary, { role: "
           <KpiCard key={kpi.label} {...kpi} />
         ))}
       </section>
-
-      {/* AI Insights */}
-      {data.ai_insights.length > 0 && (
-        <section>
-          <InsightCard insights={data.ai_insights} />
-        </section>
-      )}
 
       {/* Critical alerts row */}
       <section className="grid gap-4 md:grid-cols-2">
@@ -794,6 +786,103 @@ function RetailerDashboard({ data }: { data: Extract<DashboardSummary, { role: "
           </CardContent>
         </Card>
       </section>
+
+      {/* Distributor breakdown */}
+      <section className="grid gap-6 lg:grid-cols-2">
+        <Card className="rounded-2xl">
+          <CardContent className="p-5">
+            <div className="flex items-center justify-between">
+              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[#64748B]">
+                Open Orders by Distributor
+              </p>
+              <Link href="/dashboard/orders">
+                <span className="text-xs font-medium text-[#3B82F6] hover:underline">View all →</span>
+              </Link>
+            </div>
+            {(data.open_orders_by_distributor ?? []).length > 0 ? (
+              <div className="mt-4 space-y-3">
+                {(data.open_orders_by_distributor ?? []).map((row) => (
+                  <div key={row.seller_name} className="rounded-xl border border-[#E2E8F0] px-4 py-3">
+                    <div className="flex items-center justify-between gap-3">
+                      <p className="text-sm font-semibold text-[#0F172A]">{row.seller_name}</p>
+                      <Badge tone={row.in_transit > 0 ? "info" : "warning"}>
+                        {row.open_orders} open
+                      </Badge>
+                    </div>
+                    <div className="mt-2 flex items-center justify-between text-xs text-[#64748B]">
+                      <span>{row.in_transit} in transit</span>
+                      <span>{formatRupiah(row.outstanding_amount)} outstanding</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="mt-4 text-sm text-[#94A3B8]">No active orders with distributors.</p>
+            )}
+          </CardContent>
+        </Card>
+
+        <Card className="rounded-2xl">
+          <CardContent className="p-5">
+            <div className="flex items-center justify-between">
+              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[#64748B]">
+                Credit Lines by Distributor
+              </p>
+              <Link href="/dashboard/payment">
+                <span className="text-xs font-medium text-[#3B82F6] hover:underline">View payment →</span>
+              </Link>
+            </div>
+            {(data.credit_lines ?? []).length > 0 ? (
+              <div className="mt-4 space-y-3">
+                {(data.credit_lines ?? []).map((line) => (
+                  <div key={line.distributor_id} className="rounded-xl border border-[#E2E8F0] px-4 py-3">
+                    <div className="flex items-center justify-between gap-3">
+                      <p className="text-sm font-semibold text-[#0F172A]">{line.distributor_name}</p>
+                      <Badge tone={line.status === "overdue" ? "danger" : "success"}>
+                        {line.status}
+                      </Badge>
+                    </div>
+                    <div className="mt-2 grid grid-cols-3 gap-2 text-xs">
+                      <div>
+                        <p className="text-[#94A3B8]">Limit</p>
+                        <p className="font-medium text-[#0F172A]">{formatRupiah(line.credit_limit)}</p>
+                      </div>
+                      <div>
+                        <p className="text-[#94A3B8]">Used</p>
+                        <p className="font-medium text-[#0F172A]">{formatRupiah(line.utilized_amount)}</p>
+                      </div>
+                      <div>
+                        <p className="text-[#94A3B8]">Available</p>
+                        <p className="font-medium text-[#22C55E]">{formatRupiah(line.available_amount)}</p>
+                      </div>
+                    </div>
+                    {line.next_due_amount > 0 && (
+                      <p className="mt-2 text-xs text-[#64748B]">Next due: {formatRupiah(line.next_due_amount)}</p>
+                    )}
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="mt-4 text-sm text-[#94A3B8]">No active credit lines.</p>
+            )}
+          </CardContent>
+        </Card>
+      </section>
+
+      {/* Agent insights */}
+      {data.ai_insights.length > 0 && (
+        <section className="space-y-3">
+          <div className="space-y-1">
+            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[#64748B]">
+              Agent Recommendations
+            </p>
+            <p className="text-sm text-[#64748B]">
+              Data-backed suggestions from your own sales, inventory, and distributor order history.
+            </p>
+          </div>
+          <InsightCard insights={data.ai_insights} badgeLabel="Agent recommendation" />
+        </section>
+      )}
     </main>
   );
 }

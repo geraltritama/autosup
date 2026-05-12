@@ -61,6 +61,22 @@ type RetailerSummaryData = {
     average_reliability_score: number;
     avg_delivery_time: number;
   };
+  open_orders_by_distributor?: {
+    seller_id: string;
+    seller_name: string;
+    open_orders: number;
+    in_transit: number;
+    outstanding_amount: number;
+  }[];
+  credit_lines?: {
+    distributor_id: string;
+    distributor_name: string;
+    status: string;
+    credit_limit: number;
+    utilized_amount: number;
+    available_amount: number;
+    next_due_amount: number;
+  }[];
   forecast_accuracy_pct: number;
   ai_insights: AiInsight[];
 };

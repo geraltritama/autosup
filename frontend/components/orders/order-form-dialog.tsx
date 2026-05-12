@@ -14,6 +14,12 @@ import { api, type ApiResponse } from "@/lib/api";
 import { useQuery } from "@tanstack/react-query";
 
 type PaymentMethod = { id: string; name: string; type: string; icon: string };
+type CheckoutResponse = {
+  payment_status?: "paid" | "awaiting_payment";
+  payment_detail?: {
+    invoice_url?: string;
+  };
+};
 
 const PAYMENT_LOGOS: Record<string, string> = {
   gopay: "/images/payments/gopay.svg",
@@ -185,11 +191,24 @@ export function OrderFormDialog({ open, onClose, prefill }: Props) {
     setCheckoutLoading(true);
     try {
       const orderRes = await create.mutateAsync(pendingPayload);
-      await api.post(`/payments/checkout/${orderRes.order_id}`, { payment_method: selectedMethod });
+      const checkoutRes = await api.post<ApiResponse<CheckoutResponse>>(
+        `/payments/checkout/${orderRes.order_id}`,
+        { payment_method: selectedMethod },
+      );
+      const checkoutData = checkoutRes.data?.data;
+      if (checkoutData?.payment_status === "awaiting_payment" && checkoutData.payment_detail?.invoice_url) {
+        window.open(checkoutData.payment_detail.invoice_url, "_blank", "noopener,noreferrer");
+      }
       setStep("success");
       setTimeout(() => onClose(), 1800);
-    } catch (err: any) {
-      const msg = err?.response?.data?.message || "Failed to create order. Please try again.";
+    } catch (err: unknown) {
+      const msg =
+        typeof err === "object" &&
+        err !== null &&
+        "response" in err &&
+        typeof (err as { response?: { data?: { message?: string } } }).response?.data?.message === "string"
+          ? (err as { response: { data: { message: string } } }).response.data.message
+          : "Failed to create order. Please try again.";
       setError(msg);
       setStep("form");
     } finally {
@@ -659,6 +678,4 @@ export function OrderFormDialog({ open, onClose, prefill }: Props) {
     </Dialog>
   );
 }
-
-
 
