@@ -54,7 +54,10 @@ export function LoginForm() {
   return (
     <Card className="w-full max-w-md rounded-2xl">
       <CardHeader className="space-y-2 pb-4">
-        <Image src="/styletulisan.png" alt="AUTOSUP" width={140} height={32} className="h-8 w-auto" />
+        <div className="flex items-center gap-2">
+          <Image src="/logo.png" alt="AUTOSUP icon" width={36} height={36} className="h-9 w-9" />
+          <Image src="/styletulisan.png" alt="AUTOSUP" width={120} height={28} className="h-7 w-auto" />
+        </div>
         <CardTitle className="text-xl">Sign in to AUTOSUP</CardTitle>
         <CardDescription>
           One workspace. Your inventory, orders, and partners.
