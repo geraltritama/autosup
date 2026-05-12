@@ -1,7 +1,8 @@
 "use client";
 
 import { useState } from "react";
-import { ArrowRight, ArrowLeft, ShieldCheck, AlertCircle, CheckCircle2, Building2, Truck, ShoppingBag, Eye, EyeOff } from "lucide-react";
+import Image from "next/image";
+import { ArrowRight, ArrowLeft, AlertCircle, CheckCircle2, Building2, Truck, ShoppingBag, Eye, EyeOff } from "lucide-react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -71,9 +72,7 @@ export function RegisterForm() {
   return (
     <Card className="w-full max-w-md rounded-2xl max-h-[90vh] overflow-y-auto">
       <CardHeader className="space-y-2 pb-0">
-        <div className="inline-flex h-11 w-11 items-center justify-center rounded-xl bg-[#DBEAFE] text-[#2563EB]">
-          <ShieldCheck className="h-5 w-5" />
-        </div>
+        <Image src="/styletulisan.png" alt="AUTOSUP" width={140} height={32} className="h-8 w-auto" />
         <CardTitle className="text-xl">Sign up to AUTOSUP</CardTitle>
         <CardDescription>Create an account and choose your business role.</CardDescription>
       </CardHeader>
