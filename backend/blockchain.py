@@ -63,7 +63,7 @@ PROGRAM_IDS = {
 
 SYSTEM_PROGRAM_ID   = "11111111111111111111111111111111"
 TOKEN_PROGRAM_ID    = "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
-ATA_PROGRAM_ID      = "ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJe1bRS"
+ATA_PROGRAM_ID      = "ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL"
 TOKEN_METADATA_PROG = "metaqbxxUerdq28cj1RbAWkYQm3ybzjb6a8bt518x1s"
 MEMO_PROGRAM_ID     = "MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr"
 RENT_SYSVAR         = "SysvarRent111111111111111111111111111111111"
@@ -280,7 +280,7 @@ def mint_partnership_nft(
     distributor_pubkey_str: str,
     supplier_pubkey_str: str,
     terms: str = "AUTOSUP Partnership",
-    role: int = 1,
+    role: int = 0,
     legal_contract_hash: str = "0" * 64,
     valid_until: int = 0,
     distribution_region: str = "",
@@ -345,40 +345,29 @@ def mint_partnership_nft(
             Pubkey.from_string(ATA_PROGRAM_ID)
         )
 
-        # Metaplex metadata PDA
-        meta_prog = Pubkey.from_string(TOKEN_METADATA_PROG)
-        metadata_pda, _ = Pubkey.find_program_address(
-            [b"metadata", bytes(meta_prog), bytes(mint_pda)], meta_prog
-        )
-
-        # Instruction data (borsh) — V2 with metadata fields
+        # Instruction data — new signature: (role, terms, hash, valid_until, region)
         disc = _discriminator("mint_partnership")
         hash_bytes = bytes.fromhex(legal_contract_hash.ljust(64, "0")[:64])
-        region_bytes = distribution_region.encode("utf-8")[:64]
         data = (
             disc
-            + bytes(supplier)
-            + bytes(distributor)
-            + b"\x00"                       # retailer: None
             + bytes([role])
             + _borsh_string(terms[:256])
-            + hash_bytes                    # [u8; 32] legal_contract_hash
+            + hash_bytes
             + struct.pack("<q", valid_until)
             + _borsh_string(distribution_region)
         )
 
+        # New account order: authority, supplier_account, distributor_account, partnership, mint, ATA, programs
         accounts = [
             AccountMeta(pubkey=auth.pubkey(),                              is_signer=True,  is_writable=True),
+            AccountMeta(pubkey=supplier,                                   is_signer=False, is_writable=False),  # supplier_account
+            AccountMeta(pubkey=distributor,                                is_signer=False, is_writable=False),  # distributor_account
             AccountMeta(pubkey=partnership_pda,                            is_signer=False, is_writable=True),
             AccountMeta(pubkey=mint_pda,                                   is_signer=False, is_writable=True),
-            AccountMeta(pubkey=distributor,                                is_signer=False, is_writable=False),  # distributor_account
             AccountMeta(pubkey=ata,                                        is_signer=False, is_writable=True),
-            AccountMeta(pubkey=metadata_pda,                               is_signer=False, is_writable=True),
             AccountMeta(pubkey=Pubkey.from_string(TOKEN_PROGRAM_ID),       is_signer=False, is_writable=False),
             AccountMeta(pubkey=Pubkey.from_string(ATA_PROGRAM_ID),         is_signer=False, is_writable=False),
-            AccountMeta(pubkey=Pubkey.from_string(TOKEN_METADATA_PROG),    is_signer=False, is_writable=False),
             AccountMeta(pubkey=Pubkey.from_string(SYSTEM_PROGRAM_ID),      is_signer=False, is_writable=False),
-            AccountMeta(pubkey=Pubkey.from_string(RENT_SYSVAR),            is_signer=False, is_writable=False),
         ]
 
         ix = Instruction(program_id=prog_id, accounts=accounts, data=bytes(data))
@@ -569,54 +558,45 @@ def mint_retailer_partnership_nft(
             [bytes(retailer), bytes(Pubkey.from_string(TOKEN_PROGRAM_ID)), bytes(mint_pda)],
             Pubkey.from_string(ATA_PROGRAM_ID)
         )
-        meta_prog = Pubkey.from_string(TOKEN_METADATA_PROG)
-        metadata_pda, _ = Pubkey.find_program_address(
-            [b"metadata", bytes(meta_prog), bytes(mint_pda)], meta_prog
-        )
-
         hash_bytes = bytes.fromhex(legal_contract_hash.ljust(64, "0")[:64])
-        region_bytes = distribution_region.encode("utf-8")[:64]
-        terms_bytes = terms.encode("utf-8")[:256]
 
+        # New signature: (terms, hash, valid_until, region, tier) — pubkeys come from accounts
         disc = _discriminator("mint_retailer_partnership")
         data = (
             disc
-            + bytes(supplier)
-            + bytes(distributor)
-            + bytes(retailer)
-            + b"\x02"                       # role: retailer
             + _borsh_string(terms)
-            + hash_bytes                    # [u8; 32]
+            + hash_bytes
             + struct.pack("<q", valid_until)
             + _borsh_string(distribution_region)
             + bytes([tier])
         )
 
+        # New account order: authority, supplier, distributor, retailer, parent_pda, partnership, mint, ATA, programs
         accounts = [
             AccountMeta(pubkey=auth.pubkey(),                          is_signer=True,  is_writable=True),
-            AccountMeta(pubkey=parent_pda,                              is_signer=False, is_writable=False),
-            AccountMeta(pubkey=partnership_pda,                         is_signer=False, is_writable=True),
-            AccountMeta(pubkey=mint_pda,                                is_signer=False, is_writable=True),
-            AccountMeta(pubkey=retailer,                                is_signer=False, is_writable=False),  # retailer_account
-            AccountMeta(pubkey=ata,                                     is_signer=False, is_writable=True),
-            AccountMeta(pubkey=metadata_pda,                            is_signer=False, is_writable=True),
-            AccountMeta(pubkey=Pubkey.from_string(TOKEN_PROGRAM_ID),   is_signer=False, is_writable=False),
-            AccountMeta(pubkey=Pubkey.from_string(ATA_PROGRAM_ID),     is_signer=False, is_writable=False),
-            AccountMeta(pubkey=meta_prog,                              is_signer=False, is_writable=False),
-            AccountMeta(pubkey=Pubkey.from_string(SYSTEM_PROGRAM_ID),  is_signer=False, is_writable=False),
-            AccountMeta(pubkey=Pubkey.from_string(RENT_SYSVAR),        is_signer=False, is_writable=False),
+            AccountMeta(pubkey=supplier,                               is_signer=False, is_writable=False),  # supplier_account
+            AccountMeta(pubkey=distributor,                            is_signer=False, is_writable=False),  # distributor_account
+            AccountMeta(pubkey=retailer,                               is_signer=False, is_writable=False),  # retailer_account
+            AccountMeta(pubkey=parent_pda,                             is_signer=False, is_writable=False),
+            AccountMeta(pubkey=partnership_pda,                        is_signer=False, is_writable=True),
+            AccountMeta(pubkey=mint_pda,                               is_signer=False, is_writable=True),
+            AccountMeta(pubkey=ata,                                    is_signer=False, is_writable=True),
+            AccountMeta(pubkey=Pubkey.from_string(TOKEN_PROGRAM_ID),  is_signer=False, is_writable=False),
+            AccountMeta(pubkey=Pubkey.from_string(ATA_PROGRAM_ID),    is_signer=False, is_writable=False),
+            AccountMeta(pubkey=Pubkey.from_string(SYSTEM_PROGRAM_ID), is_signer=False, is_writable=False),
         ]
 
         ix = Instruction(program_id=prog_id, accounts=accounts, data=bytes(data))
         sig = _send(auth, [ix])
-        return {
-            "tx_signature": sig or fallback_sig,
-            "mint_address": str(mint_pda),
-            "partnership_pda": str(partnership_pda),
-            "explorer_url": _explorer(sig or fallback_sig, "tx"),
-            "mint_explorer_url": _explorer(str(mint_pda), "address"),
-            "on_chain": True,
-        }
+        if sig:
+            return {
+                "tx_signature": sig,
+                "mint_address": str(mint_pda),
+                "partnership_pda": str(partnership_pda),
+                "explorer_url": _explorer(sig, "tx"),
+                "mint_explorer_url": _explorer(str(mint_pda), "address"),
+                "on_chain": True,
+            }
     except Exception as e:
         logger.error(f"mint_retailer_partnership error: {e}")
         return {
