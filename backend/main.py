@@ -2353,18 +2353,32 @@ def update_partnership_request(request_id: str, data: UpdatePartnershipReq):
                 try:
                     wallet_approver = bc.get_or_create_wallet(supabase, p.get("approver_id", ""))
                     wallet_requester = bc.get_or_create_wallet(supabase, p.get("requester_id", ""))
-                    result = bc.mint_partnership_nft(
-                        distributor_pubkey_str=wallet_requester["pubkey"],
-                        supplier_pubkey_str=wallet_approver["pubkey"],
-                        terms=f"Partnership {request_id[:8]}",
-                        legal_contract_hash=p.get("mou_hash", "0" * 64),
-                        distribution_region=p.get("mou_region", ""),
-                    )
-                    mint_addr = result.get("mint") or result.get("mint_address", "")
+                    p_type = p.get("type", "supplier_distributor")
+                    if p_type == "distributor_retailer":
+                        # Find active supplier for the distributor (approver)
+                        sup_p = supabase.table("partnerships").select("requester_id").eq("approver_id", p.get("approver_id")).eq("type", "supplier_distributor").eq("status", "accepted").limit(1).execute()
+                        supplier_wallet = bc.get_or_create_wallet(supabase, sup_p.data[0]["requester_id"])["pubkey"] if sup_p.data else wallet_approver["pubkey"]
+                        result = bc.mint_retailer_partnership_nft(
+                            distributor_pubkey_str=wallet_approver["pubkey"],
+                            retailer_pubkey_str=wallet_requester["pubkey"],
+                            supplier_pubkey_str=supplier_wallet,
+                            terms=f"Partnership {request_id[:8]}",
+                            legal_contract_hash=p.get("mou_hash", "0" * 64),
+                            distribution_region=p.get("mou_region", ""),
+                        )
+                    else:
+                        result = bc.mint_partnership_nft(
+                            distributor_pubkey_str=wallet_requester["pubkey"],
+                            supplier_pubkey_str=wallet_approver["pubkey"],
+                            terms=f"Partnership {request_id[:8]}",
+                            legal_contract_hash=p.get("mou_hash", "0" * 64),
+                            distribution_region=p.get("mou_region", ""),
+                        )
+                    mint_addr = result.get("mint_address", "")
                     update_payload["nft_mint_address"] = mint_addr
                     update_payload["nft_token_name"] = f"Partnership #{request_id[:8].upper()}"
                     update_payload["nft_explorer_url"] = f"https://explorer.solana.com/address/{mint_addr}?cluster=devnet"
-                    nft_data = {"mint_address": mint_addr, "explorer_url": update_payload["nft_explorer_url"]}
+                    nft_data = {"mint_address": mint_addr, "explorer_url": update_payload["nft_explorer_url"], "on_chain": result.get("on_chain", False)}
                 except Exception:
                     pass
 
@@ -2704,20 +2718,32 @@ def respond_partnership(partnership_id: str, body: dict, current_user: Authentic
             try:
                 wallet_approver = bc.get_or_create_wallet(supabase, uid)
                 wallet_requester = bc.get_or_create_wallet(supabase, p["requester_id"])
-                result = bc.mint_partnership_nft(
-                    distributor_pubkey_str=wallet_requester["pubkey"],
-                    supplier_pubkey_str=wallet_approver["pubkey"],
-                    terms=f"Partnership {partnership_id[:8]}",
-                    legal_contract_hash=p.get("mou_hash", "0" * 64),
-                    distribution_region=p.get("mou_region", ""),
-                )
-                mint_addr = result.get("mint") or result.get("mint_address", "")
+                p_type = p.get("type", "supplier_distributor")
+                if p_type == "distributor_retailer":
+                    sup_p = supabase.table("partnerships").select("requester_id").eq("approver_id", uid).eq("type", "supplier_distributor").eq("status", "accepted").limit(1).execute()
+                    supplier_wallet = bc.get_or_create_wallet(supabase, sup_p.data[0]["requester_id"])["pubkey"] if sup_p.data else wallet_approver["pubkey"]
+                    result = bc.mint_retailer_partnership_nft(
+                        distributor_pubkey_str=wallet_approver["pubkey"],
+                        retailer_pubkey_str=wallet_requester["pubkey"],
+                        supplier_pubkey_str=supplier_wallet,
+                        terms=f"Partnership {partnership_id[:8]}",
+                        legal_contract_hash=p.get("mou_hash", "0" * 64),
+                        distribution_region=p.get("mou_region", ""),
+                    )
+                else:
+                    result = bc.mint_partnership_nft(
+                        distributor_pubkey_str=wallet_requester["pubkey"],
+                        supplier_pubkey_str=wallet_approver["pubkey"],
+                        terms=f"Partnership {partnership_id[:8]}",
+                        legal_contract_hash=p.get("mou_hash", "0" * 64),
+                        distribution_region=p.get("mou_region", ""),
+                    )
+                mint_addr = result.get("mint_address", "")
                 update["nft_mint_address"] = mint_addr
                 update["nft_token_name"] = f"Partnership #{partnership_id[:8].upper()}"
                 update["nft_explorer_url"] = f"https://explorer.solana.com/address/{mint_addr}?cluster=devnet"
-                nft_data = {"mint_address": mint_addr, "explorer_url": update["nft_explorer_url"]}
+                nft_data = {"mint_address": mint_addr, "explorer_url": update["nft_explorer_url"], "on_chain": result.get("on_chain", False)}
             except Exception as nft_err:
-                # Non-critical — partnership still accepted even if NFT fails
                 nft_data = {"error": str(nft_err)[:100]}
 
         supabase.table("partnerships").update(update).eq("id", partnership_id).execute()
@@ -5698,18 +5724,31 @@ def respond_partnership_request(request_id: str, body: dict):
                 try:
                     wallet_approver = bc.get_or_create_wallet(supabase, p.get("approver_id", ""))
                     wallet_requester = bc.get_or_create_wallet(supabase, p.get("requester_id", ""))
-                    result = bc.mint_partnership_nft(
-                        distributor_pubkey_str=wallet_requester["pubkey"],
-                        supplier_pubkey_str=wallet_approver["pubkey"],
-                        terms=f"Partnership {request_id[:8]}",
-                        legal_contract_hash=p.get("mou_hash", "0" * 64),
-                        distribution_region=p.get("mou_region", ""),
-                    )
-                    mint_addr = result.get("mint") or result.get("mint_address", "")
+                    p_type = p.get("type", "supplier_distributor")
+                    if p_type == "distributor_retailer":
+                        sup_p = supabase.table("partnerships").select("requester_id").eq("approver_id", p.get("approver_id")).eq("type", "supplier_distributor").eq("status", "accepted").limit(1).execute()
+                        supplier_wallet = bc.get_or_create_wallet(supabase, sup_p.data[0]["requester_id"])["pubkey"] if sup_p.data else wallet_approver["pubkey"]
+                        result = bc.mint_retailer_partnership_nft(
+                            distributor_pubkey_str=wallet_approver["pubkey"],
+                            retailer_pubkey_str=wallet_requester["pubkey"],
+                            supplier_pubkey_str=supplier_wallet,
+                            terms=f"Partnership {request_id[:8]}",
+                            legal_contract_hash=p.get("mou_hash", "0" * 64),
+                            distribution_region=p.get("mou_region", ""),
+                        )
+                    else:
+                        result = bc.mint_partnership_nft(
+                            distributor_pubkey_str=wallet_requester["pubkey"],
+                            supplier_pubkey_str=wallet_approver["pubkey"],
+                            terms=f"Partnership {request_id[:8]}",
+                            legal_contract_hash=p.get("mou_hash", "0" * 64),
+                            distribution_region=p.get("mou_region", ""),
+                        )
+                    mint_addr = result.get("mint_address", "")
                     update_payload["nft_mint_address"] = mint_addr
                     update_payload["nft_token_name"] = f"Partnership #{request_id[:8].upper()}"
                     update_payload["nft_explorer_url"] = f"https://explorer.solana.com/address/{mint_addr}?cluster=devnet"
-                    nft_data = {"mint_address": mint_addr, "explorer_url": update_payload["nft_explorer_url"]}
+                    nft_data = {"mint_address": mint_addr, "explorer_url": update_payload["nft_explorer_url"], "on_chain": result.get("on_chain", False)}
                 except Exception:
                     pass
 

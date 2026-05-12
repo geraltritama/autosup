@@ -1,9 +1,6 @@
 use anchor_lang::prelude::*;
 use anchor_spl::{
-    metadata::{
-        create_metadata_accounts_v3, mpl_token_metadata::types::DataV2, CreateMetadataAccountsV3,
-        Metadata as Metaplex,
-    },
+    associated_token::AssociatedToken,
     token::{mint_to, Mint, MintTo, Token, TokenAccount},
 };
 use solana_program::pubkey::Pubkey;
@@ -14,7 +11,6 @@ declare_id!("FNjMqtcKX6H2VdTxk2qtW7UZyGhJwjEC7DvHbWDY3Zfi");
 
 const PARTNERSHIP_MINT_SEED: &[u8] = b"partnership-mint";
 const PARTNERSHIP_TOKEN_SEED: &[u8] = b"partnership-token";
-const METADATA_SEED: &[u8] = b"metadata";
 
 /// ─── Partnership Role ────────────────────────────────────────────────────────
 
@@ -42,7 +38,7 @@ pub enum RetailerTier {
     Gold,
 }
 
-/// ─── Partnership NFT Account (V2 — with tier + metadata) ────────────────────
+/// ─── Partnership NFT Account ─────────────────────────────────────────────────
 
 #[account]
 pub struct PartnershipNFT {
@@ -53,10 +49,10 @@ pub struct PartnershipNFT {
     pub role: PartnershipRole,
     pub status: PartnershipStatus,
     pub retailer_tier: Option<RetailerTier>,
-    pub terms: String,               // max 256 bytes
-    pub legal_contract_hash: [u8; 32], // SHA-256 of MoU PDF
-    pub valid_until: i64,            // 0 = no expiry
-    pub distribution_region: String, // max 64 bytes
+    pub terms: String,                   // max 256 bytes
+    pub legal_contract_hash: [u8; 32],   // SHA-256 of MoU PDF
+    pub valid_until: i64,                // 0 = no expiry
+    pub distribution_region: String,     // max 64 bytes
     pub issued_at: i64,
     pub revoked_at: Option<i64>,
     pub bump: u8,
@@ -72,9 +68,6 @@ pub mod autosup_partnership_nft {
     /// Mint a soulbound supplier→distributor partnership NFT.
     pub fn mint_partnership(
         ctx: Context<MintPartnership>,
-        supplier: Pubkey,
-        distributor: Pubkey,
-        retailer: Option<Pubkey>,
         role: u8,
         terms: String,
         legal_contract_hash: [u8; 32],
@@ -84,7 +77,10 @@ pub mod autosup_partnership_nft {
         require!(terms.len() <= 256, PartnershipError::TermsTooLong);
         require!(distribution_region.len() <= 64, PartnershipError::RegionTooLong);
 
-        let role = match role {
+        let supplier = ctx.accounts.supplier_account.key();
+        let distributor = ctx.accounts.distributor_account.key();
+
+        let role_enum = match role {
             0 => PartnershipRole::Supplier,
             1 => PartnershipRole::Distributor,
             2 => PartnershipRole::Retailer,
@@ -95,19 +91,18 @@ pub mod autosup_partnership_nft {
         partnership.authority = ctx.accounts.authority.key();
         partnership.supplier = supplier;
         partnership.distributor = distributor;
-        partnership.retailer = retailer;
-        partnership.role = role;
+        partnership.retailer = None;
+        partnership.role = role_enum;
         partnership.status = PartnershipStatus::Active;
-        partnership.retailer_tier = retailer.map(|_| RetailerTier::Bronze); // default tier
-        partnership.terms = terms.clone();
+        partnership.retailer_tier = None;
+        partnership.terms = terms;
         partnership.legal_contract_hash = legal_contract_hash;
         partnership.valid_until = valid_until;
-        partnership.distribution_region = distribution_region.clone();
+        partnership.distribution_region = distribution_region;
         partnership.issued_at = Clock::get()?.unix_timestamp;
         partnership.revoked_at = None;
         partnership.bump = ctx.bumps.partnership;
 
-        // Mint exactly 1 soulbound token
         let cpi_accounts = MintTo {
             mint: ctx.accounts.mint.to_account_info(),
             to: ctx.accounts.token_account.to_account_info(),
@@ -115,39 +110,6 @@ pub mod autosup_partnership_nft {
         };
         let cpi_ctx = CpiContext::new(ctx.accounts.token_program.to_account_info(), cpi_accounts);
         mint_to(cpi_ctx, 1)?;
-
-        // Attach Metaplex metadata
-        let metadata_accounts = CreateMetadataAccountsV3 {
-            metadata: ctx.accounts.metadata.to_account_info(),
-            mint: ctx.accounts.mint.to_account_info(),
-            mint_authority: ctx.accounts.authority.to_account_info(),
-            payer: ctx.accounts.authority.to_account_info(),
-            update_authority: ctx.accounts.authority.to_account_info(),
-            system_program: ctx.accounts.system_program.to_account_info(),
-            rent: ctx.accounts.rent.to_account_info(),
-        };
-
-        let name = format!("AUTOSUP-PARTNERSHIP-{}", partnership.issued_at);
-        let uri = format!(
-            "https://autosup.io/partnership-nft/{}",
-            hex::encode(legal_contract_hash)
-        );
-
-        let data = DataV2 {
-            name,
-            symbol: "AUTOP".to_string(),
-            uri,
-            seller_fee_basis_points: 0,
-            creators: None,
-            collection: None,
-            uses: None,
-        };
-
-        let cpi_ctx = CpiContext::new(
-            ctx.accounts.token_metadata_program.to_account_info(),
-            metadata_accounts,
-        );
-        create_metadata_accounts_v3(cpi_ctx, data, true, false, None)?;
 
         emit!(PartnershipMinted {
             authority: ctx.accounts.authority.key(),
@@ -160,20 +122,17 @@ pub mod autosup_partnership_nft {
     }
 
     /// Mint distributor→retailer partnership NFT with hierarchy validation.
-    /// Requires a PDA proof that the distributor has an ACTIVE supplier partnership.
     pub fn mint_retailer_partnership(
         ctx: Context<MintRetailerPartnership>,
-        supplier: Pubkey,
-        distributor: Pubkey,
-        retailer: Pubkey,
-        role: u8,
         terms: String,
         legal_contract_hash: [u8; 32],
         valid_until: i64,
         distribution_region: String,
-        tier: u8, // 0=Bronze, 1=Silver, 2=Gold
+        tier: u8,
     ) -> Result<()> {
-        // ── Hierarchy validation: distributor must hold an active supplier NFT ──
+        let distributor = ctx.accounts.distributor_account.key();
+        let retailer = ctx.accounts.retailer_account.key();
+
         require!(
             ctx.accounts.parent_partnership.status == PartnershipStatus::Active,
             PartnershipError::ParentPartnershipNotActive
@@ -182,7 +141,6 @@ pub mod autosup_partnership_nft {
             ctx.accounts.parent_partnership.distributor == distributor,
             PartnershipError::DistributorMismatch
         );
-
         require!(terms.len() <= 256, PartnershipError::TermsTooLong);
         require!(distribution_region.len() <= 64, PartnershipError::RegionTooLong);
 
@@ -193,6 +151,8 @@ pub mod autosup_partnership_nft {
             _ => return Err(PartnershipError::InvalidTier.into()),
         };
 
+        let supplier = ctx.accounts.supplier_account.key();
+
         let partnership = &mut ctx.accounts.partnership;
         partnership.authority = ctx.accounts.authority.key();
         partnership.supplier = supplier;
@@ -200,16 +160,15 @@ pub mod autosup_partnership_nft {
         partnership.retailer = Some(retailer);
         partnership.role = PartnershipRole::Retailer;
         partnership.status = PartnershipStatus::Active;
-        partnership.retailer_tier = Some(tier.clone());
-        partnership.terms = terms.clone();
+        partnership.retailer_tier = Some(tier);
+        partnership.terms = terms;
         partnership.legal_contract_hash = legal_contract_hash;
         partnership.valid_until = valid_until;
-        partnership.distribution_region = distribution_region.clone();
+        partnership.distribution_region = distribution_region;
         partnership.issued_at = Clock::get()?.unix_timestamp;
         partnership.revoked_at = None;
         partnership.bump = ctx.bumps.partnership;
 
-        // Mint 1 token
         let cpi_accounts = MintTo {
             mint: ctx.accounts.mint.to_account_info(),
             to: ctx.accounts.token_account.to_account_info(),
@@ -217,44 +176,6 @@ pub mod autosup_partnership_nft {
         };
         let cpi_ctx = CpiContext::new(ctx.accounts.token_program.to_account_info(), cpi_accounts);
         mint_to(cpi_ctx, 1)?;
-
-        // Attach metadata
-        let metadata_accounts = CreateMetadataAccountsV3 {
-            metadata: ctx.accounts.metadata.to_account_info(),
-            mint: ctx.accounts.mint.to_account_info(),
-            mint_authority: ctx.accounts.authority.to_account_info(),
-            payer: ctx.accounts.authority.to_account_info(),
-            update_authority: ctx.accounts.authority.to_account_info(),
-            system_program: ctx.accounts.system_program.to_account_info(),
-            rent: ctx.accounts.rent.to_account_info(),
-        };
-
-        let tier_name = match tier {
-            RetailerTier::Bronze => "Bronze",
-            RetailerTier::Silver => "Silver",
-            RetailerTier::Gold => "Gold",
-        };
-        let name = format!("AUTOSUP-RETAILER-{}-{}", tier_name, partnership.issued_at);
-        let uri = format!(
-            "https://autosup.io/retailer-nft/{}",
-            hex::encode(legal_contract_hash)
-        );
-
-        let data = DataV2 {
-            name,
-            symbol: "AUTOR".to_string(),
-            uri,
-            seller_fee_basis_points: 0,
-            creators: None,
-            collection: None,
-            uses: None,
-        };
-
-        let cpi_ctx = CpiContext::new(
-            ctx.accounts.token_metadata_program.to_account_info(),
-            metadata_accounts,
-        );
-        create_metadata_accounts_v3(cpi_ctx, data, true, false, None)?;
 
         emit!(RetailerPartnershipMinted {
             authority: ctx.accounts.authority.key(),
@@ -302,7 +223,6 @@ pub mod autosup_partnership_nft {
     }
 
     /// Revoke an active partnership (state change, token stays in wallet).
-    /// Only the original issuer can revoke.
     pub fn revoke_partnership(ctx: Context<RevokePartnership>) -> Result<()> {
         let partnership = &mut ctx.accounts.partnership;
         require!(
@@ -341,14 +261,16 @@ pub mod autosup_partnership_nft {
 /// ─── Contexts ────────────────────────────────────────────────────────────────
 
 #[derive(Accounts)]
-#[instruction(
-    supplier: Pubkey, distributor: Pubkey, retailer: Option<Pubkey>,
-    role: u8, terms: String, legal_contract_hash: [u8; 32],
-    valid_until: i64, distribution_region: String,
-)]
+#[instruction(role: u8)]
 pub struct MintPartnership<'info> {
     #[account(mut)]
     pub authority: Signer<'info>,
+
+    /// CHECK: Supplier — pubkey used in PDA seed
+    pub supplier_account: AccountInfo<'info>,
+
+    /// CHECK: Distributor — pubkey used in PDA seed and receives the soulbound token
+    pub distributor_account: AccountInfo<'info>,
 
     #[account(
         init,
@@ -356,13 +278,13 @@ pub struct MintPartnership<'info> {
         space = 8 + 32 + 32 + 32 + 1 + 33 + 1 + 2 + 1 + 260 + 32 + 8 + 68 + 8 + 9 + 1,
         seeds = [
             PARTNERSHIP_MINT_SEED,
-            supplier.as_ref(),
-            distributor.as_ref(),
+            supplier_account.key().as_ref(),
+            distributor_account.key().as_ref(),
             &[role],
         ],
         bump,
     )]
-    pub partnership: Account<'info, PartnershipNFT>,
+    pub partnership: Box<Account<'info, PartnershipNFT>>,
 
     #[account(
         init,
@@ -371,16 +293,13 @@ pub struct MintPartnership<'info> {
         mint::authority = authority,
         seeds = [
             PARTNERSHIP_TOKEN_SEED,
-            supplier.as_ref(),
-            distributor.as_ref(),
+            supplier_account.key().as_ref(),
+            distributor_account.key().as_ref(),
             &[role],
         ],
         bump,
     )]
-    pub mint: Account<'info, Mint>,
-
-    /// CHECK: Distributor who will receive the soulbound token; validated by ATA derivation
-    pub distributor_account: AccountInfo<'info>,
+    pub mint: Box<Account<'info, Mint>>,
 
     #[account(
         init,
@@ -388,41 +307,37 @@ pub struct MintPartnership<'info> {
         associated_token::mint = mint,
         associated_token::authority = distributor_account,
     )]
-    pub token_account: Account<'info, TokenAccount>,
-
-    #[account(
-        mut,
-        seeds = [METADATA_SEED, token_metadata_program.key().as_ref(), mint.key().as_ref()],
-        bump,
-        seeds::program = token_metadata_program.key(),
-    )]
-    pub metadata: AccountInfo<'info>,
+    pub token_account: Box<Account<'info, TokenAccount>>,
 
     pub token_program: Program<'info, Token>,
     pub associated_token_program: Program<'info, AssociatedToken>,
-    pub token_metadata_program: Program<'info, Metadata>,
     pub system_program: Program<'info, System>,
-    pub rent: Sysvar<'info, Rent>,
 }
 
-/// Distributor→Retailer minting with hierarchy validation CPI.
 #[derive(Accounts)]
-#[instruction(
-    supplier: Pubkey, distributor: Pubkey, retailer: Pubkey,
-    role: u8, terms: String, legal_contract_hash: [u8; 32],
-    valid_until: i64, distribution_region: String, tier: u8,
-)]
 pub struct MintRetailerPartnership<'info> {
     #[account(mut)]
     pub authority: Signer<'info>,
 
-    /// The parent supplier→distributor partnership PDA (proof of hierarchy).
-    /// Must be ACTIVE and distributor must match.
+    /// CHECK: Supplier — pubkey for parent PDA seed lookup
+    pub supplier_account: AccountInfo<'info>,
+
+    /// CHECK: Distributor — pubkey for parent PDA seed and new PDA seed
+    pub distributor_account: AccountInfo<'info>,
+
+    /// CHECK: Retailer — pubkey for new PDA seed and receives token
+    pub retailer_account: AccountInfo<'info>,
+
     #[account(
-        seeds = [PARTNERSHIP_MINT_SEED, supplier.as_ref(), distributor.as_ref(), &[0_u8]],
+        seeds = [
+            PARTNERSHIP_MINT_SEED,
+            supplier_account.key().as_ref(),
+            distributor_account.key().as_ref(),
+            &[0_u8],
+        ],
         bump,
     )]
-    pub parent_partnership: Account<'info, PartnershipNFT>,
+    pub parent_partnership: Box<Account<'info, PartnershipNFT>>,
 
     #[account(
         init,
@@ -430,13 +345,13 @@ pub struct MintRetailerPartnership<'info> {
         space = 8 + 32 + 32 + 32 + 1 + 33 + 1 + 2 + 1 + 260 + 32 + 8 + 68 + 8 + 9 + 1,
         seeds = [
             PARTNERSHIP_MINT_SEED,
-            distributor.as_ref(),
-            retailer.as_ref(),
+            distributor_account.key().as_ref(),
+            retailer_account.key().as_ref(),
             &[2_u8],
         ],
         bump,
     )]
-    pub partnership: Account<'info, PartnershipNFT>,
+    pub partnership: Box<Account<'info, PartnershipNFT>>,
 
     #[account(
         init,
@@ -445,16 +360,13 @@ pub struct MintRetailerPartnership<'info> {
         mint::authority = authority,
         seeds = [
             PARTNERSHIP_TOKEN_SEED,
-            distributor.as_ref(),
-            retailer.as_ref(),
+            distributor_account.key().as_ref(),
+            retailer_account.key().as_ref(),
             &[2_u8],
         ],
         bump,
     )]
-    pub mint: Account<'info, Mint>,
-
-    /// CHECK: Retailer who will receive the soulbound token; validated by ATA derivation
-    pub retailer_account: AccountInfo<'info>,
+    pub mint: Box<Account<'info, Mint>>,
 
     #[account(
         init,
@@ -462,21 +374,11 @@ pub struct MintRetailerPartnership<'info> {
         associated_token::mint = mint,
         associated_token::authority = retailer_account,
     )]
-    pub token_account: Account<'info, TokenAccount>,
-
-    #[account(
-        mut,
-        seeds = [METADATA_SEED, token_metadata_program.key().as_ref(), mint.key().as_ref()],
-        bump,
-        seeds::program = token_metadata_program.key(),
-    )]
-    pub metadata: AccountInfo<'info>,
+    pub token_account: Box<Account<'info, TokenAccount>>,
 
     pub token_program: Program<'info, Token>,
     pub associated_token_program: Program<'info, AssociatedToken>,
-    pub token_metadata_program: Program<'info, Metadata>,
     pub system_program: Program<'info, System>,
-    pub rent: Sysvar<'info, Rent>,
 }
 
 #[derive(Accounts)]
@@ -562,8 +464,4 @@ pub enum PartnershipError {
     NotRetailerPartnership,
 }
 
-/// ─── External crate re-exports ───────────────────────────────────────────────
-
 use anchor_lang::solana_program::clock::Clock;
-use anchor_spl::associated_token::AssociatedToken;
-use anchor_spl::metadata::Metadata;

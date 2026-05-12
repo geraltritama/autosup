@@ -14,6 +14,5 @@ default = []
 
 [dependencies]
 anchor-lang = { workspace = true }
-anchor-spl = { workspace = true, features = ["metadata"] }
+anchor-spl = { workspace = true }
 solana-program = { workspace = true }
-hex = "0.4"
