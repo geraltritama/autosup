@@ -305,6 +305,32 @@ solana program show 5d3PoJoffeMJ46m4Z3ERqoWKHu8vkecn9cfC5WXyn1sB --url devnet
 solana program show 3rcywtT9Q5iqqZ3AjRrkS6qN4ZMo2ZJdm3MWowBEyGhS --url devnet
 ```
 
+### Active On-Chain Partnership NFTs (Devnet)
+
+Two real **AUTOSUP Partnership** soulbound NFTs are minted and live on Solana Devnet.
+
+#### 1. Supplier ↔ Distributor
+| Field | Value |
+|-------|-------|
+| **Supplier** | Toko Geral (`geraltritama33@gmail.com`) |
+| **Distributor** | Naufal Distri (`geraltritama34@gmail.com`) |
+| **Region** | Jabodetabek |
+| **Mint Address** | `HCLzmnwMMcp8xnoQtDqM6yhZmP7WXh5atzBB6uzXDtcs` |
+| **Explorer** | [View on Solana Explorer](https://explorer.solana.com/address/HCLzmnwMMcp8xnoQtDqM6yhZmP7WXh5atzBB6uzXDtcs?cluster=devnet) |
+| **Token held by** | Distributor wallet `GphsnqYPy4nNSHQAF4CEXhCcZEpWvVWKqCRu457JGC26` |
+
+#### 2. Distributor ↔ Retailer
+| Field | Value |
+|-------|-------|
+| **Distributor** | Naufal Distri (`geraltritama34@gmail.com`) |
+| **Retailer** | Toko Rafi Jaya (`geraltritama32@gmail.com`) |
+| **Region** | Jakarta Timur |
+| **Mint Address** | `4eg1QG8S5E3Yxs2cpjp3pEL2XikSVmHxDKyB3c555hdo` |
+| **Explorer** | [View on Solana Explorer](https://explorer.solana.com/address/4eg1QG8S5E3Yxs2cpjp3pEL2XikSVmHxDKyB3c555hdo?cluster=devnet) |
+| **Token held by** | Retailer wallet `HFodNvrQwUAQGMCFKGwLk1c6BoBXbyw1Y33wd5RZYydX` |
+
+Both NFTs are **soulbound** (non-transferable) and verified against the `FNjMqtcKX6H2VdTxk2qtW7UZyGhJwjEC7DvHbWDY3Zfi` program. The retailer NFT required an active supplier↔distributor parent PDA — hierarchy is enforced on-chain.
+
 ---
 
 ## 📋 API Contract
