@@ -5,11 +5,13 @@ import {
   Bar,
   BarChart,
   CartesianGrid,
+  Line,
+  LineChart as RechartsLineChart,
+  Legend,
   ResponsiveContainer,
   Tooltip,
   XAxis,
   YAxis,
-  Legend,
 } from "recharts";
 import {
   ArrowUpRight,
@@ -382,11 +384,6 @@ function DistributorAnalytics() {
   const summary = data?.summary;
   const trends = useMemo(() => data?.trends ?? [], [data]);
 
-  const trendMax = useMemo(() => {
-    if (trends.length === 0) return 1;
-    return Math.max(...trends.map((t) => Math.max(t.revenue, t.spending)));
-  }, [trends]);
-
   const topSelling = insights?.top_selling ?? [];
 
   return (
@@ -542,11 +539,6 @@ function RetailerAnalytics() {
   const summary = data?.summary;
   const trends = useMemo(() => data?.trends ?? [], [data]);
 
-  const trendMax = useMemo(() => {
-    if (trends.length === 0) return 1;
-    return Math.max(...trends.map((t) => Math.max(t.revenue, t.spending)));
-  }, [trends]);
-
   const topSelling = insights?.top_selling ?? [];
 
   return (
@@ -572,36 +564,55 @@ function RetailerAnalytics() {
           <div className="space-y-4">
             <h2 className="text-lg font-semibold text-[#0F172A]">Business Performance</h2>
             <Card className="rounded-2xl">
-              <CardHeader><CardTitle className="text-base">Monthly Spending (Last 6 Months)</CardTitle></CardHeader>
+              <CardHeader>
+                <CardTitle className="text-base">Sales vs Spending (Last 6 Months)</CardTitle>
+              </CardHeader>
               <CardContent>
                 {isLoading ? (
                   <div className="flex h-64 items-center justify-center"><Loader2 className="h-5 w-5 animate-spin text-[#94A3B8]" /></div>
+                ) : trends.length === 0 ? (
+                  <div className="flex h-64 items-center justify-center">
+                    <span className="text-sm text-[#64748B]">No monthly transaction data yet.</span>
+                  </div>
                 ) : (
-                  <div className="relative h-64 w-full">
-                    <div className="absolute inset-0 flex items-end justify-between px-2 pb-6 pt-4">
-                      <div className="absolute inset-x-0 bottom-6 top-4 flex flex-col justify-between border-l border-[#E2E8F0]">
-                        <div className="w-full border-b border-dashed border-[#E2E8F0] opacity-50" />
-                        <div className="w-full border-b border-dashed border-[#E2E8F0] opacity-50" />
-                        <div className="w-full border-b border-dashed border-[#E2E8F0] opacity-50" />
-                        <div className="w-full border-b border-dashed border-[#E2E8F0] opacity-50" />
-                        <div className="w-full border-b border-[#E2E8F0]" />
-                      </div>
-                      {trends.map((t) => {
-                        const maxVal = trendMax || 1;
-                        const spendPct = Math.max(5, (t.spending / maxVal) * 100);
-                        return (
-                          <div key={t.label} className="relative z-10 flex h-full flex-col justify-end">
-                            <div className="flex w-16 items-end justify-center gap-1">
-                              <div className="w-4 rounded-t-sm bg-[#F59E0B] transition-all hover:opacity-80" style={{ height: `${spendPct}%` }} title={`Spending: ${formatCurrency(t.spending)}`} />
-                            </div>
-                            <p className="mt-2 text-center text-xs text-[#64748B]">{t.label}</p>
-                          </div>
-                        );
-                      })}
-                    </div>
-                    <div className="absolute -top-2 right-0 flex gap-4 text-xs font-medium text-[#64748B]">
-                      <div className="flex items-center gap-1.5"><div className="h-3 w-3 rounded-full bg-[#F59E0B]" /> Spending</div>
-                    </div>
+                  <div className="h-72 w-full">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <RechartsLineChart data={trends} margin={{ top: 12, right: 12, left: 0, bottom: 0 }}>
+                        <CartesianGrid strokeDasharray="3 3" stroke="#E2E8F0" />
+                        <XAxis dataKey="label" tick={{ fontSize: 11, fill: "#94A3B8" }} />
+                        <YAxis
+                          tick={{ fontSize: 11, fill: "#94A3B8" }}
+                          width={84}
+                          tickFormatter={(value) => formatCurrency(value)}
+                        />
+                        <Tooltip
+                          formatter={(value: number, name: string) => [
+                            formatCurrency(value),
+                            name === "revenue" ? "Consumer Sales" : "Distributor Spending",
+                          ]}
+                          labelFormatter={(label) => `Month: ${label}`}
+                        />
+                        <Legend
+                          formatter={(value) => value === "revenue" ? "Consumer Sales" : "Distributor Spending"}
+                        />
+                        <Line
+                          type="monotone"
+                          dataKey="revenue"
+                          stroke="#22C55E"
+                          strokeWidth={3}
+                          dot={{ r: 3, strokeWidth: 0 }}
+                          activeDot={{ r: 5 }}
+                        />
+                        <Line
+                          type="monotone"
+                          dataKey="spending"
+                          stroke="#F59E0B"
+                          strokeWidth={3}
+                          dot={{ r: 3, strokeWidth: 0 }}
+                          activeDot={{ r: 5 }}
+                        />
+                      </RechartsLineChart>
+                    </ResponsiveContainer>
                   </div>
                 )}
               </CardContent>

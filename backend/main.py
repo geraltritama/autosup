@@ -6,6 +6,7 @@ import uuid
 import json
 import hashlib
 import requests
+import base64
 from datetime import datetime, timedelta
 from contextlib import asynccontextmanager
 from dateutil.relativedelta import relativedelta
@@ -1313,11 +1314,11 @@ def get_dashboard_summary(x_user_role: Optional[str] = Header(default=None),
         low_stock = sum(1 for i in inventory if 0 < i.get("current_stock", 0) < i.get("min_threshold", 0))
         out_of_stock = sum(1 for i in inventory if i.get("current_stock", 0) == 0)
 
-        # AI insights from real agent activity (role-filtered)
+        # AI insights from real agent activity (role + user filtered)
         ai_alerts = []
         try:
-            act_query = supabase.table("ai_activities").select("*").or_(f"activity_role.eq.{role},activity_role.eq.all").order("timestamp", desc=True).limit(5).execute()
-            for a in (act_query.data or []):
+            act_res = _execute_ai_activities_query(role, uid, 5)
+            for a in (act_res.data or []):
                 msg = a.get("impact", "")[:150]
                 if msg:
                     ai_alerts.append({
@@ -1442,6 +1443,7 @@ def get_dashboard_summary(x_user_role: Optional[str] = Header(default=None),
             }
         elif role == "retailer":
             delivered_orders = [o for o in orders if o.get("status") == "delivered"]
+            open_orders = [o for o in orders if o.get("status") in ["pending", "processing", "shipping"]]
             monthly_spending = sum(
                 _order_total(order)
                 for order in delivered_orders
@@ -1470,6 +1472,41 @@ def get_dashboard_summary(x_user_role: Optional[str] = Header(default=None),
                 (sum(1 for row in invoice_success_base if row.get("status") == "paid") / max(len(invoice_success_base), 1)) * 100
             ) if invoice_success_base else 0
             order_accuracy_rate = round((len(delivered_orders) / max(len(orders), 1)) * 100) if orders else 0
+            from collections import defaultdict
+            open_orders_by_distributor_map: dict = defaultdict(lambda: {"seller_id": "", "seller_name": "", "open_orders": 0, "in_transit": 0, "outstanding_amount": 0})
+            for order in open_orders:
+                seller_id = order.get("seller_id", "")
+                seller_name = order.get("seller_name", "") or "Distributor"
+                bucket = open_orders_by_distributor_map[seller_id or seller_name]
+                bucket["seller_id"] = seller_id
+                bucket["seller_name"] = seller_name
+                bucket["open_orders"] += 1
+                bucket["outstanding_amount"] += _order_total(order)
+                if order.get("status") == "shipping":
+                    bucket["in_transit"] += 1
+
+            credit_name_map = {}
+            try:
+                for dist_user in auth_users_by_role("distributor"):
+                    credit_name_map[dist_user.get("id", "")] = dist_user.get("business_name") or dist_user.get("full_name") or "Distributor"
+            except Exception:
+                credit_name_map = {}
+
+            credit_lines = []
+            for row in retailer_credit_rows:
+                distributor_id = row.get("distributor_id", "")
+                credit_limit = float(row.get("credit_limit", 0) or 0)
+                utilized_amount = float(row.get("utilized_amount", 0) or 0)
+                credit_lines.append({
+                    "distributor_id": distributor_id,
+                    "distributor_name": credit_name_map.get(distributor_id, "Distributor"),
+                    "status": row.get("status", "active"),
+                    "credit_limit": credit_limit,
+                    "utilized_amount": utilized_amount,
+                    "available_amount": max(0, credit_limit - utilized_amount),
+                    "next_due_amount": float(row.get("next_due_amount", 0) or 0),
+                })
+
             data = {
                 "role": "retailer",
                 "inventory": {"total_items": total_inv, "low_stock_count": low_stock, "out_of_stock_count": out_of_stock},
@@ -1480,6 +1517,8 @@ def get_dashboard_summary(x_user_role: Optional[str] = Header(default=None),
                 "distributors": {"active_partnered": retailer_partner_count, "pending_requests": pending_retailer_requests,
                                  "average_reliability_score": _counterparty_performance_score(orders, "seller_id"),
                                  "avg_delivery_time": _average_delivery_days(delivered_orders)},
+                "open_orders_by_distributor": sorted(open_orders_by_distributor_map.values(), key=lambda row: (-row["open_orders"], -row["outstanding_amount"], row["seller_name"]))[:6],
+                "credit_lines": sorted(credit_lines, key=lambda row: (row["status"] != "overdue", -row["utilized_amount"], row["distributor_name"]))[:6],
                 "forecast_accuracy_pct": _demand_stability_pct(delivered_orders),
                 "ai_insights": ai_alerts,
             }
@@ -1650,21 +1689,79 @@ def settle_payment(data: SettlePaymentReq):
 
 
 @app.post("/invoices/{invoice_id}/pay")
-def pay_invoice(invoice_id: str):
+def pay_invoice(invoice_id: str, current_user: AuthenticatedUser = Depends(get_current_user)):
     try:
-        # Update order status to delivered and release escrow
-        res = supabase.table("orders").update({"status": "delivered", "escrow_status": "released", "updated_at": now_iso()}).eq("id", invoice_id).execute()
-        if not res.data:
-            # Try with different filter in case id doesn't match
-            res2 = supabase.table("orders").update({"status": "delivered", "escrow_status": "released", "updated_at": now_iso()}).eq("order_number", invoice_id).execute()
-            if not res2.data:
-                return error_response(f"Order {invoice_id} not found or update failed.")
-        # Also try invoices table
-        try:
-            supabase.table("invoices").update({"status": "paid", "paid_at": now_iso()}).eq("id", invoice_id).execute()
-        except Exception:
-            pass
-        return success_response(data={"paid": True, "order_id": invoice_id}, message="Invoice paid successfully")
+        uid = current_user.user_id
+        inv_res = supabase.table("invoices").select("*").eq("id", invoice_id).limit(1).execute()
+
+        # Fallback: if invoice_id is actually an order_id (from orders-based invoice generation)
+        if not inv_res.data:
+            order_res = supabase.table("orders").select("*").eq("id", invoice_id).limit(1).execute()
+            if not order_res.data:
+                return error_response("Invoice not found")
+            # Simple payment: mark order as delivered
+            supabase.table("orders").update({"status": "delivered", "escrow_status": "released", "updated_at": now_iso()}).eq("id", invoice_id).execute()
+            return success_response(data={"paid": True, "order_id": invoice_id}, message="Invoice paid successfully")
+
+        inv = inv_res.data[0]
+        if inv.get("buyer_id") != uid:
+            return error_response("Not your invoice")
+
+        amount = int(inv.get("amount", 0) or 0)
+        if amount <= 0:
+            return error_response("Invalid invoice amount")
+
+        external_id = f"autosup-invoice-{invoice_id}"
+        success_url = f"{XENDIT_CALLBACK_BASE_URL}/dashboard/payment?payment=success" if XENDIT_CALLBACK_BASE_URL else ""
+        failed_url = f"{XENDIT_CALLBACK_BASE_URL}/dashboard/payment?payment=failed" if XENDIT_CALLBACK_BASE_URL else ""
+        x_invoice = _create_xendit_invoice(
+            external_id=external_id,
+            amount=amount,
+            description=f"AUTOSUP invoice {invoice_id[:8]}",
+            payer_email=current_user.email,
+            success_redirect_url=success_url,
+            failure_redirect_url=failed_url,
+            metadata={
+                "invoice_id": invoice_id,
+                "order_id": inv.get("order_id", ""),
+                "buyer_id": uid,
+                "seller_id": inv.get("seller_id", ""),
+            },
+        )
+
+        _payment_tx_upsert(
+            {
+                "order_id": inv.get("order_id", ""),
+                "invoice_id": invoice_id,
+                "payer_id": uid,
+                "payee_id": inv.get("seller_id", ""),
+                "amount": amount,
+                "currency": x_invoice.get("currency", "IDR"),
+                "payment_method": "invoice_payment",
+                "gateway": "xendit",
+                "external_id": external_id,
+                "xendit_invoice_id": x_invoice.get("id", ""),
+                "invoice_url": x_invoice.get("invoice_url", ""),
+                "status": x_invoice.get("status", "PENDING"),
+                "raw_response": x_invoice,
+                "created_at": now_iso(),
+                "updated_at": now_iso(),
+            }
+        )
+
+        supabase.table("invoices").update({"status": "pending", "updated_at": now_iso()}).eq("id", invoice_id).execute()
+
+        return success_response(
+            data={
+                "success": True,
+                "payment_status": "awaiting_payment",
+                "invoice_id": invoice_id,
+                "xendit_invoice_id": x_invoice.get("id", ""),
+                "invoice_url": x_invoice.get("invoice_url", ""),
+                "expiry_date": x_invoice.get("expiry_date", ""),
+            },
+            message="Invoice payment intent created",
+        )
     except Exception as e:
         return error_response(str(e))
 
@@ -2152,10 +2249,10 @@ def get_distributor_partnership_history(distributor_id: str, user_id: Optional[s
                 "created_at": row.get("created_at", ""),
                 "terms": row.get("mou_terms", ""),
                 "distribution_region": row.get("mou_region", ""),
-                "valid_until": 0,
+                "valid_until": row.get("mou_valid_until"),
                 "legal_contract_hash": row.get("mou_hash", ""),
-                "mou_document_name": "",
-                "mou_document_data": "",
+                "mou_document_name": (row.get("mou_document_url", "") or "").rsplit("/", 1)[-1],
+                "mou_document_data": row.get("mou_document_url", ""),
                 "nft_mint_address": row.get("nft_mint_address", ""),
                 "nft_explorer_url": row.get("nft_explorer_url", ""),
                 "nft_token_name": row.get("nft_token_name", ""),
@@ -2967,6 +3064,369 @@ def _monthly_trends(outbound_delivered: list, inbound_delivered: list) -> list:
     ]
 
 
+def _retailer_sales_summary(uid: str) -> dict:
+    now = datetime.utcnow()
+    sales_orders = (
+        _retailer_consumer_sales_query(uid)
+        .eq("status", "delivered")
+        .order("created_at", desc=True)
+        .limit(200)
+        .execute()
+        .data
+        or []
+    )
+    month_dts = _month_starts(now, 6)
+    monthly = {
+        (dt.year, dt.month): {
+            "label": dt.strftime("%b"),
+            "orders": 0,
+            "revenue": 0,
+            "units": 0,
+        }
+        for dt in month_dts
+    }
+    recent_cutoff = now - timedelta(days=30)
+    previous_cutoff = now - timedelta(days=60)
+    product_stats = {}
+
+    for order in sales_orders:
+        ts = _parse_ts(order.get("created_at", ""))
+        if not ts:
+            continue
+        month_key = (ts.year, ts.month)
+        if month_key in monthly:
+            monthly[month_key]["orders"] += 1
+            monthly[month_key]["revenue"] += _order_total(order)
+            monthly[month_key]["units"] += sum(_item_qty(item) for item in _order_items(order))
+
+        for item in _order_items(order):
+            name = _item_name(item)
+            qty = _item_qty(item)
+            if not name or qty <= 0:
+                continue
+            if name not in product_stats:
+                product_stats[name] = {
+                    "recent_30d_units": 0,
+                    "previous_30d_units": 0,
+                    "total_units": 0,
+                }
+            product_stats[name]["total_units"] += qty
+            if ts >= recent_cutoff:
+                product_stats[name]["recent_30d_units"] += qty
+            elif ts >= previous_cutoff:
+                product_stats[name]["previous_30d_units"] += qty
+
+    velocity = []
+    for name, stats in product_stats.items():
+        previous_units = stats["previous_30d_units"]
+        recent_units = stats["recent_30d_units"]
+        growth_pct = 0
+        if previous_units > 0:
+            growth_pct = round(((recent_units - previous_units) / previous_units) * 100)
+        elif recent_units > 0:
+            growth_pct = 100
+        velocity.append(
+            {
+                "name": name,
+                "recent_30d_units": recent_units,
+                "previous_30d_units": previous_units,
+                "growth_pct": growth_pct,
+                "total_units": stats["total_units"],
+            }
+        )
+
+    return {
+        "monthly_sales": [monthly[key] for key in sorted(monthly)],
+        "product_velocity": sorted(
+            velocity,
+            key=lambda item: (item["recent_30d_units"], item["total_units"]),
+            reverse=True,
+        )[:10],
+        "sales_order_count": len(sales_orders),
+        "recent_30d_orders": sum(1 for order in sales_orders if (_parse_ts(order.get("created_at", "")) or now) >= recent_cutoff),
+        "previous_30d_orders": sum(
+            1
+            for order in sales_orders
+            if previous_cutoff <= (_parse_ts(order.get("created_at", "")) or now) < recent_cutoff
+        ),
+    }
+
+
+def _retailer_incoming_purchase_summary(open_purchase_orders: list) -> dict:
+    summary = {}
+    for order in open_purchase_orders or []:
+        seller_name = order.get("seller_name", "") or "Distributor"
+        for item in _order_items(order):
+            name = _item_name(item)
+            qty = _item_qty(item)
+            if not name or qty <= 0:
+                continue
+            if name not in summary:
+                summary[name] = {"incoming_qty": 0, "seller_names": set()}
+            summary[name]["incoming_qty"] += qty
+            summary[name]["seller_names"].add(seller_name)
+    return summary
+
+
+def _normalize_retailer_agent_result(agent_key: str, raw_data: dict, result: dict) -> dict:
+    inventory = raw_data.get("inventory", []) if isinstance(raw_data, dict) else []
+    sales_summary = raw_data.get("sales_summary", {}) if isinstance(raw_data, dict) else {}
+    if isinstance(raw_data, dict) and not sales_summary and ("monthly_sales" in raw_data or "product_velocity" in raw_data):
+        sales_summary = raw_data
+    product_velocity = sales_summary.get("product_velocity", []) if isinstance(sales_summary, dict) else []
+    monthly_sales = sales_summary.get("monthly_sales", []) if isinstance(sales_summary, dict) else []
+    open_purchase_orders = raw_data.get("open_purchase_orders", []) if isinstance(raw_data, dict) else []
+    incoming_by_product = _retailer_incoming_purchase_summary(open_purchase_orders)
+
+    inventory_by_name = {}
+    for item in inventory:
+        name = item.get("product_name") or item.get("item_name") or ""
+        if name:
+            inventory_by_name[name] = item
+
+    velocity_by_name = {}
+    for row in product_velocity:
+        name = row.get("name", "")
+        if name:
+            velocity_by_name[name] = row
+
+    if agent_key == "retailer_reorder":
+        low_stock_products = []
+        fast_moving_products = []
+        reorder_recommendations = []
+        reorder_value = 0
+        distributor_candidates = []
+
+        for row in sorted(product_velocity, key=lambda item: item.get("recent_30d_units", 0), reverse=True)[:3]:
+            fast_moving_products.append(
+                f"{row.get('name', 'Product')}: recent_30d_units={row.get('recent_30d_units', 0)} vs previous_30d_units={row.get('previous_30d_units', 0)}"
+            )
+
+        for item in inventory:
+            name = item.get("product_name") or item.get("item_name") or ""
+            if not name:
+                continue
+            stock = int(item.get("current_stock", 0) or 0)
+            min_stock = int(item.get("min_threshold", 0) or 0)
+            price = float(item.get("price", 0) or 0)
+            incoming = incoming_by_product.get(name, {}).get("incoming_qty", 0)
+            if stock > min_stock and stock > 0:
+                continue
+
+            low_stock_products.append(f"{name} ({stock}/{min_stock}, incoming {incoming})")
+            gap_after_incoming = max((min_stock * 2) - (stock + incoming), 0)
+            if gap_after_incoming > 0 and price > 0:
+                est_cost = round(gap_after_incoming * price)
+                reorder_value += est_cost
+                reorder_recommendations.append(
+                    f"{name}: order {gap_after_incoming} units @ Rp{int(price):,} = Rp{est_cost:,}".replace(",", ".")
+                )
+                distributor_candidates.extend(sorted(incoming_by_product.get(name, {}).get("seller_names", set())))
+
+        if reorder_recommendations:
+            issue_detected = "LOW_STOCK"
+            urgency = "HIGH"
+            action_type = "REORDER_PRODUCT"
+            reason = f"{len(reorder_recommendations)} products still need replenishment after counting inbound purchase orders."
+        elif low_stock_products:
+            issue_detected = "LOW_STOCK"
+            urgency = "MEDIUM"
+            action_type = "LOW_STOCK_ALERT"
+            reason = "Low-stock products exist, but current inbound purchase orders already cover the shortage."
+        elif fast_moving_products:
+            issue_detected = "FAST_MOVING"
+            urgency = "LOW"
+            action_type = "NONE"
+            reason = "Demand is increasing on a few items, but current stock and inbound supply are still adequate."
+        else:
+            issue_detected = "NONE"
+            urgency = "LOW"
+            action_type = "NONE"
+            reason = "No low stock or fast-moving issue detected from retailer inventory and consumer sales."
+
+        result["urgency_level"] = urgency
+        result["inventory_status"] = {
+            "total_products": len(inventory),
+            "low_stock_products": low_stock_products,
+            "fast_moving_products": fast_moving_products,
+            "reorder_recommendations": reorder_recommendations,
+        }
+        result["analysis"] = {
+            "issue_detected": issue_detected,
+            "reason": reason,
+            "confidence_score": 0.96,
+        }
+        result["recommended_action"] = {
+            "action_type": action_type,
+            "recommended_order_value_idr": reorder_value,
+            "suggested_distributor": distributor_candidates[0] if distributor_candidates else "",
+        }
+        return result
+
+    if agent_key == "retailer_sales_trend":
+        trending_up = []
+        trending_down = []
+        for row in product_velocity:
+            name = row.get("name", "Product")
+            growth_pct = int(row.get("growth_pct", 0) or 0)
+            recent_units = int(row.get("recent_30d_units", 0) or 0)
+            previous_units = int(row.get("previous_30d_units", 0) or 0)
+            if growth_pct > 0 and recent_units > 0:
+                trending_up.append(f"{name}: +{growth_pct}% units ({recent_units} vs {previous_units})")
+            elif growth_pct < 0:
+                trending_down.append(f"{name}: {growth_pct}% units ({recent_units} vs {previous_units})")
+
+        monthly_trend = "stable"
+        if len(monthly_sales) >= 2:
+            last_rev = float(monthly_sales[-1].get("revenue", 0) or 0)
+            prev_rev = float(monthly_sales[-2].get("revenue", 0) or 0)
+            if prev_rev > 0:
+                delta_pct = ((last_rev - prev_rev) / prev_rev) * 100
+                if delta_pct >= 10:
+                    monthly_trend = "increasing"
+                elif delta_pct <= -10:
+                    monthly_trend = "decreasing"
+
+        if trending_down:
+            issue_detected = "DECLINING_TREND"
+            urgency = "MEDIUM"
+            action_type = "PROMOTE_PRODUCT"
+            reason = f"{trending_down[0]} is the clearest recent decline in retailer consumer sales."
+        else:
+            issue_detected = "NONE"
+            urgency = "LOW"
+            action_type = "NONE"
+            reason = "Retailer consumer sales show no meaningful decline pattern that needs intervention."
+
+        result["urgency_level"] = urgency
+        result["sales_analysis"] = {
+            "trending_up": trending_up[:3],
+            "trending_down": trending_down[:3],
+            "seasonal_patterns": ["none"],
+            "monthly_spend_trend": monthly_trend,
+        }
+        result["analysis"] = {
+            "issue_detected": issue_detected,
+            "reason": reason,
+            "confidence_score": 0.94,
+        }
+        result["recommended_action"] = {
+            "action_type": action_type,
+            "details": "Focus promotion only on products with a proven decline in recent consumer sales." if action_type != "NONE" else "Continue monitoring monthly consumer sales and assortment mix.",
+            "projected_next_month_idr": 0,
+        }
+        return result
+
+    if agent_key == "retailer_demand_insight":
+        predicted_top_products = []
+        confidence_by_product = {}
+        stock_up_targets = []
+        estimated_impact = 0
+
+        for row in product_velocity[:5]:
+            name = row.get("name", "Product")
+            recent_units = int(row.get("recent_30d_units", 0) or 0)
+            growth_pct = int(row.get("growth_pct", 0) or 0)
+            item = inventory_by_name.get(name, {})
+            current_stock = int(item.get("current_stock", 0) or 0)
+            min_stock = int(item.get("min_threshold", 0) or 0)
+            price = float(item.get("price", 0) or 0)
+            incoming = incoming_by_product.get(name, {}).get("incoming_qty", 0)
+            predicted_14d = max(round(recent_units * 14 / 30), 0)
+            predicted_top_products.append(f"{name}: ~{predicted_14d} units needed")
+            confidence_by_product[name] = 0.9 if growth_pct >= 50 else 0.8 if growth_pct > 0 else 0.7
+
+            target_cover = predicted_14d + min_stock
+            net_available = current_stock + incoming
+            reorder_gap = max(target_cover - net_available, 0)
+            if growth_pct >= 25 and reorder_gap > 0 and price > 0:
+                stock_up_targets.append(
+                    f"{name}: demand {predicted_14d} units / net available {net_available} units"
+                )
+                estimated_impact += round(reorder_gap * price)
+
+        if stock_up_targets:
+            issue_detected = "DEMAND_SURGE"
+            urgency = "HIGH"
+            action_type = "STOCK_UP"
+            reason = stock_up_targets[0]
+        else:
+            issue_detected = "NONE"
+            urgency = "LOW"
+            action_type = "MONITOR"
+            reason = "Current stock plus inbound distributor orders still cover the next 7-14 day consumer demand forecast."
+
+        result["urgency_level"] = urgency
+        result["demand_forecast"] = {
+            "predicted_top_products": predicted_top_products[:3],
+            "confidence_by_product": dict(list(confidence_by_product.items())[:3]),
+            "forecast_period_days": 14,
+        }
+        result["analysis"] = {
+            "issue_detected": issue_detected,
+            "reason": reason,
+            "confidence_score": 0.95,
+        }
+        result["recommended_action"] = {
+            "action_type": action_type,
+            "details": "Prioritize products where projected 14-day demand plus safety stock exceeds current stock and inbound supply." if action_type == "STOCK_UP" else "Monitor next consumer sales cycle before raising purchase volume.",
+            "estimated_impact_idr": estimated_impact,
+        }
+        return result
+
+    return result
+
+
+def _activity_query_with_optional_user(base_query, user_id: Optional[str] = None):
+    if not user_id:
+        return base_query
+    try:
+        return base_query.eq("user_id", user_id)
+    except Exception:
+        return base_query
+
+
+def _insert_ai_activity(payload: dict):
+    """Insert activity row with backward compatibility for schemas without user_id."""
+    try:
+        return supabase.table("ai_activities").insert(payload).execute()
+    except Exception as e:
+        if "user_id" in payload and "user_id" in str(e):
+            fallback_payload = {k: v for k, v in payload.items() if k != "user_id"}
+            return supabase.table("ai_activities").insert(fallback_payload).execute()
+        raise
+
+
+def _execute_ai_activities_query(role: str, user_id: Optional[str], limit: int):
+    """Read ai_activities with optional user filter, fallback for schemas without user_id."""
+    query = supabase.table("ai_activities").select("*").or_(f"activity_role.eq.{role},activity_role.eq.all")
+    query = _activity_query_with_optional_user(query, user_id)
+    try:
+        return query.order("timestamp", desc=True).limit(limit).execute()
+    except Exception as e:
+        if user_id and "user_id" in str(e):
+            return (
+                supabase.table("ai_activities")
+                .select("*")
+                .or_(f"activity_role.eq.{role},activity_role.eq.all")
+                .order("timestamp", desc=True)
+                .limit(limit)
+                .execute()
+            )
+        raise
+
+
+def _retailer_consumer_sales_query(uid: str):
+    """Consumer sales recorded as retailer -> consumer orders in the shared orders table."""
+    return (
+        supabase.table("orders")
+        .select("items, status, created_at, total_price, buyer_id, buyer_name, buyer_role, seller_id, seller_type")
+        .eq("seller_id", uid)
+        .eq("seller_type", "retailer")
+        .eq("buyer_role", "consumer")
+    )
+
+
 def _top_products_from_orders(primary_orders: list, fallback_orders: list) -> list:
     from collections import defaultdict
     source_orders = primary_orders if primary_orders else fallback_orders
@@ -3013,13 +3473,49 @@ def _shared_analytics_response(outbound_orders: list, inbound_orders: list, inve
 @app.get("/analytics/retailer/overview")
 def analytics_retailer(user_id: Optional[str] = None):
     try:
-        oq = supabase.table("orders").select("*")
+        purchase_orders = []
+        consumer_sales = []
+        inventory = []
+
         if user_id:
-            oq = oq.eq("buyer_id", user_id)
-        orders = oq.execute().data or []
-        inventory = (supabase.table("inventories").select("*").eq("user_id", user_id).execute().data or []) if user_id else []
+            purchase_orders = (
+                supabase.table("orders")
+                .select("*")
+                .eq("buyer_id", user_id)
+                .execute()
+                .data
+                or []
+            )
+            consumer_sales = _retailer_consumer_sales_query(user_id).execute().data or []
+            inventory = supabase.table("inventories").select("*").eq("user_id", user_id).execute().data or []
+
+        now = datetime.utcnow()
+        cutoff_recent = now - timedelta(days=30)
+        cutoff_prev = now - timedelta(days=60)
+        delivered_purchases = [order for order in purchase_orders if order.get("status") == "delivered"]
+        delivered_sales = [order for order in consumer_sales if order.get("status") == "delivered"]
+        recent_spending = sum(
+            _order_total(order)
+            for order in delivered_purchases
+            if (_parse_ts(order.get("created_at", "")) or now) >= cutoff_recent
+        )
+        prev_spending = sum(
+            _order_total(order)
+            for order in delivered_purchases
+            if cutoff_prev <= (_parse_ts(order.get("created_at", "")) or now) < cutoff_recent
+        )
         return success_response(
-            data=_shared_analytics_response([], orders, inventory, "seller_id"),
+            data={
+                "summary": {
+                    "revenue_growth": _period_growth_pct(recent_spending, prev_spending),
+                    "inventory_turnover": _inventory_turnover(delivered_sales or delivered_purchases, inventory),
+                    "partner_performance": _counterparty_performance_score(purchase_orders, "seller_id"),
+                    "order_fulfillment_rate": round((len(delivered_purchases) / max(len(purchase_orders), 1)) * 100) if purchase_orders else 0,
+                    "forecast_accuracy": _demand_stability_pct(delivered_sales or delivered_purchases),
+                },
+                "trends": _monthly_trends(delivered_sales, delivered_purchases),
+                "top_products": _top_products_from_orders(delivered_sales, delivered_purchases),
+            },
             message="Analytics retailer",
         )
     except Exception as e:
@@ -3930,20 +4426,26 @@ def get_ai_agents(x_user_role: Optional[str] = Header(default=None),
             for a in (agents_res.data or [])
         ]
 
-        # Filter activities by role
-        act_query = supabase.table("ai_activities").select("*")
-        if x_user_role:
-            try:
-                act_query = act_query.or_(f"activity_role.eq.{x_user_role},activity_role.eq.all")
-            except Exception:
-                pass
-        activities_res = act_query.order("timestamp", desc=True).limit(20).execute()
+        # Filter activities by role and current user
+        activities_res = _execute_ai_activities_query(x_user_role or "distributor", user_id, 20)
         activities = [
             {"id": a.get("id"), "agent_name": a.get("agent_name", ""), "action": a.get("action", ""),
              "impact": a.get("impact", ""), "full_result": a.get("full_result", ""),
              "timestamp": a.get("timestamp", now_iso())}
             for a in (activities_res.data or [])
         ]
+
+        latest_activity_by_agent = {}
+        for a in (activities_res.data or []):
+            agent_name = a.get("agent_name", "")
+            if agent_name and agent_name not in latest_activity_by_agent:
+                latest_activity_by_agent[agent_name] = a
+
+        for agent in agents:
+            latest = latest_activity_by_agent.get(agent.get("name", ""))
+            if latest:
+                agent["recent_action"] = latest.get("action", "") or agent.get("recent_action", "")
+                agent["last_active"] = latest.get("timestamp", "") or agent.get("last_active", "")
 
         # Calculate performance metrics from actual activity data (no fabrication)
         total_cost_savings = 0
@@ -4079,11 +4581,18 @@ def update_agent_config(agent_id: str, data: UpdateAgentConfigReq):
 
 
 @app.delete("/ai/activities")
-def clear_activities(x_user_role: Optional[str] = Header(default=None)):
+def clear_activities(x_user_role: Optional[str] = Header(default=None),
+                     user_id: Optional[str] = None):
     """Delete all activities for the current role."""
     try:
         role = x_user_role or "distributor"
-        supabase.table("ai_activities").delete().or_(f"activity_role.eq.{role},activity_role.eq.all").execute()
+        delete_query = supabase.table("ai_activities").delete().or_(f"activity_role.eq.{role},activity_role.eq.all")
+        if user_id:
+            try:
+                delete_query = delete_query.eq("user_id", user_id)
+            except Exception:
+                pass
+        delete_query.execute()
         return success_response(data={"cleared": True}, message="Activity log cleared.")
     except Exception as e:
         return error_response(str(e))
@@ -4263,70 +4772,102 @@ AGENT_PROMPTS = {
     # ── RETAILER AGENTS ──
     "retailer_reorder": {
         "scope": "retailer",
-        "query": lambda uid, r: supabase.table("inventories").select("*").eq("user_id", uid).execute(),
+        "query": lambda uid, r: {
+            "inventory": supabase.table("inventories").select("*").eq("user_id", uid).execute().data or [],
+            "sales_summary": _retailer_sales_summary(uid),
+            "open_purchase_orders": (
+                supabase.table("orders")
+                .select("order_number, status, seller_name, items, created_at")
+                .eq("buyer_id", uid)
+                .in_("status", ["pending", "processing", "shipping"])
+                .order("created_at", desc=True)
+                .limit(20)
+                .execute()
+                .data
+                or []
+            ),
+        },
         "prompt": lambda data, uid: (
             "You are a restock AI for a RETAILER. Analyze inventory and recommend what to reorder from distributors.\n\n"
-            f"INVENTORY DATA: {json.dumps(data[:30] if data else [], default=str)}\n\n"
+            f"DATA: {json.dumps(data, default=str)}\n\n"
             "YOUR TASK:\n"
             "1. Find products where stock <= min_stock or stock is 0.\n"
-            "2. For each, recommend reorder quantity = (min_stock * 2) - current_stock.\n"
-            "3. Estimate cost based on unit price * reorder quantity.\n"
-            "4. Be SPECIFIC — name each product, current stock, min_stock, and reorder qty.\n\n"
+            "2. Use sales_summary.product_velocity to identify fast-moving or declining products.\n"
+            "3. Check open_purchase_orders first so you do not recommend reordering items already incoming in meaningful quantity.\n"
+            "4. For each critical product, recommend reorder quantity = max((min_stock * 2) - current_stock, 0) unless incoming orders already cover the gap.\n"
+            "5. Estimate cost based on unit price * reorder quantity.\n"
+            "6. Be SPECIFIC — name each product, current stock, min_stock, recent_30d_units, previous_30d_units, and reorder qty.\n\n"
             "RULES:\n"
             "- issue_detected: pick ONE of LOW_STOCK, FAST_MOVING, or NONE\n"
-            "- reason: list critical products with numbers\n"
+            "- reason: list only products supported by the real numbers in DATA\n"
             "- action_type: pick ONE of REORDER_PRODUCT, LOW_STOCK_ALERT, or NONE\n\n"
             "RETURN ONLY THIS JSON (fill in real values):\n"
             '{"agent_type":"Retailer Agent","urgency_level":"HIGH or MEDIUM or LOW",'
-            '"inventory_status":{"total_products":10,"low_stock_products":["Kopi ABC (2/20)","Mie Goreng (0/50)"],"fast_moving_products":["Teh Botol: sells 30/week"],"reorder_recommendations":["Kopi ABC: order 38 units @ Rp8,000 = Rp304,000"]},'
-            '"analysis":{"issue_detected":"LOW_STOCK","reason":"2 products critically low: Kopi ABC at 2 units (min 20), Mie Goreng out of stock (min 50). Both are fast-moving items.","confidence_score":0.92},'
-            '"recommended_action":{"action_type":"REORDER_PRODUCT","recommended_order_value_idr":1500000,"suggested_distributor":"nearest partner distributor"},'
+            '"inventory_status":{"total_products":10,"low_stock_products":["Kopi ABC (2/20)"],"fast_moving_products":["Kopi ABC: recent_30d_units=24 vs previous_30d_units=12"],"reorder_recommendations":["Kopi ABC: order 38 units @ Rp8,000 = Rp304,000"]},'
+            '"analysis":{"issue_detected":"LOW_STOCK","reason":"Kopi ABC is below min stock and recent_30d_units are above previous_30d_units.","confidence_score":0.92},'
+            '"recommended_action":{"action_type":"REORDER_PRODUCT","recommended_order_value_idr":304000,"suggested_distributor":"best available partner from current inbound plan"},'
             '"system_flags":{"requires_human_approval":true,"auto_execute_allowed":false}}'
         ),
     },
     "retailer_sales_trend": {
         "scope": "retailer",
-        "query": lambda uid, r: supabase.table("orders").select("items, status, created_at, total_amount").eq("buyer_id", uid).order("created_at", desc=True).limit(15).execute(),
+        "query": lambda uid, r: _retailer_sales_summary(uid),
         "prompt": lambda data, uid: (
-            "You are a sales trend AI for a RETAILER. Analyze purchase history to find patterns.\n\n"
-            f"ORDER DATA: {json.dumps(data[:20] if data else [], default=str)}\n\n"
+            "You are a sales trend AI for a RETAILER. Analyze the retailer's own consumer sales history to find patterns.\n\n"
+            f"CONSUMER SALES SUMMARY: {json.dumps(data, default=str)}\n\n"
             "YOUR TASK:\n"
-            "1. Identify products with increasing order frequency (trending up).\n"
-            "2. Identify products with decreasing orders (trending down).\n"
-            "3. Detect seasonal patterns (e.g. more ice cream in summer).\n"
-            "4. Be SPECIFIC — name products and their trend direction with percentages.\n\n"
+            "1. Identify products with increasing consumer sales frequency using product_velocity growth_pct.\n"
+            "2. Identify products with decreasing consumer sales using product_velocity growth_pct.\n"
+            "3. Use monthly_sales to describe the last 6 months of actual retailer revenue/orders.\n"
+            "4. Only mention seasonality if monthly_sales clearly shows a repeated multi-month pattern. If not, say none.\n"
+            "5. Be SPECIFIC — name products and their trend direction with percentages based on the real summary above.\n\n"
             "RULES:\n"
             "- issue_detected: pick ONE of DECLINING_TREND, SEASONAL_SPIKE, or NONE\n"
-            "- reason: explain which product is declining/spiking and by how much\n"
+            "- reason: explain which product is declining/spiking and by how much using real numeric fields\n"
             "- action_type: pick ONE of SALES_TREND_WARNING, PROMOTE_PRODUCT, or NONE\n\n"
             "RETURN ONLY THIS JSON (fill in real values):\n"
             '{"agent_type":"Retailer Agent","urgency_level":"HIGH or MEDIUM or LOW",'
-            '"sales_analysis":{"trending_up":["Kopi ABC: +25% orders this month"],"trending_down":["Mie Instant: -15% vs last month"],"seasonal_patterns":["Ice products spike in dry season"],"monthly_spend_trend":"increasing"},'
-            '"analysis":{"issue_detected":"DECLINING_TREND","reason":"Mie Instant orders dropped 15% this month compared to last month. May indicate customer preference shift or competitor pricing.","confidence_score":0.75},'
-            '"recommended_action":{"action_type":"PROMOTE_PRODUCT","details":"Consider bundling Mie Instant with popular items or running a discount to recover volume","projected_next_month_idr":3200000},'
+            '"sales_analysis":{"trending_up":["Kopi ABC: +25% units vs previous 30d"],"trending_down":[],"seasonal_patterns":["none"],"monthly_spend_trend":"stable"},'
+            '"analysis":{"issue_detected":"NONE","reason":"No decline or seasonality should be reported unless supported by monthly_sales or product_velocity.","confidence_score":0.75},'
+            '"recommended_action":{"action_type":"NONE","details":"Monitor the next 30 days before changing assortment","projected_next_month_idr":0},'
             '"system_flags":{"requires_human_approval":true,"auto_execute_allowed":false}}'
         ),
     },
     "retailer_demand_insight": {
         "scope": "retailer",
-        "query": lambda uid, r: supabase.table("orders").select("items, status, created_at, total_amount").eq("buyer_id", uid).order("created_at", desc=True).limit(15).execute(),
+        "query": lambda uid, r: {
+            "inventory": supabase.table("inventories").select("*").eq("user_id", uid).execute().data or [],
+            "sales_summary": _retailer_sales_summary(uid),
+            "open_purchase_orders": (
+                supabase.table("orders")
+                .select("order_number, status, seller_name, items, created_at")
+                .eq("buyer_id", uid)
+                .in_("status", ["pending", "processing", "shipping"])
+                .order("created_at", desc=True)
+                .limit(20)
+                .execute()
+                .data
+                or []
+            ),
+        },
         "prompt": lambda data, uid: (
-            "You are a demand forecast AI for a RETAILER. Predict what to stock up on next.\n\n"
-            f"ORDER DATA: {json.dumps(data[:20] if data else [], default=str)}\n\n"
+            "You are a demand forecast AI for a RETAILER. Predict what to stock up on next based on the retailer's consumer sales.\n\n"
+            f"DEMAND DATA: {json.dumps(data, default=str)}\n\n"
             "YOUR TASK:\n"
-            "1. Based on order history, predict which products will be needed most in next 7-14 days.\n"
-            "2. Estimate quantities based on average order frequency.\n"
-            "3. Flag products where demand is changing (up or down).\n"
-            "4. Be SPECIFIC — name products, predicted quantities, and confidence level.\n\n"
+            "1. Based on sales_summary.product_velocity and sales_summary.monthly_sales, predict which products will be needed most in next 7-14 days.\n"
+            "2. Estimate quantities from recent_30d_units and current inventory, while considering open_purchase_orders already inbound.\n"
+            "3. Flag products where demand is changing up or down using real growth_pct values.\n"
+            "4. Be SPECIFIC — name products, predicted quantities, confidence level, and why.\n"
+            "5. Do not invent macro trends or seasons if the data does not support them.\n\n"
             "RULES:\n"
             "- issue_detected: pick ONE of DEMAND_SURGE, DEMAND_DROP, or NONE\n"
-            "- reason: explain what's driving the demand change\n"
+            "- reason: explain what's driving the demand change using only numbers from DEMAND DATA\n"
             "- action_type: pick ONE of STOCK_UP, REDUCE_ORDER, MONITOR, or NONE\n\n"
             "RETURN ONLY THIS JSON (fill in real values):\n"
             '{"agent_type":"Retailer Agent","urgency_level":"HIGH or MEDIUM or LOW",'
-            '"demand_forecast":{"predicted_top_products":["Kopi ABC: ~50 units needed","Gula Pasir: ~30 units needed"],"confidence_by_product":{"Kopi ABC":0.85,"Gula Pasir":0.7},"forecast_period_days":14},'
-            '"analysis":{"issue_detected":"DEMAND_SURGE","reason":"Kopi ABC orders increased 40% over last 2 weeks. Predict continued high demand — stock up to avoid stockout.","confidence_score":0.82},'
-            '"recommended_action":{"action_type":"STOCK_UP","details":"Order 50 units of Kopi ABC and 30 units of Gula Pasir within next 3 days","estimated_impact_idr":800000},'
+            '"demand_forecast":{"predicted_top_products":["Kopi ABC: ~20 units needed"],"confidence_by_product":{"Kopi ABC":0.85},"forecast_period_days":14},'
+            '"analysis":{"issue_detected":"DEMAND_SURGE","reason":"Only flag demand surge when recent_30d_units materially exceed previous_30d_units and current stock is tight.","confidence_score":0.82},'
+            '"recommended_action":{"action_type":"STOCK_UP","details":"Increase reorder only for products backed by product_velocity and low available stock","estimated_impact_idr":250000},'
             '"system_flags":{"requires_human_approval":true,"auto_execute_allowed":false}}'
         ),
     },
@@ -4344,7 +4885,12 @@ def _execute_agent(agent_key: str, agent: dict, role: str, user_id: str) -> dict
     # 1. Fetch data bounded by user_id (scope enforcement)
     try:
         raw = config["query"](user_id, role)
-        raw_data = raw.data if hasattr(raw, "data") else []
+        if hasattr(raw, "data"):
+            raw_data = raw.data
+        elif isinstance(raw, dict):
+            raw_data = raw
+        else:
+            raw_data = []
     except Exception:
         raw_data = []
 
@@ -4394,6 +4940,9 @@ def _execute_agent(agent_key: str, agent: dict, role: str, user_id: str) -> dict
     result.setdefault("recommended_action", {"action_type": "NONE"})
     result.setdefault("system_flags", {"requires_human_approval": True, "auto_execute_allowed": False})
 
+    if role == "retailer" and isinstance(raw_data, dict):
+        result = _normalize_retailer_agent_result(agent_key, raw_data, result)
+
     return result
 
 
@@ -4441,15 +4990,16 @@ def run_ai_agent(agent_key: str,
         now = now_iso()
         activity_id = str(uuid.uuid4())
 
-        supabase.table("ai_activities").insert({
+        _insert_ai_activity({
             "id": activity_id,
+            "user_id": uid,
             "agent_name": agent.get("name", agent_key),
             "action": f"{action_label} (confidence: {confidence:.0%})",
             "impact": impact_summary[:200],
             "full_result": json.dumps(result, ensure_ascii=False),
             "timestamp": now,
             "activity_role": agent.get("agent_role", role),
-        }).execute()
+        })
 
         supabase.table("ai_agents").update({
             "recent_action": recent_action[:120],
@@ -4521,15 +5071,16 @@ def auto_tick_agents(x_user_role: Optional[str] = Header(default=None),
                 if has_finding:
                     activity_id = str(uuid.uuid4())
                     impact_summary = f"{issue_label}: {reason}" if issue_label else "No issues."
-                    supabase.table("ai_activities").insert({
+                    _insert_ai_activity({
                         "id": activity_id,
+                        "user_id": uid,
                         "agent_name": agent.get("name", agent_key),
                         "action": f"Auto-run: {action_label} (confidence: {confidence:.0%})",
                         "impact": impact_summary[:200],
                         "full_result": json.dumps(result, ensure_ascii=False),
                         "timestamp": now,
                         "activity_role": agent.get("agent_role", role),
-                    }).execute()
+                    })
 
                 results.append({"agent_key": agent_key, "status": "completed", "action_type": action_type, "logged": has_finding})
             except Exception as e:
@@ -5215,6 +5766,134 @@ PAYMENT_METHODS = [
     {"id": "bni", "name": "BNI Virtual Account", "type": "bank_transfer", "icon": "bni"},
 ]
 
+XENDIT_SECRET_KEY = os.getenv("XENDIT_SECRET_KEY", "")
+XENDIT_WEBHOOK_TOKEN = os.getenv("XENDIT_WEBHOOK_TOKEN", "")
+XENDIT_API_BASE = os.getenv("XENDIT_API_BASE", "https://api.xendit.co")
+XENDIT_CALLBACK_BASE_URL = os.getenv("XENDIT_CALLBACK_BASE_URL", os.getenv("APP_BASE_URL", "")).rstrip("/")
+
+
+def _xendit_enabled() -> bool:
+    return bool(XENDIT_SECRET_KEY)
+
+
+def _xendit_headers() -> dict:
+    encoded = base64.b64encode(f"{XENDIT_SECRET_KEY}:".encode()).decode()
+    return {
+        "Authorization": f"Basic {encoded}",
+        "Content-Type": "application/json",
+        "Accept": "application/json",
+    }
+
+
+def _payment_tx_select(order_id: str = "", invoice_id: str = "", external_id: str = "", xendit_invoice_id: str = "") -> list[dict]:
+    query = supabase.table("payment_transactions").select("*")
+    if order_id:
+        query = query.eq("order_id", order_id)
+    if invoice_id:
+        query = query.eq("invoice_id", invoice_id)
+    if external_id:
+        query = query.eq("external_id", external_id)
+    if xendit_invoice_id:
+        query = query.eq("xendit_invoice_id", xendit_invoice_id)
+    res = query.order("created_at", desc=True).limit(1).execute()
+    return res.data or []
+
+
+def _payment_tx_upsert(payload: dict):
+    row = {
+        "id": payload.get("id") or str(uuid.uuid4()),
+        "order_id": payload.get("order_id"),
+        "invoice_id": payload.get("invoice_id"),
+        "payer_id": payload.get("payer_id"),
+        "payee_id": payload.get("payee_id"),
+        "amount": payload.get("amount", 0),
+        "currency": payload.get("currency", "IDR"),
+        "payment_method": payload.get("payment_method", ""),
+        "gateway": payload.get("gateway", "xendit"),
+        "external_id": payload.get("external_id", ""),
+        "xendit_invoice_id": payload.get("xendit_invoice_id", ""),
+        "invoice_url": payload.get("invoice_url", ""),
+        "status": payload.get("status", "PENDING"),
+        "raw_response": payload.get("raw_response", {}),
+        "created_at": payload.get("created_at", now_iso()),
+        "updated_at": payload.get("updated_at", now_iso()),
+    }
+    minimal_row = {
+        "id": row["id"],
+        "order_id": row["order_id"],
+        "invoice_id": row["invoice_id"],
+        "payer_id": row["payer_id"],
+        "payee_id": row["payee_id"],
+        "amount": row["amount"],
+        "payment_method": row["payment_method"],
+        "external_id": row["external_id"],
+        "status": row["status"],
+        "created_at": row["created_at"],
+        "updated_at": row["updated_at"],
+    }
+    try:
+        existing = _payment_tx_select(external_id=row["external_id"]) if row["external_id"] else []
+        if existing:
+            supabase.table("payment_transactions").update(row).eq("id", existing[0]["id"]).execute()
+            return existing[0]["id"]
+        supabase.table("payment_transactions").insert(row).execute()
+        return row["id"]
+    except Exception as e:
+        if "payment_transactions" not in str(e):
+            raise
+        # Fallback for legacy schemas without payment_transactions table
+        return row["id"]
+
+
+def _save_webhook_event(event_id: str, payload: dict) -> bool:
+    event_row = {
+        "id": str(uuid.uuid4()),
+        "event_id": event_id,
+        "gateway": "xendit",
+        "payload": payload,
+        "created_at": now_iso(),
+    }
+    try:
+        existing = supabase.table("payment_webhook_events").select("id").eq("event_id", event_id).limit(1).execute().data or []
+        if existing:
+            return False
+        supabase.table("payment_webhook_events").insert(event_row).execute()
+        return True
+    except Exception as e:
+        if "payment_webhook_events" not in str(e):
+            raise
+        # Legacy fallback: no table means continue processing
+        return True
+
+
+def _create_xendit_invoice(*, external_id: str, amount: int, description: str, payer_email: str = "", success_redirect_url: str = "", failure_redirect_url: str = "", metadata: Optional[dict] = None) -> dict:
+    if not _xendit_enabled():
+        raise ValueError("XENDIT_SECRET_KEY is not configured")
+    payload = {
+        "external_id": external_id,
+        "amount": amount,
+        "description": description,
+        "currency": "IDR",
+        "invoice_duration": 86400,
+        "metadata": metadata or {},
+    }
+    if payer_email:
+        payload["customer"] = {"email": payer_email}
+    if success_redirect_url:
+        payload["success_redirect_url"] = success_redirect_url
+    if failure_redirect_url:
+        payload["failure_redirect_url"] = failure_redirect_url
+
+    resp = requests.post(
+        f"{XENDIT_API_BASE}/v2/invoices",
+        headers=_xendit_headers(),
+        json=payload,
+        timeout=20,
+    )
+    if resp.status_code >= 300:
+        raise ValueError(f"Xendit invoice creation failed: {resp.status_code} {resp.text[:300]}")
+    return resp.json()
+
 
 @app.get("/payments/methods")
 def get_payment_methods():
@@ -5222,45 +5901,196 @@ def get_payment_methods():
 
 
 @app.post("/payments/checkout/{order_id}")
-def checkout_order(order_id: str, body: dict = {}):
+def checkout_order(order_id: str, body: dict = {}, current_user: AuthenticatedUser = Depends(get_current_user)):
     try:
         res = supabase.table("orders").select("*").eq("id", order_id).execute()
         if not res.data:
             return error_response("Order not found.")
         order = res.data[0]
+        uid = current_user.user_id
+        if order.get("buyer_id") != uid:
+            return error_response("Not your order")
+        if order.get("status") not in ("pending", "processing"):
+            return error_response("Order is not eligible for checkout")
+
         method_id = body.get("payment_method", "bca")
+        if method_id == "credit_line":
+            credit_account_id = body.get("credit_account_id", "")
+            if not credit_account_id:
+                account_rows = (
+                    supabase.table("credit_accounts")
+                    .select("id")
+                    .eq("retailer_id", uid)
+                    .eq("distributor_id", order.get("seller_id", ""))
+                    .eq("status", "active")
+                    .limit(1)
+                    .execute()
+                    .data
+                    or []
+                )
+                if account_rows:
+                    credit_account_id = account_rows[0].get("id", "")
+            if not credit_account_id:
+                return error_response("No active credit account found for this distributor")
+            credit_result = pay_order_with_credit({"order_id": order_id, "credit_account_id": credit_account_id}, current_user)
+            if not credit_result.get("success"):
+                return credit_result
+            supabase.table("orders").update({"status": "processing", "updated_at": now_iso()}).eq("id", order_id).execute()
+            return success_response(
+                data={
+                    "order_id": order_id,
+                    "total_bill": int(order.get("total_price", 0) or 0),
+                    "method": "Credit Line",
+                    "method_type": "credit_line",
+                    "payment_detail": {"credit_account_id": credit_account_id},
+                    "payment_status": "paid",
+                },
+                message="Credit line payment successful",
+            )
+
         method = next((m for m in PAYMENT_METHODS if m["id"] == method_id), PAYMENT_METHODS[5])
-
-        if method["type"] == "e-wallet":
-            payment_detail = {"deeplink": f"https://{method_id}.mock/pay/{order_id}", "qr_url": f"https://api.mock/qr/{order_id}"}
-        elif method["type"] == "qris":
-            payment_detail = {"qr_string": f"00020101021226610014ID.CO.AUTOSUP.WWW0215{order_id[:15]}5303360540{int(order.get('total_price', 0))}5802ID5913AUTOSUP STORE6007JAKARTA63041234"}
-        else:
-            payment_detail = {"va_number": f"8077{random.randint(1000000, 9999999)}"}
-
-        supabase.table("orders").update({"status": "processing"}).eq("id", order_id).execute()
+        amount = int(order.get("total_price", 0) or 0)
+        external_id = f"autosup-order-{order_id}"
+        success_url = f"{XENDIT_CALLBACK_BASE_URL}/dashboard/orders?payment=success" if XENDIT_CALLBACK_BASE_URL else ""
+        failed_url = f"{XENDIT_CALLBACK_BASE_URL}/dashboard/orders?payment=failed" if XENDIT_CALLBACK_BASE_URL else ""
+        x_invoice = _create_xendit_invoice(
+            external_id=external_id,
+            amount=amount,
+            description=f"AUTOSUP order {order.get('order_number', order_id[:8])}",
+            payer_email=current_user.email,
+            success_redirect_url=success_url,
+            failure_redirect_url=failed_url,
+            metadata={"order_id": order_id, "buyer_id": uid, "seller_id": order.get("seller_id", ""), "payment_method": method_id},
+        )
+        _payment_tx_upsert(
+            {
+                "order_id": order_id,
+                "invoice_id": "",
+                "payer_id": uid,
+                "payee_id": order.get("seller_id", ""),
+                "amount": amount,
+                "currency": x_invoice.get("currency", "IDR"),
+                "payment_method": method_id,
+                "gateway": "xendit",
+                "external_id": external_id,
+                "xendit_invoice_id": x_invoice.get("id", ""),
+                "invoice_url": x_invoice.get("invoice_url", ""),
+                "status": x_invoice.get("status", "PENDING"),
+                "raw_response": x_invoice,
+                "created_at": now_iso(),
+                "updated_at": now_iso(),
+            }
+        )
+        supabase.table("orders").update({"status": "pending", "updated_at": now_iso()}).eq("id", order_id).execute()
 
         return success_response(
             data={
                 "order_id": order_id,
-                "total_bill": order.get("total_price"),
+                "total_bill": amount,
                 "method": method["name"],
                 "method_type": method["type"],
-                "payment_detail": payment_detail,
-                "payment_status": "paid",
+                "payment_detail": {
+                    "invoice_id": x_invoice.get("id", ""),
+                    "invoice_url": x_invoice.get("invoice_url", ""),
+                    "expiry_date": x_invoice.get("expiry_date", ""),
+                    "status": x_invoice.get("status", "PENDING"),
+                },
+                "payment_status": "awaiting_payment",
             },
-            message="Payment successful",
+            message="Payment intent created",
         )
+    except Exception as e:
+        return error_response(str(e))
+
+
+@app.post("/payments/webhook/xendit")
+async def payment_webhook_xendit(request: Request):
+    try:
+        token = request.headers.get("x-callback-token", "")
+        if XENDIT_WEBHOOK_TOKEN and token != XENDIT_WEBHOOK_TOKEN:
+            return error_response("Invalid webhook token")
+
+        payload = await request.json()
+        event_id = payload.get("id", "")
+        if event_id:
+            should_process = _save_webhook_event(event_id, payload)
+            if not should_process:
+                return success_response(data={"event_id": event_id}, message="Duplicate webhook ignored")
+
+        external_id = payload.get("external_id", "")
+        xendit_invoice_id = payload.get("id", "")
+        x_status = str(payload.get("status", "PENDING")).upper()
+
+        tx = []
+        if external_id:
+            tx = _payment_tx_select(external_id=external_id)
+        if not tx and xendit_invoice_id:
+            tx = _payment_tx_select(xendit_invoice_id=xendit_invoice_id)
+        tx_row = tx[0] if tx else {}
+        order_id = tx_row.get("order_id")
+        invoice_id = tx_row.get("invoice_id")
+
+        order_status = "pending"
+        invoice_status = "pending"
+        if x_status == "PAID":
+            order_status = "processing"
+            invoice_status = "paid"
+        elif x_status == "EXPIRED":
+            order_status = "pending"
+            invoice_status = "overdue"
+        elif x_status in ("FAILED", "CANCELLED"):
+            order_status = "cancelled"
+            invoice_status = "cancelled"
+
+        if order_id:
+            update_payload = {"status": order_status, "updated_at": now_iso()}
+            if order_status == "cancelled":
+                update_payload["escrow_status"] = "refunded"
+            supabase.table("orders").update(update_payload).eq("id", order_id).execute()
+
+        if invoice_id:
+            try:
+                inv_payload = {"status": invoice_status, "updated_at": now_iso()}
+                if invoice_status == "paid":
+                    inv_payload["paid_at"] = now_iso()
+                supabase.table("invoices").update(inv_payload).eq("id", invoice_id).execute()
+            except Exception:
+                pass
+
+        if tx_row:
+            _payment_tx_upsert(
+                {
+                    "id": tx_row.get("id"),
+                    "order_id": tx_row.get("order_id", ""),
+                    "invoice_id": tx_row.get("invoice_id", ""),
+                    "payer_id": tx_row.get("payer_id", ""),
+                    "payee_id": tx_row.get("payee_id", ""),
+                    "amount": tx_row.get("amount", 0),
+                    "currency": tx_row.get("currency", "IDR"),
+                    "payment_method": tx_row.get("payment_method", ""),
+                    "gateway": "xendit",
+                    "external_id": external_id or tx_row.get("external_id", ""),
+                    "xendit_invoice_id": xendit_invoice_id or tx_row.get("xendit_invoice_id", ""),
+                    "invoice_url": tx_row.get("invoice_url", ""),
+                    "status": x_status,
+                    "raw_response": payload,
+                    "created_at": tx_row.get("created_at", now_iso()),
+                    "updated_at": now_iso(),
+                }
+            )
+
+        return success_response(data={"order_id": order_id, "invoice_id": invoice_id, "status": x_status}, message="Xendit webhook processed")
     except Exception as e:
         return error_response(str(e))
 
 
 @app.post("/payments/webhook")
 def payment_webhook(data: WebhookPayment):
+    # Backward-compatible legacy webhook.
     try:
         status_map = {"settlement": "processing", "expire": "cancelled", "cancel": "cancelled", "deny": "cancelled"}
         new_status = status_map.get(data.transaction_status, "pending")
-        supabase.table("orders").update({"status": new_status}).eq("id", data.order_id).execute()
+        supabase.table("orders").update({"status": new_status, "updated_at": now_iso()}).eq("id", data.order_id).execute()
         return success_response(data={"order_id": data.order_id}, message=f"Webhook received, status: {new_status}")
     except Exception as e:
         return error_response(str(e))
