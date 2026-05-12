@@ -120,7 +120,6 @@ autosup/
 │   ├── components/             # Reusable UI components
 │   ├── hooks/                  # React Query hooks
 │   ├── lib/                    # API client, mocks, utils
-│   ├── plan/                   # Product docs (PRD, API contract, context)
 │   ├── store/                  # Zustand stores
 │   └── package.json
 └── docs/                       # Architecture & design docs
@@ -349,11 +348,6 @@ Key conventions:
 ---
 
 ## 🔧 Development
-
-### Decision Priority
-1. `frontend/plan/api-contract.md` — data contracts & enums
-2. `frontend/plan/PRD.md` — product scope & acceptance criteria
-3. `frontend/plan/CONTEXT.md` — session continuity & progress tracking
 
 ### Code Conventions
 - Role-aware UX: `supplier` · `distributor` · `retailer`
