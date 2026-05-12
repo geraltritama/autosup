@@ -260,6 +260,7 @@ app.add_middleware(
         "https://autosup-backend-production.up.railway.app",
     ],
     allow_credentials=True,
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     allow_methods=["*"],
     allow_headers=["*"],
 )
