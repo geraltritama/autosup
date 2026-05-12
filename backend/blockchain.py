@@ -371,6 +371,7 @@ def mint_partnership_nft(
             AccountMeta(pubkey=auth.pubkey(),                              is_signer=True,  is_writable=True),
             AccountMeta(pubkey=partnership_pda,                            is_signer=False, is_writable=True),
             AccountMeta(pubkey=mint_pda,                                   is_signer=False, is_writable=True),
+            AccountMeta(pubkey=distributor,                                is_signer=False, is_writable=False),  # distributor_account
             AccountMeta(pubkey=ata,                                        is_signer=False, is_writable=True),
             AccountMeta(pubkey=metadata_pda,                               is_signer=False, is_writable=True),
             AccountMeta(pubkey=Pubkey.from_string(TOKEN_PROGRAM_ID),       is_signer=False, is_writable=False),
@@ -596,6 +597,7 @@ def mint_retailer_partnership_nft(
             AccountMeta(pubkey=parent_pda,                              is_signer=False, is_writable=False),
             AccountMeta(pubkey=partnership_pda,                         is_signer=False, is_writable=True),
             AccountMeta(pubkey=mint_pda,                                is_signer=False, is_writable=True),
+            AccountMeta(pubkey=retailer,                                is_signer=False, is_writable=False),  # retailer_account
             AccountMeta(pubkey=ata,                                     is_signer=False, is_writable=True),
             AccountMeta(pubkey=metadata_pda,                            is_signer=False, is_writable=True),
             AccountMeta(pubkey=Pubkey.from_string(TOKEN_PROGRAM_ID),   is_signer=False, is_writable=False),
