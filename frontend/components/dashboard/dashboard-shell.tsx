@@ -139,7 +139,10 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
         <aside className="hidden w-72 flex-col border-r border-[#E2E8F0] bg-white px-5 py-6 lg:flex">
           {/* Brand */}
           <div className="flex flex-col gap-1">
-            <Image src="/styletulisan.png" alt="AUTOSUP" width={140} height={32} className="h-8 w-auto" />
+            <div className="flex items-center gap-2">
+              <Image src="/logo.png" alt="AUTOSUP icon" width={36} height={36} className="h-9 w-9" />
+              <Image src="/styletulisan.png" alt="AUTOSUP" width={120} height={28} className="h-7 w-auto" />
+            </div>
             <p className="text-xs font-medium text-[#64748B]">{workspaceLabel}</p>
           </div>
 
