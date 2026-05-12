@@ -1,1 +1,0 @@
-/home/geraltritama33/autosup/contracts/partnership-nft/target/sbpf-solana-solana/release/libautosup_partnership_nft.rlib: /home/geraltritama33/autosup/contracts/partnership-nft/programs/autosup-partnership-nft/src/lib.rs
