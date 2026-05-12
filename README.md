@@ -17,6 +17,7 @@ AUTOSUP is a full-stack supply chain platform connecting **suppliers**, **distri
 - [Features](#-features)
 - [Trust Layer](#-trust-layer)
 - [Deployed Contracts (Devnet)](#-deployed-contracts-devnet)
+- [Active On-Chain Partnership NFTs](#active-on-chain-partnership-nfts-devnet)
 - [API Contract](#-api-contract)
 - [Development](#-development)
 - [Roadmap](#-roadmap)
@@ -71,7 +72,7 @@ Distributors buy from suppliers, sell to retailers. Retailers serve end consumer
 
 | Layer | Technology |
 |-------|-----------|
-| **Frontend** | Next.js 16 (App Router) · TypeScript · Tailwind CSS · Shadcn/UI · Radix UI · Zustand · React Query (TanStack) |
+| **Frontend** | Next.js 16 (App Router) · React 19 · TypeScript · Tailwind CSS · Shadcn/UI · Radix UI · Zustand · React Query (TanStack) |
 | **Charts** | Recharts |
 | **QR / 2FA** | qrcode.react |
 | **Backend** | FastAPI · Python 3.10+ |
@@ -119,9 +120,10 @@ autosup/
 │   ├── components/             # Reusable UI components
 │   ├── hooks/                  # React Query hooks
 │   ├── lib/                    # API client, mocks, utils
+│   ├── plan/                   # Product docs (PRD, API contract, context)
 │   ├── store/                  # Zustand stores
 │   └── package.json
-└── docs/                       # Additional documentation
+└── docs/                       # Architecture & design docs
 ```
 
 ---
@@ -276,13 +278,13 @@ AUTOSUP surfaces blockchain trust without exposing users to wallets or crypto fl
 ### NFT Relationship Model
 
 ```
-Supplier ──[NFT: PartnershipRole::SupplierDistributor]──→ Distributor
-Distributor ──[NFT: PartnershipRole::DistributorRetailer]──→ Retailer
+Supplier ──[NFT: PartnershipRole::Supplier, role=0]──→ Distributor
+Distributor ──[NFT: PartnershipRole::Retailer, role=2]──→ Retailer
 ```
 
-- **Supplier ↔ Distributor**: Minted via `mint_partnership_nft`. Stores `supplier` pubkey, `distributor` pubkey, `role = SupplierDistributor`, on-chain metadata (terms, MOU hash, start date).
-- **Distributor ↔ Retailer**: Minted via `mint_distributor_retailer_nft`. Requires CPI proof that the distributor holds an **active** supplier partnership NFT — enforces hierarchy on-chain. Stores `distributor` pubkey, `retailer` pubkey, `retailer_tier` (Bronze → Silver → Gold).
-- Both NFT types are **soulbound** (non-transferable) and can be revoked by the authority.
+- **Supplier ↔ Distributor**: Anchor instruction `mint_partnership` (role=0). Stores `supplier` pubkey, `distributor` pubkey, on-chain metadata (terms, MOU hash, valid_until, region). Token delivered soulbound to distributor ATA.
+- **Distributor ↔ Retailer**: Anchor instruction `mint_retailer_partnership` (role=2). Requires active parent supplier↔distributor PDA — hierarchy enforced on-chain. Stores `distributor`, `retailer`, `retailer_tier` (Bronze → Silver → Gold). Token delivered soulbound to retailer ATA.
+- Both NFT types are **soulbound** (non-transferable) and can be revoked by the authority wallet.
 
 ---
 
