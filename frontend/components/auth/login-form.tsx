@@ -2,7 +2,8 @@
 
 import { useState } from "react";
 import { useGoogleReCaptcha } from "react-google-recaptcha-v3";
-import { ArrowRight, ShieldCheck, AlertCircle, Eye, EyeOff, CheckCircle2 } from "lucide-react";
+import Image from "next/image";
+import { ArrowRight, AlertCircle, Eye, EyeOff, CheckCircle2 } from "lucide-react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -53,9 +54,7 @@ export function LoginForm() {
   return (
     <Card className="w-full max-w-md rounded-2xl">
       <CardHeader className="space-y-2 pb-4">
-        <div className="inline-flex h-11 w-11 items-center justify-center rounded-xl bg-[#DBEAFE] text-[#2563EB]">
-          <ShieldCheck className="h-5 w-5" />
-        </div>
+        <Image src="/styletulisan.png" alt="AUTOSUP" width={140} height={32} className="h-8 w-auto" />
         <CardTitle className="text-xl">Sign in to AUTOSUP</CardTitle>
         <CardDescription>
           One workspace. Your inventory, orders, and partners.

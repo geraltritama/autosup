@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
@@ -16,7 +17,6 @@ import {
   Menu,
   PackageSearch,
   Settings,
-  Sparkles,
   TrendingUp,
   TruckIcon,
   Users,
@@ -94,10 +94,8 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
       {/* Mobile header */}
       <header className="sticky top-0 z-40 flex items-center justify-between border-b border-[#E2E8F0] bg-white px-4 py-3 lg:hidden">
         <div className="flex items-center gap-2">
-          <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-[#0F172A] text-white">
-            <Sparkles className="h-4 w-4" />
-          </div>
-          <span className="text-sm font-semibold text-[#0F172A]">AUTOSUP</span>
+          <Image src="/logo.png" alt="AUTOSUP" width={32} height={32} className="rounded-lg" />
+          <Image src="/styletulisan.png" alt="AUTOSUP" width={100} height={24} className="h-6 w-auto" />
         </div>
         <button onClick={() => setMobileOpen(!mobileOpen)} className="rounded-lg p-2 text-[#64748B] hover:bg-slate-50">
           {mobileOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
@@ -140,16 +138,9 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
       <div className="mx-auto flex min-h-screen max-w-[1600px]">
         <aside className="hidden w-72 flex-col border-r border-[#E2E8F0] bg-white px-5 py-6 lg:flex">
           {/* Brand */}
-          <div className="flex items-center gap-3">
-            <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-[#0F172A] text-white">
-              <Sparkles className="h-5 w-5" />
-            </div>
-            <div>
-              <p className="text-xs font-semibold uppercase tracking-[0.24em] text-[#64748B]">
-                AUTOSUP
-              </p>
-              <p className="text-sm font-semibold text-[#0F172A]">{workspaceLabel}</p>
-            </div>
+          <div className="flex flex-col gap-1">
+            <Image src="/styletulisan.png" alt="AUTOSUP" width={140} height={32} className="h-8 w-auto" />
+            <p className="text-xs font-medium text-[#64748B]">{workspaceLabel}</p>
           </div>
 
           {/* Nav */}
