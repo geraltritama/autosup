@@ -1,9 +1,11 @@
+[toolchain]
+
 [features]
-seeds = true
+resolution = true
 skip-lint = false
 
 [programs.devnet]
-autosup_partnership_nft = "5YNmS1R9nNSCDZB5P7F3YTvGRR1Px2JnyM7FQNHpdYSw"
+autosup_partnership_nft = "FNjMqtcKX6H2VdTxk2qtW7UZyGhJwjEC7DvHbWDY3Zfi"
 
 [programs.localnet]
 autosup_partnership_nft = "Fg6PaFpoGXkYsidMpWTK6W2BeZ7FEfcYkg476zPFsLnS"
@@ -17,5 +19,3 @@ wallet = "~/.config/solana/id.json"
 
 [scripts]
 test = "yarn run ts-mocha -p ./tsconfig.json -t 1000000 tests/**/*.ts"
-
-[hooks]

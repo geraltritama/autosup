@@ -8,7 +8,7 @@ use anchor_spl::{
 };
 use solana_program::pubkey::Pubkey;
 
-declare_id!("5YNmS1R9nNSCDZB5P7F3YTvGRR1Px2JnyM7FQNHpdYSw");
+declare_id!("FNjMqtcKX6H2VdTxk2qtW7UZyGhJwjEC7DvHbWDY3Zfi");
 
 /// ─── Constants ──────────────────────────────────────────────────────────────
 
@@ -35,7 +35,7 @@ pub enum PartnershipStatus {
 
 /// ─── Retailer Tier ───────────────────────────────────────────────────────────
 
-#[derive(AnchorSerialize, AnchorDeserialize, Clone, PartialEq, Eq)]
+#[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy, PartialEq, Eq)]
 pub enum RetailerTier {
     Bronze,
     Silver,
@@ -200,7 +200,7 @@ pub mod autosup_partnership_nft {
         partnership.retailer = Some(retailer);
         partnership.role = PartnershipRole::Retailer;
         partnership.status = PartnershipStatus::Active;
-        partnership.retailer_tier = Some(tier);
+        partnership.retailer_tier = Some(tier.clone());
         partnership.terms = terms.clone();
         partnership.legal_contract_hash = legal_contract_hash;
         partnership.valid_until = valid_until;
@@ -379,11 +379,14 @@ pub struct MintPartnership<'info> {
     )]
     pub mint: Account<'info, Mint>,
 
+    /// CHECK: Distributor who will receive the soulbound token; validated by ATA derivation
+    pub distributor_account: AccountInfo<'info>,
+
     #[account(
         init,
         payer = authority,
         associated_token::mint = mint,
-        associated_token::authority = distributor,
+        associated_token::authority = distributor_account,
     )]
     pub token_account: Account<'info, TokenAccount>,
 
@@ -450,11 +453,14 @@ pub struct MintRetailerPartnership<'info> {
     )]
     pub mint: Account<'info, Mint>,
 
+    /// CHECK: Retailer who will receive the soulbound token; validated by ATA derivation
+    pub retailer_account: AccountInfo<'info>,
+
     #[account(
         init,
         payer = authority,
         associated_token::mint = mint,
-        associated_token::authority = retailer,
+        associated_token::authority = retailer_account,
     )]
     pub token_account: Account<'info, TokenAccount>,
 

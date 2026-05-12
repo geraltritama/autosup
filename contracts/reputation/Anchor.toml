@@ -1,9 +1,11 @@
+[toolchain]
+
 [features]
-seeds = true
+resolution = true
 skip-lint = false
 
 [programs.devnet]
-autosup_reputation = "RePuT8qDgLFk3zG4kJBNFNhRaBmxVmgh5xBoRmM4V2m"
+autosup_reputation = "3rcywtT9Q5iqqZ3AjRrkS6qN4ZMo2ZJdm3MWowBEyGhS"
 
 [programs.localnet]
 autosup_reputation = "Fg6PaFpoGXkYsidMpWTK6W2BeZ7FEfcYkg476zPFsLnS"

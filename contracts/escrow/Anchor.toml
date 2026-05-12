@@ -1,9 +1,11 @@
+[toolchain]
+
 [features]
-seeds = true
+resolution = true
 skip-lint = false
 
 [programs.devnet]
-autosup_escrow = "EsC3wXJYx4G8MgPkFUK3VHgJZP8eBUWH69LMnRSq1HRT"
+autosup_escrow = "5d3PoJoffeMJ46m4Z3ERqoWKHu8vkecn9cfC5WXyn1sB"
 
 [programs.localnet]
 autosup_escrow = "Fg6PaFpoGXkYsidMpWTK6W2BeZ7FEfcYkg476zPFsLnS"
