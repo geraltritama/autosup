@@ -375,7 +375,7 @@ Key conventions:
 | **AI Engine** | ✅ Done | Multi-provider AI (OpenRouter → Gemini → Groq), restock recommendations, demand forecasting, credit risk, cash flow |
 | **Trust Layer** | ✅ Done | Partnership NFT minting (supplier↔distributor, distributor↔retailer), smart escrow settlement, on-chain reputation — deployed to Solana Devnet |
 | **Payments** | ✅ Done | Xendit invoice integration, IDR redirect, webhook settlement |
-| **Production Deploy** | 🔄 In Progress | Vercel (frontend) + Railway (backend) |
+| **Production Deploy** | ✅ Done | Vercel (frontend) + Railway (backend) |
 | **Mobile PWA** | 📋 Planned | Responsive mobile-first experience |
 | **Mainnet** | 📋 Planned | Migrate Solana programs from Devnet to Mainnet-Beta |
 
