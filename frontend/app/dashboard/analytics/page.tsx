@@ -586,7 +586,7 @@ function RetailerAnalytics() {
                           tickFormatter={(value) => formatCurrency(value)}
                         />
                         <Tooltip
-                          formatter={(value: any, name: any) => [
+                          formatter={(value, name) => [
                             formatCurrency(Number(value)),
                             name === "revenue" ? "Consumer Sales" : "Distributor Spending",
                           ]}
