@@ -255,6 +255,7 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=[
         "http://localhost:3000",
+        "https://autosup.vercel.app",
         "https://autosup-production.up.railway.app",
         "https://autosup-backend-production.up.railway.app",
     ],
