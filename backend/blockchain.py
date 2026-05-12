@@ -56,9 +56,9 @@ except ImportError:
 DEVNET_RPC = os.getenv("SOLANA_RPC_URL", "https://api.devnet.solana.com")
 
 PROGRAM_IDS = {
-    "partnership_nft": "5YNmS1R9nNSCDZB5P7F3YTvGRR1Px2JnyM7FQNHpdYSw",
-    "escrow":          "EsC3wXJYx4G8MgPkFUK3VHgJZP8eBUWH69LMnRSq1HRT",
-    "reputation":      "RePuT8qDgLFk3zG4kJBNFNhRaBmxVmgh5xBoRmM4V2m",
+    "partnership_nft": "FNjMqtcKX6H2VdTxk2qtW7UZyGhJwjEC7DvHbWDY3Zfi",
+    "escrow":          "5d3PoJoffeMJ46m4Z3ERqoWKHu8vkecn9cfC5WXyn1sB",
+    "reputation":      "3rcywtT9Q5iqqZ3AjRrkS6qN4ZMo2ZJdm3MWowBEyGhS",
 }
 
 SYSTEM_PROGRAM_ID   = "11111111111111111111111111111111"

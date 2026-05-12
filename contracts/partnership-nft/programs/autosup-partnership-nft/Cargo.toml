@@ -14,6 +14,6 @@ default = []
 
 [dependencies]
 anchor-lang = { workspace = true }
-anchor-spl = { workspace = true }
+anchor-spl = { workspace = true, features = ["metadata"] }
 solana-program = { workspace = true }
-metaplex-token-metadata = { git = "https://github.com/metaplex-foundation/mpl-token-metadata", features = ["no-entrypoint"] }
+hex = "0.4"

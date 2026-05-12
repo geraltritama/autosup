@@ -292,17 +292,17 @@ All three Anchor programs are live on **Solana Devnet**.
 
 | Program | Program ID | Explorer |
 |---------|-----------|---------|
-| **Partnership NFT** | `5YNmS1R9nNSCDZB5P7F3YTvGRR1Px2JnyM7FQNHpdYSw` | [View on Explorer](https://explorer.solana.com/address/5YNmS1R9nNSCDZB5P7F3YTvGRR1Px2JnyM7FQNHpdYSw?cluster=devnet) |
-| **Smart Escrow** | `EsC3wXJYx4G8MgPkFUK3VHgJZP8eBUWH69LMnRSq1HRT` | [View on Explorer](https://explorer.solana.com/address/EsC3wXJYx4G8MgPkFUK3VHgJZP8eBUWH69LMnRSq1HRT?cluster=devnet) |
-| **Reputation** | `RePuT8qDgLFk3zG4kJBNFNhRaBmxVmgh5xBoRmM4V2m` | [View on Explorer](https://explorer.solana.com/address/RePuT8qDgLFk3zG4kJBNFNhRaBmxVmgh5xBoRmM4V2m?cluster=devnet) |
+| **Partnership NFT** | `FNjMqtcKX6H2VdTxk2qtW7UZyGhJwjEC7DvHbWDY3Zfi` | [View on Explorer](https://explorer.solana.com/address/FNjMqtcKX6H2VdTxk2qtW7UZyGhJwjEC7DvHbWDY3Zfi?cluster=devnet) |
+| **Smart Escrow** | `5d3PoJoffeMJ46m4Z3ERqoWKHu8vkecn9cfC5WXyn1sB` | [View on Explorer](https://explorer.solana.com/address/5d3PoJoffeMJ46m4Z3ERqoWKHu8vkecn9cfC5WXyn1sB?cluster=devnet) |
+| **Reputation** | `3rcywtT9Q5iqqZ3AjRrkS6qN4ZMo2ZJdm3MWowBEyGhS` | [View on Explorer](https://explorer.solana.com/address/3rcywtT9Q5iqqZ3AjRrkS6qN4ZMo2ZJdm3MWowBEyGhS?cluster=devnet) |
 
 RPC endpoint: `https://api.devnet.solana.com`
 
 To verify locally:
 ```bash
-solana program show 5YNmS1R9nNSCDZB5P7F3YTvGRR1Px2JnyM7FQNHpdYSw --url devnet
-solana program show EsC3wXJYx4G8MgPkFUK3VHgJZP8eBUWH69LMnRSq1HRT --url devnet
-solana program show RePuT8qDgLFk3zG4kJBNFNhRaBmxVmgh5xBoRmM4V2m --url devnet
+solana program show FNjMqtcKX6H2VdTxk2qtW7UZyGhJwjEC7DvHbWDY3Zfi --url devnet
+solana program show 5d3PoJoffeMJ46m4Z3ERqoWKHu8vkecn9cfC5WXyn1sB --url devnet
+solana program show 3rcywtT9Q5iqqZ3AjRrkS6qN4ZMo2ZJdm3MWowBEyGhS --url devnet
 ```
 
 ---

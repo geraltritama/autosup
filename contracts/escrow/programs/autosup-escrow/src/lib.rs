@@ -1,7 +1,7 @@
 use anchor_lang::prelude::*;
 use anchor_spl::token::{self, Token, TokenAccount, Transfer};
 
-declare_id!("EsC3wXJYx4G8MgPkFUK3VHgJZP8eBUWH69LMnRSq1HRT");
+declare_id!("5d3PoJoffeMJ46m4Z3ERqoWKHu8vkecn9cfC5WXyn1sB");
 
 /// ─── Constants ──────────────────────────────────────────────────────────────
 
@@ -104,72 +104,44 @@ pub mod autosup_escrow {
     /// Only the escrow authority (backend oracle / trusted signer) can call this.
     /// Transfers the full escrow amount to the seller's token account.
     pub fn release(ctx: Context<ReleaseEscrow>) -> Result<()> {
-        let escrow = &mut ctx.accounts.escrow;
-        require!(
-            escrow.status == EscrowStatus::Held,
-            EscrowError::EscrowNotHeld
-        );
+        // Copy fields before mutable borrow to avoid borrow conflict during CPI
+        let buyer = ctx.accounts.escrow.buyer;
+        let seller = ctx.accounts.escrow.seller;
+        let order_id = ctx.accounts.escrow.order_id;
+        let amount = ctx.accounts.escrow.amount;
+        let escrow_bump = ctx.accounts.escrow.escrow_bump;
 
-        escrow.status = EscrowStatus::Released;
-        escrow.settled_at = Some(Clock::get()?.unix_timestamp);
+        {
+            let escrow = &mut ctx.accounts.escrow;
+            require!(escrow.status == EscrowStatus::Held, EscrowError::EscrowNotHeld);
+            escrow.status = EscrowStatus::Released;
+            escrow.settled_at = Some(Clock::get()?.unix_timestamp);
+        }
 
-        // ── Transfer from vault to seller ──────────────────────────────────
+        let settled_at = ctx.accounts.escrow.settled_at.unwrap();
 
-        let escrow_bump = escrow.escrow_bump;
-        let vault_bump = escrow.vault_bump;
-        let seeds: &[&[u8]] = &[
-            ESCROW_SEED,
-            &escrow.buyer.as_ref(),
-            &escrow.seller.as_ref(),
-            &escrow.order_id,
-            &[escrow_bump],
-        ];
-
-        let signer_seeds: &[&[&[u8]]] = &[&[
-            ESCROW_SEED,
-            escrow.buyer.as_ref(),
-            escrow.seller.as_ref(),
-            &escrow.order_id,
-            &[escrow_bump],
-        ]];
-
-        let pda_signer = &[seeds.concat()][..];
-        // Use full seeds for the PDA signer
         let full_seeds = [
             &ESCROW_SEED[..],
-            escrow.buyer.as_ref(),
-            escrow.seller.as_ref(),
-            &escrow.order_id[..],
+            buyer.as_ref(),
+            seller.as_ref(),
+            &order_id[..],
             &[escrow_bump],
         ];
-
-        let vault_signer_seeds: &[&[&[u8]]] = &[&[
-            ESCROW_VAULT_SEED,
-            escrow.buyer.as_ref(),
-            escrow.seller.as_ref(),
-            &escrow.order_id,
-            &[vault_bump],
-        ]];
 
         let transfer_accounts = Transfer {
             from: ctx.accounts.escrow_vault.to_account_info(),
             to: ctx.accounts.seller_token_account.to_account_info(),
             authority: ctx.accounts.escrow.to_account_info(),
         };
+        let signer_seeds = [&full_seeds[..]];
         let cpi_ctx = CpiContext::new_with_signer(
             ctx.accounts.token_program.to_account_info(),
             transfer_accounts,
-            &[&full_seeds[..]],
+            &signer_seeds,
         );
-        token::transfer(cpi_ctx, escrow.amount)?;
+        token::transfer(cpi_ctx, amount)?;
 
-        emit!(EscrowReleased {
-            buyer: escrow.buyer,
-            seller: escrow.seller,
-            order_id: escrow.order_id,
-            amount: escrow.amount,
-            settled_at: escrow.settled_at.unwrap(),
-        });
+        emit!(EscrowReleased { buyer, seller, order_id, amount, settled_at });
 
         Ok(())
     }
@@ -179,23 +151,26 @@ pub mod autosup_escrow {
     /// Called when an order is cancelled or a dispute is resolved
     /// in the buyer's favor. Only the escrow authority can call this.
     pub fn refund(ctx: Context<RefundEscrow>) -> Result<()> {
-        let escrow = &mut ctx.accounts.escrow;
-        require!(
-            escrow.status == EscrowStatus::Held,
-            EscrowError::EscrowNotHeld
-        );
+        let buyer = ctx.accounts.escrow.buyer;
+        let seller = ctx.accounts.escrow.seller;
+        let order_id = ctx.accounts.escrow.order_id;
+        let amount = ctx.accounts.escrow.amount;
+        let escrow_bump = ctx.accounts.escrow.escrow_bump;
 
-        escrow.status = EscrowStatus::Refunded;
-        escrow.settled_at = Some(Clock::get()?.unix_timestamp);
+        {
+            let escrow = &mut ctx.accounts.escrow;
+            require!(escrow.status == EscrowStatus::Held, EscrowError::EscrowNotHeld);
+            escrow.status = EscrowStatus::Refunded;
+            escrow.settled_at = Some(Clock::get()?.unix_timestamp);
+        }
 
-        let escrow_bump = escrow.escrow_bump;
-        let vault_bump = escrow.vault_bump;
+        let settled_at = ctx.accounts.escrow.settled_at.unwrap();
 
         let full_seeds = [
             &ESCROW_SEED[..],
-            escrow.buyer.as_ref(),
-            escrow.seller.as_ref(),
-            &escrow.order_id[..],
+            buyer.as_ref(),
+            seller.as_ref(),
+            &order_id[..],
             &[escrow_bump],
         ];
 
@@ -204,22 +179,15 @@ pub mod autosup_escrow {
             to: ctx.accounts.buyer_token_account.to_account_info(),
             authority: ctx.accounts.escrow.to_account_info(),
         };
+        let signer_seeds = [&full_seeds[..]];
         let cpi_ctx = CpiContext::new_with_signer(
             ctx.accounts.token_program.to_account_info(),
             transfer_accounts,
-            &[&full_seeds[..]],
+            &signer_seeds,
         );
-        token::transfer(cpi_ctx, escrow.amount)?;
+        token::transfer(cpi_ctx, amount)?;
 
-        // ── Close vault account (return rent to buyer) ────────────────────
-
-        emit!(EscrowRefunded {
-            buyer: escrow.buyer,
-            seller: escrow.seller,
-            order_id: escrow.order_id,
-            amount: escrow.amount,
-            settled_at: escrow.settled_at.unwrap(),
-        });
+        emit!(EscrowRefunded { buyer, seller, order_id, amount, settled_at });
 
         Ok(())
     }
@@ -416,4 +384,3 @@ pub enum EscrowError {
 
 use anchor_spl::token::Mint;
 use anchor_lang::solana_program::clock::Clock;
-use anchor_lang::solana_program::sysvar::Sysvar;

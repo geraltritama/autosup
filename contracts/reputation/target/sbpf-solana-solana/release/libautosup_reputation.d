@@ -1,0 +1,1 @@
+/home/geraltritama33/autosup/contracts/reputation/target/sbpf-solana-solana/release/libautosup_reputation.rlib: /home/geraltritama33/autosup/contracts/reputation/programs/autosup-reputation/src/lib.rs
