@@ -29,3 +29,8 @@ backend/venv/
 .agents/
 opencode.json
 skills-lock.json
+# Rust/Anchor build artifacts (keep target/deploy/*.so for deployment proofs)
+contracts/*/target/sbpf-solana-solana/
+contracts/*/target/.rustc_info.json
+contracts/*/target/release/
+contracts/*/Cargo.lock
