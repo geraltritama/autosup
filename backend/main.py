@@ -253,14 +253,8 @@ def health_check():
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://localhost:3000",
-        "https://autosup.vercel.app",
-        "https://autosup-production.up.railway.app",
-        "https://autosup-backend-production.up.railway.app",
-    ],
-    allow_credentials=True,
-    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    allow_origins=["*"],
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )
