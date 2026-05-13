@@ -21,8 +21,8 @@ const highlights = [
 
 export default function LoginPage() {
   return (
-    <main className="h-screen overflow-hidden bg-gradient-to-br from-[#F8FAFC] via-white to-[#EFF6FF]">
-      <div className="mx-auto grid h-screen max-w-7xl items-center gap-16 px-6 lg:grid-cols-[1fr_448px] lg:px-10">
+    <main className="min-h-dvh overflow-x-hidden bg-gradient-to-br from-[#F8FAFC] via-white to-[#EFF6FF]">
+      <div className="mx-auto grid min-h-dvh max-w-7xl gap-12 px-6 py-10 lg:grid-cols-[1fr_448px] lg:items-center lg:gap-16 lg:px-10 lg:py-12">
         {/* ── Left: Hero + Features ────────────────────────────────────── */}
         <section className="space-y-10">
           {/* Headline */}
