@@ -8,7 +8,6 @@ import { useAuthStore, type AuthUser, type UserRole } from "@/store/useAuthStore
 type LoginPayload = {
   email: string;
   password: string;
-  recaptcha_token: string;
 };
 
 type RegisterPayload = {
@@ -52,13 +51,8 @@ export function useLogin() {
       router.push("/dashboard/dashboard");
     } catch (err: unknown) {
       const apiError = err as { response?: { data?: ApiResponse } };
-      const code = apiError.response?.data?.error_code;
       const msg = apiError.response?.data?.message;
-      if (code === "CAPTCHA_FAILED" || code === "CAPTCHA_MISSING") {
-        setError("Verification failed, please try again.");
-      } else {
-        setError(msg ?? "Login failed. Please check your email and password.");
-      }
+      setError(msg ?? "Login failed. Please check your email and password.");
     } finally {
       setIsLoading(false);
     }

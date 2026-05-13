@@ -1,7 +1,6 @@
 "use client";
 
 import { useState } from "react";
-import { useGoogleReCaptcha } from "react-google-recaptcha-v3";
 import Image from "next/image";
 import { ArrowRight, AlertCircle, Eye, EyeOff, CheckCircle2 } from "lucide-react";
 import Link from "next/link";
@@ -22,18 +21,10 @@ export function LoginForm() {
   const [forgotError, setForgotError] = useState("");
   const [resetEmailSent, setResetEmailSent] = useState(false);
   const { login, isLoading, error } = useLogin();
-  const { executeRecaptcha } = useGoogleReCaptcha();
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    let recaptcha_token = "bypass-recaptcha";
-    if (executeRecaptcha) {
-      try {
-        recaptcha_token = await executeRecaptcha("login");
-      } catch {
-      }
-    }
-    await login({ email, password, recaptcha_token });
+    await login({ email, password });
   }
 
   async function handleForgotPassword(e: React.FormEvent) {
