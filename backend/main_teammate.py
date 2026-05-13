@@ -25,7 +25,6 @@ class RegisterReq(BaseModel):
 class LoginReq(BaseModel):
     email: str
     password: str
-    recaptcha_token: Optional[str] = None
 
 class RefreshReq(BaseModel):
     refresh_token: str
